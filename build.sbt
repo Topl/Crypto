@@ -6,6 +6,8 @@ version := "0.1"
 
 scalaVersion := "2.12.8"
 
+mainClass in (Compile, run) := Some("crypto.cryptoMain")
+
 val circeVersion = "0.7+"
 
 val networkDependencies = Seq(
