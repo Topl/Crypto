@@ -27,11 +27,12 @@ import scala.util.Try
   * Created by cykoz on 6/22/2017.
   */
 
-case class ForwardKeyFile(pubKeyBytes: Array[Byte],
-                   cipherText: Array[Byte],
-                   mac: Array[Byte],
-                   salt: Array[Byte],
-                   iv: Array[Byte]) {
+case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
+                          var cipherText: Array[Byte],
+                          var mac: Array[Byte],
+                          salt: Array[Byte],
+                          iv: Array[Byte],
+                          basePubKeyBytes: Array[Byte]) {
 
   def getPrivateKey(password: String): Try[PrivateKey25519] = Try {
     val derivedKey = getDerivedKey(password, salt)
@@ -41,6 +42,13 @@ case class ForwardKeyFile(pubKeyBytes: Array[Byte],
     require(pubKeyBytes sameElements getPkFromSk(decrypted), "PublicKey in file is invalid")
 
     PrivateKey25519(decrypted, pubKeyBytes)
+  }
+
+  def forwardPKSK(seed: Array[Byte],password: String): Unit = {
+    var (sk, pk) = PrivateKey25519Companion.generateKeys(seed)
+    val derivedKey = getDerivedKey(password, salt)
+    val (cipherText, mac) = getAESResult(derivedKey, iv, sk.privKeyBytes, encrypt = true)
+    pubKeyBytes = pk.pubKeyBytes
   }
 
   lazy val json: Json = Map(
@@ -90,7 +98,7 @@ object ForwardKeyFile {
     val derivedKey = getDerivedKey(password, salt)
     val (cipherText, mac) = getAESResult(derivedKey, ivData, sk.privKeyBytes, encrypt = true)
 
-    val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData)
+    val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes)
 
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
     val w = new BufferedWriter(new FileWriter(s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"))
@@ -121,7 +129,7 @@ object ForwardKeyFile {
     val mac = Base58.decode(macString).get
     val salt = Base58.decode(saltString).get
     val iv = Base58.decode(ivString).get
-    ForwardKeyFile(pubKey, cipherText, mac, salt, iv)
+    ForwardKeyFile(pubKey, cipherText, mac, salt, iv, pubKey)
   }
 
   private val provider: OpportunisticCurve25519Provider = {
