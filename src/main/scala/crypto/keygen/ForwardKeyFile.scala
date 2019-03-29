@@ -20,6 +20,7 @@ import bifrost.crypto.hash.FastCryptographicHash
 import bifrost.transaction.state.{PrivateKey25519, PrivateKey25519Companion}
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.Keccak256
+import scorex.crypto.signatures.SigningFunctions.Signature
 
 import scala.util.Try
 
@@ -45,13 +46,36 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
   }
 
   def forwardPKSK(seed: Array[Byte],password: String): Unit = {
-    var (sk, pk) = PrivateKey25519Companion.generateKeys(seed)
+    val (sk, pk) = PrivateKey25519Companion.generateKeys(seed)
     val derivedKey = getDerivedKey(password, salt)
-    val (cipherText, mac) = getAESResult(derivedKey, iv, sk.privKeyBytes, encrypt = true)
+    val (ct,m) = getAESResult(derivedKey, iv, sk.privKeyBytes, encrypt = true)
     pubKeyBytes = pk.pubKeyBytes
+    cipherText = ct
+    mac = m
+    json = Map(
+      "crypto" -> Map(
+        "cipher" -> "aes-128-ctr".asJson,
+        "cipherParams" -> Map(
+          "iv" -> Base58.encode(iv).asJson
+        ).asJson,
+        "cipherText" -> Base58.encode(cipherText).asJson,
+        "kdf" -> "scrypt".asJson,
+        "kdfSalt" -> Base58.encode(salt).asJson,
+        "mac" -> Base58.encode(mac).asJson
+      ).asJson,
+      "publicKeyId" -> Base58.encode(pubKeyBytes).asJson,
+      "certificates" -> certificates.asJson
+    ).asJson
+    val w = new BufferedWriter(new FileWriter(fileName))
+    w.write(json.toString())
+    w.close()
   }
 
-  lazy val json: Json = Map(
+  var certificates = List[(Array[Byte],Int,Array[Byte],Signature)]()
+
+  var fileName: String = ""
+
+  var json: Json = Map(
     "crypto" -> Map(
       "cipher" -> "aes-128-ctr".asJson,
       "cipherParams" -> Map(
@@ -62,7 +86,8 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
       "kdfSalt" -> Base58.encode(salt).asJson,
       "mac" -> Base58.encode(mac).asJson
     ).asJson,
-    "publicKeyId" -> Base58.encode(pubKeyBytes).asJson
+    "publicKeyId" -> Base58.encode(pubKeyBytes).asJson,
+    "certificates" -> certificates.asJson
   ).asJson
 }
 
@@ -101,6 +126,7 @@ object ForwardKeyFile {
     val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes)
 
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+    tempFile.fileName = s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"
     val w = new BufferedWriter(new FileWriter(s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"))
     w.write(tempFile.json.toString())
     w.close()
@@ -111,10 +137,12 @@ object ForwardKeyFile {
 
   def readFile(filename: String): ForwardKeyFile = {
     val jsonString = scala.io.Source.fromFile(filename).mkString
-    parse(jsonString).right.get.as[ForwardKeyFile] match {
+    val tempF: ForwardKeyFile = parse(jsonString).right.get.as[ForwardKeyFile] match {
       case Right(f: ForwardKeyFile) => f
       case Left(e) => throw new Exception(s"Could not parse KeyFile: $e")
     }
+    tempF.fileName = filename
+    tempF
   }
 
   implicit val decodeKeyFile: Decoder[ForwardKeyFile] = (c: HCursor) => for {

@@ -7,7 +7,7 @@ import bifrost.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
 import bifrost.forwardkeygen.ForwardKeyFile.uuid
 import bifrost.transaction.box.proposition.{MofNProposition, ProofOfKnowledgeProposition, PublicKey25519Proposition}
-import bifrost.transaction.state.PrivateKey25519
+import bifrost.transaction.state.{PrivateKey25519, PrivateKey25519Companion}
 import scorex.crypto.encode.Base58
 import bifrost.utils.ScorexLogging
 import scorex.crypto.signatures.SigningFunctions.Signature
@@ -20,26 +20,27 @@ import sun.security.util.Password
 object cryptoMain extends cryptoValues with App {
 
   //SIG algorithm:
-
+  println("\nOld Signing Algorithm:")
   //KG - generation of PK0 and SK0
-  println("Generating Key")
   Try(path.deleteRecursively())
   Try(path.createDirectory())
+  println("  Generating Key...")
   val exampleKey = KeyFile(password = password, defaultKeyDir = keyFileDir)
 
   //SIGN - signature generated with SK0
-  println("Signing message")
+  println("  Signing message...")
   val exampleSignature = Curve25519.sign(exampleKey.getPrivateKey(password = password).get.privKeyBytes,message)
 
   //VER - signature verified with PK0
-  println("Verify signature")
+  println("  Verify signature...")
   assert(Curve25519.verify(exampleSignature,message,exampleKey.pubKeyBytes))
 
-  //FWSIG algorithm:
 
-  //FWKG - generation of PK0 and SK0
-  println("Generating forward KeyFile")
-  val FWKey = ForwardKeyFile(password,seed,keyFileDir)
+  println("\nForward Signing Algorithm:")
+
+  //FWSIG algorithm:
+  type Cert = (Array[Byte],Int,Array[Byte],Signature)
+  type ForwardSig = (Cert,Signature,Int)
 
   //FWPRG - pseudorandom generator
   // input: number k_(t-1)
@@ -51,22 +52,37 @@ object cryptoMain extends cryptoValues with App {
   }
 
   //FWUPD - update PK0 and SK0 --> PK0 and SKt where t is in 0 to T
-  def forwardUpdate(forwardKeyFile: ForwardKeyFile,seed: Array[Byte],password: String): ForwardKeyFile = {
-    forwardKeyFile.forwardPKSK(seed,password)
-    forwardKeyFile
+  def forwardUpdate(forwardKeyFile: ForwardKeyFile,k: Array[Byte],password: String,t: Int): Array[Byte] = {
+    val (kp,r) = forwardPRG(k)
+    forwardKeyFile.forwardPKSK(r,password)
+    val pkt = forwardKeyFile.pubKeyBytes
+    val certificate: Cert = forwardKeyFile.certificates(t)
+    assert(forwardKeyFile.basePubKeyBytes.deep == certificate._1.deep)
+    assert(t == certificate._2)
+    assert(forwardKeyFile.pubKeyBytes.deep == certificate._3.deep)
+    assert(pkt.deep == PrivateKey25519Companion.generateKeys(r)._2.pubKeyBytes.deep)
+    kp
   }
+
+  def binaryArrayToHex(b: Array[Byte]): String = {
+    b.map("%02x" format _).mkString
+  }
+
   //FWCERT - generate certificates for signing in each epoch
-  def certificates(forwardKeyFile: ForwardKeyFile,password: String): List[(Array[Byte],Int,Array[Byte],Signature)] = {
-    var tempList = List[(Array[Byte],Int,Array[Byte],Signature)]()
+  def forwardCertificates(forwardKeyFile: ForwardKeyFile,password: String): List[(Array[Byte],Int,Array[Byte],Signature)] = {
+    var tempList = List[Cert]()
     val sk0 = forwardKeyFile.getPrivateKey(password).get.privKeyBytes
+    val pk0 = forwardKeyFile.pubKeyBytes
     val k0 = seed
-    var kold = k0
-    for (i <- 1 to T) {
-      println("working on cert "+i.toString)
-      val (k, r) = forwardPRG(kold)
-      kold = k
-      forwardKeyFile.forwardPKSK(k,password)
-      val tempTuple = (forwardKeyFile.basePubKeyBytes,
+    var kOld = k0
+    for (i <- 0 to T) {
+      println("    Working on cert "+i.toString)
+      if (i > 0) {
+        val (k, r) = forwardPRG(kOld)
+        kOld = k
+        forwardKeyFile.forwardPKSK(r,password)
+      }
+      val tempCert: Cert = (pk0,
         i,
         forwardKeyFile.pubKeyBytes,
         Curve25519.sign(
@@ -74,18 +90,93 @@ object cryptoMain extends cryptoValues with App {
           forwardKeyFile.basePubKeyBytes++Array(i.toByte)++forwardKeyFile.pubKeyBytes
         )
       )
-      tempList = tempList++List(tempTuple)
+      tempList = tempList++List(tempCert)
     }
+    forwardKeyFile.forwardPKSK(seed,password)
     tempList
   }
 
-  println("Generating Certificates")
-  println(FWKey.getPrivateKey(password).toString)
-  val certs = certificates(FWKey,password)
-  println(FWKey.getPrivateKey(password).toString)
-  //FWSIGN - signature generated with SKt
-
   //FWVER - signature verified with PK0
+  def forwardVerify(pk0: Array[Byte],m: Array[Byte],s: ForwardSig): Boolean = {
+    val c: Cert = s._1
+    val sig: Signature = s._2
+    val t: Int = s._3
+    val pk0_c = c._1
+    val t_c = c._2
+    val pkt: Array[Byte] = c._3
+    val sig_c: Signature = c._4
+    assert(pk0.deep == pk0_c.deep)
+    assert(t == t_c)
+    assert(Curve25519.verify(sig_c,pk0++Array(t.toByte)++pkt,pk0))
+    Curve25519.verify(sig,m,pkt)
+  }
+
+  //FWSIGN - signature generated with SKt
+  def increment(n:Int): Unit = {
+    t0 = t
+    tp = t+n-1
+    for (i <- t0 to tp) {
+      t = i+1
+      println("    t = "+t.toString)
+      kt = forwardUpdate(FWKey,kt,password,t)
+    }
+  }
+
+  def forwardSignature(fwk: ForwardKeyFile, password: String, message: Array[Byte] , t: Int): ForwardSig = {
+    (fwk.certificates(t), Curve25519.sign(fwk.getPrivateKey(password).get.privKeyBytes,message), t)
+  }
+
+  //FWKG - generation of PK0 and SK0
+  println("  Generating Forward KeyFile")
+  val FWKey: ForwardKeyFile = ForwardKeyFile(password,seed,keyFileDir)
+
+  println("  Signing Message with SK0")
+  val exampleForwardSignature0: Signature = Curve25519.sign(FWKey.getPrivateKey(password).get.privKeyBytes,message)
+
+  println("  Generating Certificates")
+  FWKey.certificates = forwardCertificates(FWKey,password)
+
+  println("  Verify Signature made with SK0, indicating FWKey is at state 0")
+  assert(Curve25519.verify(exampleForwardSignature0,message,FWKey.pubKeyBytes))
+
+  println("  Evolving Key...")
+  increment(inc1)
+
+  println("  Making Forward Signature 1")
+  val forwardSignature1: ForwardSig = forwardSignature(FWKey,password,message,t)
+
+  println("  Evolving Key...")
+  increment(inc2)
+
+  println("  Making Forward Signature 2")
+  val forwardSignature2: ForwardSig = forwardSignature(FWKey,password,message,t)
+
+  println("  Evolving Key...")
+  increment(inc3)
+
+  println("  Verify Signature made with SK0 with evolved PKt (should fail)")
+  println("    "+Try(Curve25519.verify(exampleForwardSignature0,message,FWKey.pubKeyBytes)))
+
+  println("  Verify Signature made with SK0 with base pubKey (should succeed)")
+  println("    "+Try(Curve25519.verify(exampleForwardSignature0,message,FWKey.basePubKeyBytes)))
+
+  println("  Attempting to forge false signature...")
+  val forwardSignature3: ForwardSig =
+    (
+      FWKey.certificates(5),
+      Curve25519.sign(FWKey.getPrivateKey(password).get.privKeyBytes,message),
+      5
+    )
+
+  println("  Verifying Forward Signature 1")
+  assert(forwardVerify(FWKey.basePubKeyBytes,message,forwardSignature1))
+
+  println("  Verifying Forward Signature 2")
+  assert(forwardVerify(FWKey.basePubKeyBytes,message,forwardSignature2))
+
+  println("  Verify false Signature 3 (should fail)")
+  println("    "+Try(forwardVerify(FWKey.basePubKeyBytes,message,forwardSignature3)))
+
 }
 
 trait cryptoValues {
@@ -94,8 +185,14 @@ trait cryptoValues {
   val password = "password"
   val message = "message".getBytes
   val seed = FastCryptographicHash(uuid)
-  val T = 10
-  val t = 5
+  val T = 12
+  val inc1 = 3
+  val inc2 = 2
+  val inc3 = 5
+  var t: Int = 0
+  var t0: Int = 0
+  var tp: Int = 0
+  var kt: Array[Byte] = seed
 }
 
 case class FWallet(var secrets: Set[PrivateKey25519],defaultKeyDir: String) extends ScorexLogging {
