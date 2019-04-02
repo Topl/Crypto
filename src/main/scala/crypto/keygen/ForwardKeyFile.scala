@@ -21,6 +21,7 @@ import bifrost.transaction.state.{PrivateKey25519, PrivateKey25519Companion}
 import scorex.crypto.encode.Base58
 import scorex.crypto.hash.Keccak256
 import scorex.crypto.signatures.SigningFunctions.Signature
+import scorex.crypto.signatures.Curve25519
 
 import scala.util.Try
 
@@ -34,47 +35,10 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
                           salt: Array[Byte],
                           iv: Array[Byte],
                           basePubKeyBytes: Array[Byte]) {
-
-  def getPrivateKey(password: String): Try[PrivateKey25519] = Try {
-    val derivedKey = getDerivedKey(password, salt)
-    require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
-
-    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
-    require(pubKeyBytes sameElements getPkFromSk(decrypted), "PublicKey in file is invalid")
-
-    PrivateKey25519(decrypted, pubKeyBytes)
-  }
-
-  def forwardPKSK(seed: Array[Byte],password: String): Unit = {
-    val (sk, pk) = PrivateKey25519Companion.generateKeys(seed)
-    val derivedKey = getDerivedKey(password, salt)
-    val (ct,m) = getAESResult(derivedKey, iv, sk.privKeyBytes, encrypt = true)
-    pubKeyBytes = pk.pubKeyBytes
-    cipherText = ct
-    mac = m
-    json = Map(
-      "crypto" -> Map(
-        "cipher" -> "aes-128-ctr".asJson,
-        "cipherParams" -> Map(
-          "iv" -> Base58.encode(iv).asJson
-        ).asJson,
-        "cipherText" -> Base58.encode(cipherText).asJson,
-        "kdf" -> "scrypt".asJson,
-        "kdfSalt" -> Base58.encode(salt).asJson,
-        "mac" -> Base58.encode(mac).asJson
-      ).asJson,
-      "publicKeyId" -> Base58.encode(pubKeyBytes).asJson,
-      "certificates" -> certificates.asJson
-    ).asJson
-    val w = new BufferedWriter(new FileWriter(fileName))
-    w.write(json.toString())
-    w.close()
-  }
-
-  var certificates = List[(Array[Byte],Int,Array[Byte],Signature)]()
-
+  type Cert = (Array[Byte],Int,Array[Byte],Signature)
+  var certificates: List[Cert] = List[Cert]()
   var fileName: String = ""
-
+  var epochNum: Int = 0
   var json: Json = Map(
     "crypto" -> Map(
       "cipher" -> "aes-128-ctr".asJson,
@@ -89,6 +53,108 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
     "publicKeyId" -> Base58.encode(pubKeyBytes).asJson,
     "certificates" -> certificates.asJson
   ).asJson
+
+  def getPrivateKey(password: String): Try[PrivateKey25519] = Try {
+    val derivedKey = getDerivedKey(password, salt)
+    require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
+    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
+    require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
+    PrivateKey25519(decrypted.slice(0,Curve25519.KeyLength), pubKeyBytes)
+  }
+
+  def getKt(password: String): Try[Array[Byte]] = Try {
+    val derivedKey = getDerivedKey(password, salt)
+    require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
+    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
+    require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
+    decrypted.drop(Curve25519.KeyLength)
+  }
+
+  def updateKeys(k: Array[Byte], r: Array[Byte],password: String): Unit = {
+    val (sk, pk) = PrivateKey25519Companion.generateKeys(r)
+    val derivedKey = getDerivedKey(password, salt)
+    val (ct,m) = getAESResult(derivedKey, iv, sk.privKeyBytes++k, encrypt = true)
+    epochNum += 1
+    pubKeyBytes = pk.pubKeyBytes
+    cipherText = ct
+    mac = m
+    json = Map(
+      "publicKeyId" -> Base58.encode(basePubKeyBytes).asJson,
+      "evolvedPublicKey" -> Base58.encode(pubKeyBytes).asJson,
+      "epochNumber" -> epochNum.toString.asJson,
+      "crypto" -> Map(
+        "cipher" -> "aes-128-ctr".asJson,
+        "cipherParams" -> Map(
+          "iv" -> Base58.encode(iv).asJson
+        ).asJson,
+        "cipherText" -> Base58.encode(cipherText).asJson,
+        "kdf" -> "scrypt".asJson,
+        "kdfSalt" -> Base58.encode(salt).asJson,
+        "mac" -> Base58.encode(mac).asJson
+      ).asJson,
+      "certificates" -> (certificates map {
+        case (e1: Array[Byte],e2: Int, e3: Array[Byte], e4: Signature)
+          => e2.toString+", "+Base58.encode(e3)+", "+Base58.encode(e4)
+      }).asJson
+    ).asJson
+  }
+
+  def saveForwardKeyFile: Unit = {
+    val w = new BufferedWriter(new FileWriter(fileName))
+    w.write(json.toString())
+    w.close()
+  }
+
+  //FWPRG - pseudorandom generator
+  // input: number k_(t-1)
+  // output: pair of pseudorandom numbers k_t , r_t
+  def forwardPRG(k: Array[Byte]): (Array[Byte],Array[Byte]) = {
+    val kp = FastCryptographicHash(k)
+    val r = FastCryptographicHash(kp)
+    (kp,r)
+  }
+
+  //FWCERT - generate certificates for signing in each epoch
+  def forwardCertificates(forwardKey: ForwardKeyFile, seed: Array[Byte], tMax: Int, password: String): List[Cert] = {
+    var tempList = List[Cert]()
+    val SK0: Array[Byte] = forwardKey.getPrivateKey(password).get.privKeyBytes
+    val PK0: Array[Byte] = forwardKey.basePubKeyBytes
+    val K0: Array[Byte] = seed
+    var K_old: Array[Byte] = K0
+    println("  Generating Certificates")
+    for (i <- 0 to tMax) {
+      println("    Working on cert "+i.toString)
+      if (i > 0) {
+        val (k: Array[Byte], r: Array[Byte]) = forwardPRG(K_old)
+        K_old = k
+        forwardKey.updateKeys(k,r,password)
+      }
+      val PKt = forwardKey.pubKeyBytes
+      val tempCert: Cert = (
+        PK0,
+        i,
+        PKt,
+        Curve25519.sign(SK0, PK0++Array(i.toByte)++PKt)
+      )
+      tempList = tempList++List(tempCert)
+    }
+    forwardKey.updateKeys(seed,seed,password)
+    forwardKey.epochNum = 0
+    tempList
+  }
+
+  //FWUPD - update PK0 and SK0 --> PK0 and SKt where t is in 0 to T
+  def forwardUpdate(password: String): Unit = {
+    val kt: Array[Byte] = getKt(password).get
+    val (kp,r) = forwardPRG(kt)
+    updateKeys(kp,r,password)
+    val PKt = pubKeyBytes
+    val certificate: Cert = certificates(epochNum)
+    assert(basePubKeyBytes.deep == certificate._1.deep)
+    assert(epochNum == certificate._2)
+    assert(pubKeyBytes.deep == certificate._3.deep)
+    assert(PKt.deep == PrivateKey25519Companion.generateKeys(r)._2.pubKeyBytes.deep)
+  }
 }
 
 object ForwardKeyFile {
@@ -103,7 +169,7 @@ object ForwardKeyFile {
     var aesCtr = new BufferedBlockCipher(new SICBlockCipher(new AESEngine))
     aesCtr.init(encrypt, cipherParams)
 
-    val outputText = Array.fill(32)(1: Byte)
+    val outputText = Array.fill(inputText.length)(1: Byte)
     aesCtr.processBytes(inputText, 0, inputText.length, outputText, 0)
     aesCtr.doFinal(outputText, 0)
 
@@ -112,7 +178,7 @@ object ForwardKeyFile {
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
-  def apply(password: String, seed: Array[Byte] = FastCryptographicHash(uuid), defaultKeyDir: String): ForwardKeyFile = {
+  def apply(password: String, seed: Array[Byte] = FastCryptographicHash(uuid), tMax: Int, defaultKeyDir: String): ForwardKeyFile = {
 
     val salt = FastCryptographicHash(uuid)
 
@@ -121,9 +187,11 @@ object ForwardKeyFile {
     val ivData = FastCryptographicHash(uuid).slice(0, 16)
 
     val derivedKey = getDerivedKey(password, salt)
-    val (cipherText, mac) = getAESResult(derivedKey, ivData, sk.privKeyBytes, encrypt = true)
+    val (cipherText, mac) = getAESResult(derivedKey, ivData, sk.privKeyBytes++seed, encrypt = true)
 
     val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes)
+
+    tempFile.certificates = tempFile.forwardCertificates(tempFile,seed,tMax,password)
 
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
     tempFile.fileName = s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"
