@@ -1,4 +1,4 @@
-package bifrost.forwardkeygen
+package crypto.forwardkeygen
 
 import java.io.{BufferedWriter, FileWriter}
 import java.lang.reflect.Constructor
@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-import bifrost.forwardkeygen.ForwardKeyFile._
+import crypto.forwardkeygen.ForwardKeyFile._
 import io.circe.parser.parse
 import io.circe.syntax._
 import io.circe.{Decoder, HCursor, Json}
@@ -22,6 +22,8 @@ import scorex.crypto.encode.Base58
 import scorex.crypto.hash.Keccak256
 import scorex.crypto.signatures.SigningFunctions.Signature
 import scorex.crypto.signatures.Curve25519
+import crypto.forwardtypes.forwardTypes._
+
 
 import scala.util.Try
 
@@ -34,11 +36,11 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
                           var mac: Array[Byte],
                           salt: Array[Byte],
                           iv: Array[Byte],
-                          basePubKeyBytes: Array[Byte]) {
-  type Cert = (Array[Byte],Int,Array[Byte],Signature)
-  var certificates: List[Cert] = List[Cert]()
+                          basePubKeyBytes: Array[Byte],
+                          var epochNum: Int,
+                          var certificates: List[Cert]
+                         ) {
   var fileName: String = ""
-  var epochNum: Int = 0
   var json: Json = "".asJson
 
   def updateJson: Unit = {
@@ -87,7 +89,6 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
     pubKeyBytes = pk.pubKeyBytes
     cipherText = ct
     mac = m
-    updateJson
   }
 
   def saveForwardKeyFile: Unit = {
@@ -139,6 +140,7 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
     val kt: Array[Byte] = getKt(password).get
     val (kp,r) = forwardPRG(kt)
     updateKeys(kp,r,password)
+    updateJson
     val PKt = pubKeyBytes
     val certificate: Cert = certificates(epochNum)
     assert(basePubKeyBytes.deep == certificate._1.deep)
@@ -173,7 +175,7 @@ object ForwardKeyFile {
     val ivData = FastCryptographicHash(uuid).slice(0, 16)
     val derivedKey = getDerivedKey(password, salt)
     val (cipherText, mac) = getAESResult(derivedKey, ivData, sk.privKeyBytes++seed, encrypt = true)
-    val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes)
+    val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes,0 , List[Cert]())
     tempFile.certificates = tempFile.forwardCertificates(tempFile,seed,tMax,password)
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
     tempFile.fileName = s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"
@@ -193,6 +195,7 @@ object ForwardKeyFile {
       case Left(e) => throw new Exception(s"Could not parse KeyFile: $e")
     }
     tempF.fileName = filename
+    tempF.updateJson
     tempF
   }
 
@@ -208,7 +211,7 @@ object ForwardKeyFile {
     val mac = Base58.decode(macString).get
     val salt = Base58.decode(saltString).get
     val iv = Base58.decode(ivString).get
-    ForwardKeyFile(pubKey, cipherText, mac, salt, iv, pubKey)
+    ForwardKeyFile(pubKey, cipherText, mac, salt, iv, pubKey, 0, List[Cert]())
   }
 
   private val provider: OpportunisticCurve25519Provider = {

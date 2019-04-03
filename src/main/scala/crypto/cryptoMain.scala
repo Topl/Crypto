@@ -1,11 +1,13 @@
-package crypto
+package crypto.cryptomain
 
-import bifrost.forwardkeygen.ForwardKeyFile
+import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
 import scorex.crypto.signatures.SigningFunctions.Signature
 import scala.util.Try
 import scorex.crypto.signatures.Curve25519
-import bifrost.forwardsignatures.forwardSignatures
+import crypto.forwardsignatures.forwardSignatures
+import crypto.forwardtypes.forwardTypes._
+
 object cryptoMain extends forwardSignatures with App {
 
   //SIG algorithm:
@@ -70,6 +72,19 @@ object cryptoMain extends forwardSignatures with App {
 
   println("  Verify false Signature 3 (should fail)")
   println("    "+Try(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature3)))
+
+  val tempFileName = forwardKey.fileName
+
+  val forwardKey2: ForwardKeyFile = ForwardKeyFile.readFile(tempFileName)
+
+  forwardKey2.fileName = tempFileName+"copy"
+  forwardKey2.saveForwardKeyFile
+  println("  Verifying Forward Signature 1 with readFile")
+  assert(forwardVerify(forwardKey2.basePubKeyBytes,message,forwardSignature1))
+  println("    "+Try(forwardVerify(forwardKey2.basePubKeyBytes,message,forwardSignature1)))
+
+
+
 
 }
 

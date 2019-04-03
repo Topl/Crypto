@@ -1,11 +1,11 @@
-package bifrost.forwardsignatures
+package crypto.forwardsignatures
 
 import bifrost.crypto.hash.FastCryptographicHash
-import bifrost.forwardkeygen.ForwardKeyFile
-import bifrost.forwardkeygen.ForwardKeyFile.uuid
+import crypto.forwardkeygen.ForwardKeyFile
+import crypto.forwardkeygen.ForwardKeyFile.uuid
 import scorex.crypto.signatures.Curve25519
 import scorex.crypto.signatures.SigningFunctions.Signature
-
+import crypto.forwardtypes.forwardTypes._
 import scala.reflect.io.Path
 
 trait forwardSignatures {
@@ -23,8 +23,6 @@ trait forwardSignatures {
   var tp: Int = 0
 
   //FWSIG algorithm:
-  type Cert = (Array[Byte],Int,Array[Byte],Signature)
-  type ForwardSig = (Cert,Signature,Int)
 
   //FWVER - signature verified with PK0
   def forwardVerify(PK0: Array[Byte], message: Array[Byte], forwardSig: ForwardSig): Boolean = {

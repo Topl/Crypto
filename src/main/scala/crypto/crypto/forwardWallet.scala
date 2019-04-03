@@ -1,8 +1,8 @@
-package bifrost.crypto.forwardwallet
+package crypto.forwardwallet
 
 import java.io.File
 import bifrost.crypto.hash.FastCryptographicHash
-import bifrost.forwardkeygen.ForwardKeyFile
+import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
 import bifrost.transaction.box.proposition.{MofNProposition, ProofOfKnowledgeProposition, PublicKey25519Proposition}
 import bifrost.transaction.state.PrivateKey25519

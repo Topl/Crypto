@@ -6,7 +6,7 @@ version := "0.1"
 
 scalaVersion := "2.12.8"
 
-mainClass in (Compile, run) := Some("crypto.cryptoMain")
+mainClass in (Compile, run) := Some("crypto.cryptomain.cryptoMain")
 
 val circeVersion = "0.7+"
 
