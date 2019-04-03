@@ -23,7 +23,7 @@ object cryptoMain extends forwardSignatures with App {
   //VER - signature verified with PK0
   println("  Verify signature...")
   assert(Curve25519.verify(exampleSignature,message,exampleKey.pubKeyBytes))
-  
+
 
   println("\nForward Signing Algorithm:")
 
@@ -41,12 +41,12 @@ object cryptoMain extends forwardSignatures with App {
   increment(forwardKey,inc1)
 
   println("  Making Forward Signature 1")
-  val forwardSignature1: ForwardSig = forwardSignature(forwardKey,password,message,t)
+  val forwardSignature1: ForwardSig = forwardSignature(forwardKey,password,message)
 
   increment(forwardKey,inc2)
 
   println("  Making Forward Signature 2")
-  val forwardSignature2: ForwardSig = forwardSignature(forwardKey,password,message,t)
+  val forwardSignature2: ForwardSig = forwardSignature(forwardKey,password,message)
 
   increment(forwardKey,inc3)
 

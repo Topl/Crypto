@@ -39,45 +39,9 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
   var certificates: List[Cert] = List[Cert]()
   var fileName: String = ""
   var epochNum: Int = 0
-  var json: Json = Map(
-    "crypto" -> Map(
-      "cipher" -> "aes-128-ctr".asJson,
-      "cipherParams" -> Map(
-        "iv" -> Base58.encode(iv).asJson
-      ).asJson,
-      "cipherText" -> Base58.encode(cipherText).asJson,
-      "kdf" -> "scrypt".asJson,
-      "kdfSalt" -> Base58.encode(salt).asJson,
-      "mac" -> Base58.encode(mac).asJson
-    ).asJson,
-    "publicKeyId" -> Base58.encode(pubKeyBytes).asJson,
-    "certificates" -> certificates.asJson
-  ).asJson
+  var json: Json = "".asJson
 
-  def getPrivateKey(password: String): Try[PrivateKey25519] = Try {
-    val derivedKey = getDerivedKey(password, salt)
-    require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
-    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
-    require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
-    PrivateKey25519(decrypted.slice(0,Curve25519.KeyLength), pubKeyBytes)
-  }
-
-  def getKt(password: String): Try[Array[Byte]] = Try {
-    val derivedKey = getDerivedKey(password, salt)
-    require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
-    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
-    require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
-    decrypted.drop(Curve25519.KeyLength)
-  }
-
-  def updateKeys(k: Array[Byte], r: Array[Byte],password: String): Unit = {
-    val (sk, pk) = PrivateKey25519Companion.generateKeys(r)
-    val derivedKey = getDerivedKey(password, salt)
-    val (ct,m) = getAESResult(derivedKey, iv, sk.privKeyBytes++k, encrypt = true)
-    epochNum += 1
-    pubKeyBytes = pk.pubKeyBytes
-    cipherText = ct
-    mac = m
+  def updateJson: Unit = {
     json = Map(
       "publicKeyId" -> Base58.encode(basePubKeyBytes).asJson,
       "evolvedPublicKey" -> Base58.encode(pubKeyBytes).asJson,
@@ -94,9 +58,36 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
       ).asJson,
       "certificates" -> (certificates map {
         case (e1: Array[Byte],e2: Int, e3: Array[Byte], e4: Signature)
-          => e2.toString+", "+Base58.encode(e3)+", "+Base58.encode(e4)
+        => e2.toString+", "+Base58.encode(e3)+", "+Base58.encode(e4)
       }).asJson
     ).asJson
+  }
+
+  def getPrivateKey(password: String): Try[PrivateKey25519] = Try {
+    val derivedKey = getDerivedKey(password, salt)
+    //require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
+    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
+    //require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
+    PrivateKey25519(decrypted.slice(0,Curve25519.KeyLength), pubKeyBytes)
+  }
+
+  def getKt(password: String): Try[Array[Byte]] = Try {
+    val derivedKey = getDerivedKey(password, salt)
+    //require(Keccak256(derivedKey.slice(16, 32) ++ cipherText) sameElements mac, "MAC does not match. Try again")
+    val (decrypted, _) = getAESResult(derivedKey, iv, cipherText, encrypt = false)
+    //require(pubKeyBytes sameElements getPkFromSk(decrypted.slice(0,Curve25519.KeyLength)), "PublicKey in file is invalid")
+    decrypted.drop(Curve25519.KeyLength)
+  }
+
+  def updateKeys(k: Array[Byte], r: Array[Byte],password: String): Unit = {
+    val (sk, pk) = PrivateKey25519Companion.generateKeys(r)
+    val derivedKey = getDerivedKey(password, salt)
+    val (ct,m) = getAESResult(derivedKey, iv, sk.privKeyBytes++k, encrypt = true)
+    epochNum += 1
+    pubKeyBytes = pk.pubKeyBytes
+    cipherText = ct
+    mac = m
+    updateJson
   }
 
   def saveForwardKeyFile: Unit = {
@@ -123,11 +114,11 @@ case class ForwardKeyFile(var pubKeyBytes: Array[Byte],
     var K_old: Array[Byte] = K0
     println("  Generating Certificates")
     for (i <- 0 to tMax) {
-      println("    Working on cert "+i.toString)
       if (i > 0) {
         val (k: Array[Byte], r: Array[Byte]) = forwardPRG(K_old)
         K_old = k
-        forwardKey.updateKeys(k,r,password)
+        val (_, pk) = PrivateKey25519Companion.generateKeys(r)
+        forwardKey.pubKeyBytes = pk.pubKeyBytes
       }
       val PKt = forwardKey.pubKeyBytes
       val tempCert: Cert = (
@@ -168,34 +159,26 @@ object ForwardKeyFile {
     val cipherParams = new ParametersWithIV(new KeyParameter(derivedKey), ivData)
     var aesCtr = new BufferedBlockCipher(new SICBlockCipher(new AESEngine))
     aesCtr.init(encrypt, cipherParams)
-
     val outputText = Array.fill(inputText.length)(1: Byte)
     aesCtr.processBytes(inputText, 0, inputText.length, outputText, 0)
     aesCtr.doFinal(outputText, 0)
-
     (outputText, Keccak256(derivedKey.slice(16, 32) ++ outputText))
   }
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
   def apply(password: String, seed: Array[Byte] = FastCryptographicHash(uuid), tMax: Int, defaultKeyDir: String): ForwardKeyFile = {
-
     val salt = FastCryptographicHash(uuid)
-
     var (sk, pk) = PrivateKey25519Companion.generateKeys(seed)
-
     val ivData = FastCryptographicHash(uuid).slice(0, 16)
-
     val derivedKey = getDerivedKey(password, salt)
     val (cipherText, mac) = getAESResult(derivedKey, ivData, sk.privKeyBytes++seed, encrypt = true)
-
     val tempFile = ForwardKeyFile(pk.pubKeyBytes, cipherText, mac, salt, ivData, pk.pubKeyBytes)
-
     tempFile.certificates = tempFile.forwardCertificates(tempFile,seed,tMax,password)
-
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
     tempFile.fileName = s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"
     val w = new BufferedWriter(new FileWriter(s"$defaultKeyDir/$dateString-${Base58.encode(pk.pubKeyBytes)}.json"))
+    tempFile.updateJson
     w.write(tempFile.json.toString())
     w.close()
     tempFile

@@ -14,17 +14,13 @@ trait forwardSignatures {
   val password = "password"
   val message: Array[Byte] = "message".getBytes
   val seed: Array[Byte] = FastCryptographicHash(uuid)
-  val T = 12
+  val T = 24
   val inc1 = 3
   val inc2 = 2
   val inc3 = 5
   var t: Int = 0
   var t0: Int = 0
   var tp: Int = 0
-
-  def binaryArrayToHex(b: Array[Byte]): String = {
-    b.map("%02x" format _).mkString
-  }
 
   //FWSIG algorithm:
   type Cert = (Array[Byte],Int,Array[Byte],Signature)
@@ -46,8 +42,8 @@ trait forwardSignatures {
   }
 
   //FWSIGN - signature generated with SKt
-  def forwardSignature(fwk: ForwardKeyFile, password: String, message: Array[Byte] , t: Int): ForwardSig = {
-    (fwk.certificates(t), Curve25519.sign(fwk.getPrivateKey(password).get.privKeyBytes,message), t)
+  def forwardSignature(fwk: ForwardKeyFile, password: String, message: Array[Byte]): ForwardSig = {
+    (fwk.certificates(fwk.epochNum), Curve25519.sign(fwk.getPrivateKey(password).get.privKeyBytes,message), fwk.epochNum)
   }
 
   //Key evolution by n number of steps
@@ -65,4 +61,9 @@ trait forwardSignatures {
       }
     }
   }
+
+  def binaryArrayToHex(b: Array[Byte]): String = {
+    b.map("%02x" format _).mkString
+  }
+
 }
