@@ -1,8 +1,10 @@
 package crypto.cryptomain
 
+import bifrost.crypto.hash.FastCryptographicHash
 import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
 import scorex.crypto.signatures.SigningFunctions.Signature
+
 import scala.util.Try
 import scorex.crypto.signatures.Curve25519
 import crypto.forwardsignatures.forwardSignatures
@@ -10,82 +12,108 @@ import crypto.forwardtypes.forwardTypes._
 
 object cryptoMain extends forwardSignatures with App {
 
-  //SIG algorithm:
-  println("\nOld Signing Algorithm:")
-  //KG - generation of PK0 and SK0
+  //Verifiable Random Function (VRF) scheme using Curve25519
+
+  //Non-Secure naive first attempt
   Try(path.deleteRecursively())
   Try(path.createDirectory())
   println("  Generating Key...")
-  val exampleKey: KeyFile = KeyFile(password = password,seed = seed, defaultKeyDir = keyFileDir)
+  val vrfKey: KeyFile = KeyFile(password,seed,keyFileDir)
 
-  //SIGN - signature generated with SK0
-  println("  Signing message...")
-  val exampleSignature: Signature = Curve25519.sign(exampleKey.getPrivateKey(password = password).get.privKeyBytes,message)
+  def vrfProofToHash(p: Array[Byte]): Array[Byte] = {
+    FastCryptographicHash(p)
+  }
 
-  //VER - signature verified with PK0
-  println("  Verify signature...")
-  assert(Curve25519.verify(exampleSignature,message,exampleKey.pubKeyBytes))
+  def vrfProof(key: KeyFile, password: String, s: Array[Byte]): Array[Byte] = {
+    Curve25519.sign(
+      key.getPrivateKey(password = password).get.privKeyBytes,
+      FastCryptographicHash(s)
+    )++FastCryptographicHash(s)
+  }
 
+  def vrfVerify(key: KeyFile, p: Array[Byte], b: Array[Byte]): Boolean = {
+    Curve25519.verify(
+      p.take(Curve25519.SignatureLength),
+      p.drop(Curve25519.SignatureLength),
+      key.pubKeyBytes
+    ) && b.deep == vrfProofToHash(p).deep
+  }
 
-  println("\nForward Signing Algorithm:")
+  val proof = vrfProof(vrfKey,password,seed)
 
-  //FWKG - generation of PK0 and SK0
-  println("  Generating Forward KeyFile")
-  val forwardKey: ForwardKeyFile = ForwardKeyFile(password = password, seed = seed, tMax = T, defaultKeyDir = keyFileDir)
+  val vrfOutput = vrfProofToHash(proof)
+  println("  Verify VRF...")
+  assert(vrfVerify(vrfKey,proof,vrfOutput))
 
-  println("  Signing Message with SK0")
-  val exampleSignature0: Signature = Curve25519.sign(forwardKey.getPrivateKey(password).get.privKeyBytes,message)
-
-  println("  Verify Signature made with SK0, indicating KeyFile is at state 0")
-  assert(Curve25519.verify(exampleSignature0,message,forwardKey.pubKeyBytes))
-  println("    "+Try(Curve25519.verify(exampleSignature0,message,forwardKey.pubKeyBytes)))
-
-  increment(forwardKey,inc1)
-
-  println("  Making Forward Signature 1")
-  val forwardSignature1: ForwardSig = forwardSignature(forwardKey,password,message)
-
-  increment(forwardKey,inc2)
-
-  println("  Making Forward Signature 2")
-  val forwardSignature2: ForwardSig = forwardSignature(forwardKey,password,message)
-
-  increment(forwardKey,inc3)
-
-  println("  Verify Signature made with SK0 with the current evolved Public Key PKt (should fail)")
-  println("    "+Try(Curve25519.verify(exampleSignature0,message,forwardKey.pubKeyBytes)))
-
-  println("  Verify Signature made with SK0 with Base Public Key PK0 (should succeed)")
-  println("    "+Try(Curve25519.verify(exampleSignature0,message,forwardKey.basePubKeyBytes)))
-
-  println("  Attempting to forge false signature...")
-  val forwardSignature3: ForwardSig =
-    (forwardKey.certificates(5), Curve25519.sign(forwardKey.getPrivateKey(password).get.privKeyBytes,message), 5)
-
-  println("  Verifying Forward Signature 1")
-  assert(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature1))
-  println("    "+Try(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature1)))
-
-  println("  Verifying Forward Signature 2")
-  assert(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature2))
-  println("    "+Try(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature2)))
-
-  println("  Verify false Signature 3 (should fail)")
-  println("    "+Try(forwardVerify(forwardKey.basePubKeyBytes,message,forwardSignature3)))
-
-  val tempFileName = forwardKey.fileName
-
-  val forwardKey2: ForwardKeyFile = ForwardKeyFile.readFile(tempFileName)
-
-  forwardKey2.fileName = tempFileName+"copy"
-  forwardKey2.saveForwardKeyFile
-  println("  Verifying Forward Signature 1 with readFile")
-  assert(forwardVerify(forwardKey2.basePubKeyBytes,message,forwardSignature1))
-  println("    "+Try(forwardVerify(forwardKey2.basePubKeyBytes,message,forwardSignature1)))
+  
 
 
 
+
+
+
+  if (false) {
+    //SIG algorithm:
+    println("\nOld Signing Algorithm:")
+    //KG - generation of PK0 and SK0
+    Try(path.deleteRecursively())
+    Try(path.createDirectory())
+    println("  Generating Key...")
+    val exampleKey: KeyFile = KeyFile(password = password, seed = seed, defaultKeyDir = keyFileDir)
+
+    //SIGN - signature generated with SK0
+    println("  Signing message...")
+    val exampleSignature: Signature = Curve25519.sign(exampleKey.getPrivateKey(password = password).get.privKeyBytes, message)
+
+    //VER - signature verified with PK0
+    println("  Verify signature...")
+    assert(Curve25519.verify(exampleSignature, message, exampleKey.pubKeyBytes))
+
+    println("\nForward Signing Algorithm:")
+
+    //FWKG - generation of PK0 and SK0
+    println("  Generating Forward KeyFile")
+    val forwardKey: ForwardKeyFile = ForwardKeyFile(password = password, seed = seed, tMax = T, defaultKeyDir = keyFileDir)
+
+    println("  Signing Message with SK0")
+    val exampleSignature0: Signature = Curve25519.sign(forwardKey.getPrivateKey(password).get.privKeyBytes, message)
+
+    println("  Verify Signature made with SK0, indicating KeyFile is at state 0")
+    assert(Curve25519.verify(exampleSignature0, message, forwardKey.pubKeyBytes))
+    println("    " + Try(Curve25519.verify(exampleSignature0, message, forwardKey.pubKeyBytes)))
+
+    increment(forwardKey, inc1)
+
+    println("  Making Forward Signature 1")
+    val forwardSignature1: ForwardSig = forwardSignature(forwardKey, password, message)
+
+    increment(forwardKey, inc2)
+
+    println("  Making Forward Signature 2")
+    val forwardSignature2: ForwardSig = forwardSignature(forwardKey, password, message)
+
+    increment(forwardKey, inc3)
+
+    println("  Verify Signature made with SK0 with the current evolved Public Key PKt (should fail)")
+    println("    " + Try(Curve25519.verify(exampleSignature0, message, forwardKey.pubKeyBytes)))
+
+    println("  Verify Signature made with SK0 with Base Public Key PK0 (should succeed)")
+    println("    " + Try(Curve25519.verify(exampleSignature0, message, forwardKey.basePubKeyBytes)))
+
+    println("  Attempting to forge false signature...")
+    val forwardSignature3: ForwardSig =
+      (forwardKey.certificates(5), Curve25519.sign(forwardKey.getPrivateKey(password).get.privKeyBytes, message), 5)
+
+    println("  Verifying Forward Signature 1")
+    assert(forwardVerify(forwardKey.basePubKeyBytes, message, forwardSignature1))
+    println("    " + Try(forwardVerify(forwardKey.basePubKeyBytes, message, forwardSignature1)))
+
+    println("  Verifying Forward Signature 2")
+    assert(forwardVerify(forwardKey.basePubKeyBytes, message, forwardSignature2))
+    println("    " + Try(forwardVerify(forwardKey.basePubKeyBytes, message, forwardSignature2)))
+
+    println("  Verify false Signature 3 (should fail)")
+    println("    " + Try(forwardVerify(forwardKey.basePubKeyBytes, message, forwardSignature3)))
+  }
 
 }
-
-
