@@ -9,6 +9,8 @@ import scala.util.Try
 import scorex.crypto.signatures.{Curve25519, Curve25519VRF}
 import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
+import crypto.forwardkeygen.ForwardKeyFile.uuid
+import scala.math.BigInt
 
 object cryptoMain extends forwardSignatures with App {
 
@@ -24,35 +26,70 @@ object cryptoMain extends forwardSignatures with App {
     FastCryptographicHash(p)
   }
 
-  def vrfProof(key: KeyFile, password: String, s: Array[Byte]): Array[Byte] = {
+  def vrfProof(key: Array[Byte], password: String, s: Array[Byte]): Array[Byte] = {
     Curve25519VRF.sign(
-      key.getPrivateKey(password = password).get.privKeyBytes,
+      key,
       FastCryptographicHash(s)
     )++FastCryptographicHash(s)
   }
 
-  def vrfVerify(key: KeyFile, p: Array[Byte], b: Array[Byte]): Boolean = {
+  def vrfVerify(key: Array[Byte], p: Array[Byte], b: Array[Byte]): Boolean = {
     Curve25519VRF.verify(
       p.take(Curve25519VRF.SignatureLength),
       p.drop(Curve25519VRF.SignatureLength),
-      key.pubKeyBytes
+      key
     ) && b.deep == vrfProofToHash(p).deep
   }
 
-  val proof = vrfProof(vrfKey,password,seed)
+  def byteToBigInt(b: Byte): BigInt = BigInt(b & 0xff)
 
-  val vrfOutput = vrfProofToHash(proof)
-  println("  Verify VRF...")
-  assert(vrfVerify(vrfKey,proof,vrfOutput))
+  def bigIntToBinary(b: BigInt): String = String.format("%8s", b.toString(2) ).replace(' ', '0')
+
+  val sk = vrfKey.getPrivateKey(password = password).get.privKeyBytes
+  val pk = vrfKey.pubKeyBytes
+
+  var proof: Array[Byte] = Array()
+  proof = vrfProof(sk,password,FastCryptographicHash(uuid))
+
+  var vrfOutput: Array[Byte] = Array()
+  vrfOutput = vrfProofToHash(proof)
+
+  val numIterate = 100000
+  var bin: Array[Int] = Array.fill(Curve25519VRF.SignatureLength)(0)
+  for (i <- 1 to numIterate) {
+    val oldsig: Array[Byte] = proof.take(Curve25519VRF.SignatureLength)
+    proof = vrfProof(sk,password,FastCryptographicHash(uuid))
+    val newsig: Array[Byte] = proof.take(Curve25519VRF.SignatureLength)
+    vrfOutput = vrfProofToHash(proof)
+    assert(vrfVerify(pk,proof,vrfOutput))
+    //Bitwise exclusive-or of signatures to detect differences
+    val diff: Array[BigInt] = (oldsig.map(byteToBigInt(_)), newsig.map(byteToBigInt(_))).zipped.map(_^_)
+    for (j <- 0 to Curve25519VRF.SignatureLength-1) {
+      //print(j+" ")
+      //print(j/8+" ")
+      //print(j%8+" ")
+      //print(bigIntToBinary(diff(j/8))+" ")
+      //println(bigIntToBinary(diff(j/8))(j%8)+" ")
+      //println(bigIntToBinary(diff(j/8))(j%8).toString.toInt)
+      val bit = bigIntToBinary(diff(j/8))(j%8).toString.toInt
+      if (bit == 1) {
+        bin(j) += 0
+      } else {
+        bin(j) += 1
+      }
+    }
+  }
 
   println("  Fvrf: \n  "+binaryArrayToHex(vrfOutput)+"\n  ")
   println("  Proof: \n  "+binaryArrayToHex(proof.take(Curve25519VRF.SignatureLength))+"\n  "+binaryArrayToHex(proof.drop(Curve25519VRF.SignatureLength))+"\n  ")
   println("  Signature 1: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
   println("  Signature 2: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
-
-
-
-
+  println("  Diff histogram of successive signatures 64-bit signatures after "+numIterate+" iterations (Close to 0 = good... Maybe?): ")
+  for (i <- 0 until Curve25519VRF.SignatureLength){
+    print(bin(i)-numIterate/2)
+    print(", ")
+  }
+  print("\n")
 
 
   if (false) {
