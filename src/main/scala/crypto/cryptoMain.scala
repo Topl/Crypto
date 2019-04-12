@@ -6,7 +6,7 @@ import bifrost.keygen.KeyFile
 import scorex.crypto.signatures.SigningFunctions.Signature
 
 import scala.util.Try
-import scorex.crypto.signatures.Curve25519
+import scorex.crypto.signatures.{Curve25519, Curve25519VRF}
 import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
 
@@ -25,16 +25,16 @@ object cryptoMain extends forwardSignatures with App {
   }
 
   def vrfProof(key: KeyFile, password: String, s: Array[Byte]): Array[Byte] = {
-    Curve25519.sign(
+    Curve25519VRF.sign(
       key.getPrivateKey(password = password).get.privKeyBytes,
       FastCryptographicHash(s)
     )++FastCryptographicHash(s)
   }
 
   def vrfVerify(key: KeyFile, p: Array[Byte], b: Array[Byte]): Boolean = {
-    Curve25519.verify(
-      p.take(Curve25519.SignatureLength),
-      p.drop(Curve25519.SignatureLength),
+    Curve25519VRF.verify(
+      p.take(Curve25519VRF.SignatureLength),
+      p.drop(Curve25519VRF.SignatureLength),
       key.pubKeyBytes
     ) && b.deep == vrfProofToHash(p).deep
   }
@@ -45,7 +45,10 @@ object cryptoMain extends forwardSignatures with App {
   println("  Verify VRF...")
   assert(vrfVerify(vrfKey,proof,vrfOutput))
 
-  
+  println("  Fvrf: \n  "+binaryArrayToHex(vrfOutput)+"\n  ")
+  println("  Proof: \n  "+binaryArrayToHex(proof.take(Curve25519VRF.SignatureLength))+"\n  "+binaryArrayToHex(proof.drop(Curve25519VRF.SignatureLength))+"\n  ")
+  println("  Signature 1: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
+  println("  Signature 2: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
 
 
 

@@ -13,7 +13,7 @@ trait forwardSignatures {
   val path: Path = Path(keyFileDir)
   val password = "password"
   val message: Array[Byte] = "message".getBytes
-  val seed: Array[Byte] = FastCryptographicHash(uuid)
+  val seed: Array[Byte] = "seed".getBytes()//FastCryptographicHash(uuid)
   val T = 24
   val inc1 = 3
   val inc2 = 2

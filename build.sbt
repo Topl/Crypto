@@ -63,6 +63,9 @@ libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.19"
 libraryDependencies += "org.json4s" %% "json4s-native" % "3.5.2"
 libraryDependencies += "com.thesamet.scalapb" %% "scalapb-json4s" % "0.7.0"
 
+// https://mvnrepository.com/artifact/org.whispersystems/curve25519-java
+libraryDependencies += "org.whispersystems" % "curve25519-java" % "0.5.0"
+
 val consoleDependencies = Seq(
   // https://mvnrepository.com/artifact/org.apache.httpcomponents/httpclient
   "org.apache.httpcomponents" % "httpclient" % "4.5.3",
