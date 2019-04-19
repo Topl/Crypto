@@ -3,6 +3,7 @@ package crypto.cryptomain
 import bifrost.crypto.hash.FastCryptographicHash
 import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
+import crypto.Ed25519vrf.Ed25519VRF
 import scorex.crypto.signatures.SigningFunctions.Signature
 
 import scala.util.Try
@@ -10,12 +11,21 @@ import scorex.crypto.signatures.{Curve25519, Curve25519VRF}
 import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
 import crypto.forwardkeygen.ForwardKeyFile.uuid
+
 import scala.math.BigInt
 
 object cryptoMain extends forwardSignatures with App {
 
   //Verifiable Random Function (VRF) scheme using Curve25519
+  val (pk, sk) = Ed25519VRF.vrfKeypair(seed)
+  println((binaryArrayToHex(pk))+"\n")
+  println(binaryArrayToHex((sk)))
 
+  assert(Ed25519VRF.verifyKeyPair(sk,pk))
+
+
+
+  if (false) {
   //Non-Secure naive first attempt
   Try(path.deleteRecursively())
   Try(path.createDirectory())
@@ -92,7 +102,6 @@ object cryptoMain extends forwardSignatures with App {
   print("\n")
 
 
-  if (false) {
     //SIG algorithm:
     println("\nOld Signing Algorithm:")
     //KG - generation of PK0 and SK0

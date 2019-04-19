@@ -40,7 +40,8 @@ object Curve25519VRF extends EllipticCurve[Nat32] {
 
   override def sign(privateKey: PrivateKey, message: MessageToSign): Signature = {
     require(privateKey.length == KeyLength)
-    provider.calculateSignature(Sha512.hash(message), privateKey, message)
+//    provider.calculateSignature(Sha512.hash(message), privateKey, message)
+    provider.calculateSignature(provider.getRandom(SignatureLength), privateKey, message)
   }
 
   override def verify(signature: Signature, message: MessageToSign, publicKey: PublicKey): Boolean = Try {
