@@ -1,6 +1,7 @@
 package crypto.cryptomain
 
 import bifrost.crypto.hash.FastCryptographicHash
+import scorex.crypto.hash.Sha512
 import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
 import crypto.Ed25519vrf.Ed25519VRF
@@ -11,6 +12,8 @@ import scorex.crypto.signatures.{Curve25519, Curve25519VRF}
 import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
 import crypto.forwardkeygen.ForwardKeyFile.uuid
+import crypto.crypto.Ed25519
+import crypto.privateMethodCaller.PrivateMethodExposer
 
 import scala.math.BigInt
 
@@ -18,12 +21,34 @@ object cryptoMain extends forwardSignatures with App {
 
   //Verifiable Random Function (VRF) scheme using Curve25519
   val (pk, sk) = Ed25519VRF.vrfKeypair(seed)
-  println((binaryArrayToHex(pk))+"\n")
-  println(binaryArrayToHex((sk)))
+  println(binaryArrayToHex(sk))
+  println(binaryArrayToHex(pk))
 
   assert(Ed25519VRF.verifyKeyPair(sk,pk))
 
+  //In EdDSA the private key is 256-bit random data
+  //Public key is generated in the following
 
+  def pruneHash(sk: Array[Byte]): Array[Byte] = {
+    val h: Array[Byte] = Sha512(sk).take(32)
+    h.update(0,(h(0) & 0xF8).toByte)
+    h.update(31,(h(31) & 0x7F).toByte)
+    h.update(31,(h(31) | 0x40).toByte)
+    h
+  }
+  def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
+    def p(x: AnyRef): PrivateMethodExposer = new PrivateMethodExposer(x)
+    var pk: Array[Byte] = Array.fill(32){0}
+    val ref: AnyRef = Ed25519.scalarMultBaseEncoded(s,pk,0)
+    p(Ed25519.scalarMultBaseEncoded(s,pk,0))
+  }
+
+
+  println(binaryArrayToHex(pruneHash(sk)))
+
+
+
+  //assert(Ed25519VRF.verifyKeyPair(sk,pkFromSk(sk)))
 
   if (false) {
   //Non-Secure naive first attempt
