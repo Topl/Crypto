@@ -13,11 +13,25 @@ import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
 import crypto.forwardkeygen.ForwardKeyFile.uuid
 import crypto.crypto.Ed25519
-import crypto.privateMethodCaller.PrivateMethodExposer
 
 import scala.math.BigInt
 
 object cryptoMain extends forwardSignatures with App {
+
+
+  def callPrivateTyped(obj: AnyRef, methodName: String, parameters:(AnyRef,Class[_])*) = {
+    val parameterValues = parameters.map(_._1)
+    val parameterTypes = parameters.map(_._2)
+    val method = obj.getClass.getDeclaredMethod(methodName, parameterTypes:_*)
+    method.setAccessible(true)
+    println("Call .asInstanceOf[%s] to cast" format method.getReturnType.getName)
+    method.invoke(obj, parameterValues:_*)
+  }
+
+  // for convenience
+  def callPrivate(obj: AnyRef, methodName: String, parameters:AnyRef*) = {
+    callPrivateTyped(obj, methodName, parameters.map(c => (c, c.getClass)):_*)
+  }
 
   //Verifiable Random Function (VRF) scheme using Curve25519
   val (pk, sk) = Ed25519VRF.vrfKeypair(seed)
@@ -36,19 +50,17 @@ object cryptoMain extends forwardSignatures with App {
     h.update(31,(h(31) | 0x40).toByte)
     h
   }
+
   def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
-    def p(x: AnyRef): PrivateMethodExposer = new PrivateMethodExposer(x)
     var pk: Array[Byte] = Array.fill(32){0}
-    val ref: AnyRef = Ed25519.scalarMultBaseEncoded(s,pk,0)
-    p(Ed25519.scalarMultBaseEncoded(s,pk,0))
+    Ed25519.scalarMultBaseEncoded(s,pk,0)
+    pk
   }
 
 
-  println(binaryArrayToHex(pruneHash(sk)))
-
-
-
-  //assert(Ed25519VRF.verifyKeyPair(sk,pkFromSk(sk)))
+  println(binaryArrayToHex(scalarMultBaseEncoded(pruneHash(sk))))
+  
+  assert(Ed25519VRF.verifyKeyPair(sk,scalarMultBaseEncoded(pruneHash(sk))))
 
   if (false) {
   //Non-Secure naive first attempt
