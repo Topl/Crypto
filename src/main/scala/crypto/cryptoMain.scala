@@ -18,24 +18,11 @@ import scala.math.BigInt
 
 object cryptoMain extends forwardSignatures with App {
 
-
-  def callPrivateTyped(obj: AnyRef, methodName: String, parameters:(AnyRef,Class[_])*) = {
-    val parameterValues = parameters.map(_._1)
-    val parameterTypes = parameters.map(_._2)
-    val method = obj.getClass.getDeclaredMethod(methodName, parameterTypes:_*)
-    method.setAccessible(true)
-    println("Call .asInstanceOf[%s] to cast" format method.getReturnType.getName)
-    method.invoke(obj, parameterValues:_*)
-  }
-
-  // for convenience
-  def callPrivate(obj: AnyRef, methodName: String, parameters:AnyRef*) = {
-    callPrivateTyped(obj, methodName, parameters.map(c => (c, c.getClass)):_*)
-  }
-
-  //Verifiable Random Function (VRF) scheme using Curve25519
+  //Verifiable Random Function (VRF) scheme using Ed25519
   val (pk, sk) = Ed25519VRF.vrfKeypair(seed)
+  println("Private Key")
   println(binaryArrayToHex(sk))
+  println("Public Key")
   println(binaryArrayToHex(pk))
 
   assert(Ed25519VRF.verifyKeyPair(sk,pk))
@@ -43,101 +30,49 @@ object cryptoMain extends forwardSignatures with App {
   //In EdDSA the private key is 256-bit random data
   //Public key is generated in the following
 
-  def pruneHash(sk: Array[Byte]): Array[Byte] = {
-    val h: Array[Byte] = Sha512(sk).take(32)
-    h.update(0,(h(0) & 0xF8).toByte)
-    h.update(31,(h(31) & 0x7F).toByte)
-    h.update(31,(h(31) | 0x40).toByte)
-    h
-  }
-
-  def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
-    var pk: Array[Byte] = Array.fill(32){0}
-    Ed25519.scalarMultBaseEncoded(s,pk,0)
-    pk
-  }
 
 
-  println(binaryArrayToHex(scalarMultBaseEncoded(pruneHash(sk))))
-  
-  assert(Ed25519VRF.verifyKeyPair(sk,scalarMultBaseEncoded(pruneHash(sk))))
+  //Non-Secure first attempt
 
-  if (false) {
-  //Non-Secure naive first attempt
-  Try(path.deleteRecursively())
-  Try(path.createDirectory())
-  println("  Generating Key...")
-  val vrfKey: KeyFile = KeyFile(password,seed,keyFileDir)
-
-  def vrfProofToHash(p: Array[Byte]): Array[Byte] = {
-    FastCryptographicHash(p)
-  }
-
-  def vrfProof(key: Array[Byte], password: String, s: Array[Byte]): Array[Byte] = {
-    Curve25519VRF.sign(
-      key,
-      FastCryptographicHash(s)
-    )++FastCryptographicHash(s)
-  }
-
-  def vrfVerify(key: Array[Byte], p: Array[Byte], b: Array[Byte]): Boolean = {
-    Curve25519VRF.verify(
-      p.take(Curve25519VRF.SignatureLength),
-      p.drop(Curve25519VRF.SignatureLength),
-      key
-    ) && b.deep == vrfProofToHash(p).deep
-  }
-
-  def byteToBigInt(b: Byte): BigInt = BigInt(b & 0xff)
-
-  def bigIntToBinary(b: BigInt): String = String.format("%8s", b.toString(2) ).replace(' ', '0')
-
-  val sk = vrfKey.getPrivateKey(password = password).get.privKeyBytes
-  val pk = vrfKey.pubKeyBytes
 
   var proof: Array[Byte] = Array()
-  proof = vrfProof(sk,password,FastCryptographicHash(uuid))
+  proof = Ed25519VRF.vrfProof(sk,FastCryptographicHash(uuid))
 
   var vrfOutput: Array[Byte] = Array()
-  vrfOutput = vrfProofToHash(proof)
+  vrfOutput = Ed25519VRF.vrfProofToHash(proof)
 
-  val numIterate = 100000
-  var bin: Array[Int] = Array.fill(Curve25519VRF.SignatureLength)(0)
-  for (i <- 1 to numIterate) {
-    val oldsig: Array[Byte] = proof.take(Curve25519VRF.SignatureLength)
-    proof = vrfProof(sk,password,FastCryptographicHash(uuid))
-    val newsig: Array[Byte] = proof.take(Curve25519VRF.SignatureLength)
-    vrfOutput = vrfProofToHash(proof)
-    assert(vrfVerify(pk,proof,vrfOutput))
-    //Bitwise exclusive-or of signatures to detect differences
-    val diff: Array[BigInt] = (oldsig.map(byteToBigInt(_)), newsig.map(byteToBigInt(_))).zipped.map(_^_)
-    for (j <- 0 to Curve25519VRF.SignatureLength-1) {
-      //print(j+" ")
-      //print(j/8+" ")
-      //print(j%8+" ")
-      //print(bigIntToBinary(diff(j/8))+" ")
-      //println(bigIntToBinary(diff(j/8))(j%8)+" ")
-      //println(bigIntToBinary(diff(j/8))(j%8).toString.toInt)
-      val bit = bigIntToBinary(diff(j/8))(j%8).toString.toInt
-      if (bit == 1) {
-        bin(j) += 0
-      } else {
-        bin(j) += 1
-      }
-    }
-  }
+  assert(Ed25519VRF.vrfVerify(pk,proof,vrfOutput))
 
-  println("  Fvrf: \n  "+binaryArrayToHex(vrfOutput)+"\n  ")
-  println("  Proof: \n  "+binaryArrayToHex(proof.take(Curve25519VRF.SignatureLength))+"\n  "+binaryArrayToHex(proof.drop(Curve25519VRF.SignatureLength))+"\n  ")
-  println("  Signature 1: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
-  println("  Signature 2: \n  "+binaryArrayToHex(Curve25519VRF.sign(vrfKey.getPrivateKey(password = password).get.privKeyBytes, FastCryptographicHash(seed)))+"\n  ")
-  println("  Diff histogram of successive signatures 64-bit signatures after "+numIterate+" iterations (Close to 0 = good... Maybe?): ")
-  for (i <- 0 until Curve25519VRF.SignatureLength){
-    print(bin(i)-numIterate/2)
-    print(", ")
-  }
-  print("\n")
+//  val numIterate = 100000
+//  var bin: Array[Int] = Array.fill(Ed25519.SIGNATURE_SIZE)(0)
+//  for (i <- 1 to numIterate) {
+//    val oldsig: Array[Byte] = proof.take(Ed25519.SIGNATURE_SIZE)
+//    proof = vrfProof(sk,FastCryptographicHash(uuid))
+//    val newsig: Array[Byte] = proof.take(Ed25519.SIGNATURE_SIZE)
+//    vrfOutput = vrfProofToHash(proof)
+//    assert(vrfVerify(pk,proof,vrfOutput))
+//    //Bitwise exclusive-or of signatures to detect differences
+//    val diff: Array[BigInt] = (oldsig.map(byteToBigInt(_)), newsig.map(byteToBigInt(_))).zipped.map(_^_)
+//    for (j <- 0 to Ed25519.SIGNATURE_SIZE-1) {
+//      val bit = bigIntToBinary(diff(j/8))(j%8).toString.toInt
+//      if (bit == 1) {
+//        bin(j) += 0
+//      } else {
+//        bin(j) += 1
+//      }
+//    }
+//  }
+//
+  println("  VRF: \n  "+binaryArrayToHex(vrfOutput)+"\n  ")
+  println("  Proof: \n  "+binaryArrayToHex(proof.take(Ed25519.SIGNATURE_SIZE))+"\n  "+binaryArrayToHex(proof.drop(Ed25519.SIGNATURE_SIZE))+"\n  ")
+//  println("  Diff histogram of successive signatures after "+numIterate+" iterations (Close to 0 = good... Maybe?): ")
+//  for (i <- 0 until Curve25519VRF.SignatureLength){
+//    print(bin(i)-numIterate/2)
+//    print(", ")
+//  }
+//  print("\n")
 
+  if (false) {
 
     //SIG algorithm:
     println("\nOld Signing Algorithm:")
