@@ -19,6 +19,7 @@ import org.bouncycastle.crypto.params.Ed25519KeyGenerationParameters
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
 import crypto.crypto.Ed25519
+import crypto.crypto.Ed25519.{PointAccum, PointExt}
 import scalaz.Alpha
 import scorex.crypto.hash.Sha512
 
@@ -95,8 +96,9 @@ object Ed25519VRF {
   def verifyPublicKey(pk: Array[Byte]): Boolean = {
     if (pk.length == Ed25519.PUBLIC_KEY_SIZE) {
       var pkt: Array[Byte] = Array.fill[Byte](Ed25519.PUBLIC_KEY_SIZE)(0)
-
-      if (pkt.deep == pk.deep){
+      var pkext = new Ed25519.PointExt
+      val decoded: Boolean = Ed25519.decodePointVar(pk,0,false,pkext)
+      if (decoded){
         true
       }else {
         false
@@ -114,6 +116,40 @@ object Ed25519VRF {
   def vrfProofToHash(p: Array[Byte]): Array[Byte] = {
     FastCryptographicHash(p)
   }
+
+
+
+  /*
+   Ed25519 is EdDSA instantiated with:
+ +-----------+-------------------------------------------------------+
+ | Parameter |                                                 Value |
+ +-----------+-------------------------------------------------------+
+ |     p     |     p of edwards25519 in [RFC7748] (i.e., 2^255 - 19) |
+ |     b     |                                                   256 |
+ |  encoding |    255-bit little-endian encoding of {0, 1, ..., p-1} |
+ |  of GF(p) |                                                       |
+ |    H(x)   |            SHA-512(dom2(phflag,context)||x) [RFC6234] |
+ |     c     |       base 2 logarithm of cofactor of edwards25519 in |
+ |           |                                   [RFC7748] (i.e., 3) |
+ |     n     |                                                   254 |
+ |     d     |  d of edwards25519 in [RFC7748] (i.e., -121665/121666 |
+ |           | = 370957059346694393431380835087545651895421138798432 |
+ |           |                           19016388785533085940283555) |
+ |     a     |                                                    -1 |
+ |     B     | (X(P),Y(P)) of edwards25519 in [RFC7748] (i.e., (1511 |
+ |           | 22213495354007725011514095885315114540126930418572060 |
+ |           | 46113283949847762202, 4631683569492647816942839400347 |
+ |           |      5163141307993866256225615783033603165251855960)) |
+ |     L     |             order of edwards25519 in [RFC7748] (i.e., |
+ |           |        2^252+27742317777372353535851937790883648493). |
+ |    PH(x)  |                       x (i.e., the identity function) |
+ +-----------+-------------------------------------------------------+
+ Table 1: Parameters of Ed25519
+   */
+
+
+
+
 
 
   /*
@@ -145,7 +181,7 @@ and need not be rederived each time)
 
   def vrfProof(sk: Array[Byte], alpha: Array[Byte]): Array[Byte] = {
 
-    val suite = Array(0x03.toByte)
+    val suite: Array[Byte] = Array(0x03)
 
     def pruneHash(s: Array[Byte]): Array[Byte] = {
       val h: Array[Byte] = Sha512(s).take(32)
@@ -156,7 +192,7 @@ and need not be rederived each time)
     }
 
     def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
-      var r: Array[Byte] = Array.fill(32){0}
+      var r: Array[Byte] = Array.fill(32){0x00}
       Ed25519.scalarMultBaseEncoded(s,r,0)
       r
     }
@@ -192,18 +228,87 @@ and need not be rederived each time)
     E. ctr = ctr + 1
     Output H
      */
-    def ECVRF_hash_to_try_and_increment(Y: Array[Byte],a: Array[Byte]): Array[Byte] = {
+    def ECVRF_hash_to_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
       var ctr = 0
       val one = Array(0x01.toByte)
-      var H: Array[Byte] = Array()
+      var hash: Array[Byte] = Array()
+      var H = new PointExt
+      var HR = new PointAccum
       var Hlogic = false
       while (!Hlogic) {
         val ctr_byte = Array(ctr.toByte)
-        H = pruneHash(suite++one++Y++a++ctr_byte)
+        hash = Sha512(suite++one++Y++a++ctr_byte).take(Ed25519.POINT_BYTES)
+        Hlogic = Ed25519.decodePointVar(hash,0,false,H)
+        if (Hlogic){
+          Hlogic != Ed25519.isNeutralPoint(H)
+        }
         ctr += 1
       }
-      H
+      var np: Array[Int] = Array.fill(Ed25519.SCALAR_INTS){0}
+      var nb: Array[Int] = Array.fill(Ed25519.SCALAR_INTS){0}
+      var cofactor: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00}
+      var oneScalar: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00}
+      cofactor.update(0,0x08)
+      oneScalar.update(0,0x01)
+      assert(Ed25519.checkScalarVar(cofactor))
+      assert(Ed25519.checkScalarVar(oneScalar))
+      Ed25519.decodeScalar(cofactor,0,np)
+      Ed25519.decodeScalar(oneScalar,0,nb)
+      Ed25519.scalarMultStraussVar(nb,np,H,HR)
+      (HR, hash)
     }
+
+    /*
+    ECVRF_nonce_generation_RFC8032(SK, h_string)
+    Input:
+    SK - an ECVRF secret key
+    h_string - an octet string
+    Output:
+    k - an integer between 0 and q-1
+    Steps:
+    1. hashed_sk_string = Hash (SK)
+    2. truncated_hashed_sk_string =
+    hashed_sk_string[32]...hashed_sk_string[63]
+    3. k_string = Hash(truncated_hashed_sk_string || h_string)
+    4. k = string_to_int(k_string) mod q
+    */
+
+    def ECVRF_nonce_generation_RFC8032(sk: Array[Byte],h: Array[Byte]): Array[Byte] = {
+      val trunc_hashed_sk = Sha512(sk).drop(32)
+      val k_string = Sha512(trunc_hashed_sk++h)
+      Ed25519.reduceScalar(k_string)
+    }
+
+    /*
+      ECVRF_hash_points(P1, P2, ..., PM)
+      Input:
+      P1...PM - EC points in G
+      Output:
+      c - hash value, integer between 0 and 2^(8n)-1
+      Steps:
+      1. two_string = 0x02 = int_to_string(2, 1), a single octet with
+      value 2
+      2. Initialize str = suite_string || two_string
+      3. for PJ in [P1, P2, ... PM]:
+      str = str || point_to_string(PJ)
+      4. c_string = Hash(str)
+      5. truncated_c_string = c_string[0]...c_string[n-1]
+      6. c = string_to_int(truncated_c_string)
+      7. Output c
+    */
+
+    def ECVRF_hash_points(p1: PointExt, p2: PointExt, p3: PointExt, p4: PointExt): Array[Byte] ={
+      val two: Array[Byte] = Array(0x02)
+      var str: Array[Byte] = suite++two
+      str = str
+      Sha512("")
+    }
+
+    val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_try_and_increment(pk,alpha)
+
+    val nonce = ECVRF_nonce_generation_RFC8032(sk,H._2)
+    assert(Ed25519.checkScalarVar(nonce))
+
 
 
     val m = FastCryptographicHash(alpha)

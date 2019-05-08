@@ -1129,4 +1129,22 @@ public abstract class Ed25519
 
         return implVerify(sig, sigOff, pk, pkOff, ctx, phflag, m, 0, m.length);
     }
+
+    public static boolean isNeutralPoint(PointExt p)
+    {
+        if (X25519Field.isZeroVar(p.x))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean isNeutralPoint(PointAccum p)
+    {
+        if (X25519Field.isZeroVar(p.x))
+        {
+            return true;
+        }
+        return false;
+    }
 }
