@@ -203,7 +203,10 @@ object Ed25519VRF {
   E. ctr = ctr + 1
   Output H
  */
-  def ECVRF_hash_to_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
+
+  //This leads to side channel attack (timing attack) if alpha is a secret
+
+  def ECVRF_hash_to_curve_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
     var ctr = 0
     val one = Array(0x01.toByte)
     var hash: Array[Byte] = Array()
@@ -311,7 +314,7 @@ object Ed25519VRF {
     // public key
     val pk = scalarMultBaseEncoded(x)
     assert(verifyKeyPair(sk,pk))
-    val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_try_and_increment(pk,alpha)
+    val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_curve_try_and_increment(pk,alpha)
     val nonce = ECVRF_nonce_generation_RFC8032(sk,H._2)
     assert(Ed25519.checkScalarVar(nonce))
     val gamma = new PointAccum
@@ -366,7 +369,7 @@ object Ed25519VRF {
     assert(Ed25519.checkScalarVar(c))
     assert(Ed25519.checkScalarVar(s))
     assert(verifyPublicKey(pk))
-    val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_try_and_increment(pk,alpha)
+    val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_curve_try_and_increment(pk,alpha)
     var gamma = new PointExt
     var Y = new PointExt
     Ed25519.decodePointVar(gamma_str,0,false,gamma)
