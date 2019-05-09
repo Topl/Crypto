@@ -207,6 +207,7 @@ Output H
     Ed25519.decodeScalar(cofactor,0,np)
     Ed25519.decodeScalar(zeroScalar,0,nb)
     Ed25519.scalarMultStraussVar(nb,np,H,HR)
+    Ed25519.encodePoint(HR,hash,0)
     (HR, hash)
   }
 
@@ -266,27 +267,27 @@ Output H
   }
 
   /*
-ECVRF Proving
-ECVRF_prove(SK, alpha_string)
-Input:
-SK - VRF private key
-alpha_string = input alpha, an octet string
-Output:
-pi_string - VRF proof, octet string of length ptLen+n+qLen
-Steps:
-1. Use SK to derive the VRF secret scalar x and the VRF public key Y
-= x*B
-(this derivation depends on the ciphersuite, as per Section 5.5;
-these values can be cached, for example, after key generation,
-and need not be rederived each time)
-2. H = ECVRF_hash_to_curve(suite_string, Y, alpha_string)
-3. h_string = point_to_string(H)
-4. Gamma = x*H
-5. k = ECVRF_nonce_generation(SK, h_string)
-6. c = ECVRF_hash_points(H, Gamma, k*B, k*H)
-7. s = (k + c*x) mod q
-8. pi_string = point_to_string(Gamma) || int_to_string(c, n) || int_to_string(s, qLen)
-9. Output pi_string
+  ECVRF Proving
+  ECVRF_prove(SK, alpha_string)
+  Input:
+  SK - VRF private key
+  alpha_string = input alpha, an octet string
+  Output:
+  pi_string - VRF proof, octet string of length ptLen+n+qLen
+  Steps:
+  1. Use SK to derive the VRF secret scalar x and the VRF public key Y
+  = x*B
+  (this derivation depends on the ciphersuite, as per Section 5.5;
+  these values can be cached, for example, after key generation,
+  and need not be rederived each time)
+  2. H = ECVRF_hash_to_curve(suite_string, Y, alpha_string)
+  3. h_string = point_to_string(H)
+  4. Gamma = x*H
+  5. k = ECVRF_nonce_generation(SK, h_string)
+  6. c = ECVRF_hash_points(H, Gamma, k*B, k*H)
+  7. s = (k + c*x) mod q
+  8. pi_string = point_to_string(Gamma) || int_to_string(c, n) || int_to_string(s, qLen)
+  9. Output pi_string
 
   */
 
