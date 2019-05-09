@@ -74,7 +74,6 @@ object cryptoMain extends forwardSignatures with App {
   beta = a64c292ec45f6b252828aff9a02a0fe88d2fcc7f5fc61bb328f03f4c6c0657a9d26efb23b87647ff54f71cd51a6fa4c4e31661d8f72b41ff00ac4d2eec2ea7b3
    */
 
-
   for (i <- 0 until 1) {
     val sk = hex2bytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
     val pk = hex2bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
