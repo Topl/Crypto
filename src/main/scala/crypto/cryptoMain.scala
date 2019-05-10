@@ -217,19 +217,16 @@ if (true) {
 }
 
 
-if (false) {
-  val xmss = new Xmss_bc
-  println("kp gen")
-  val kp = xmss.generateKeyPair()
-  println("sign")
-  val sig = xmss.sign(kp, message)
-  assert(xmss.verify(kp.getPublic, message, sig))
+if (true) {
 
-  println("kp gen")
-  val kp2 = xmss.generateKeyPair()
-  println("sign")
-  val sig2 = xmss.sign(kp2, message)
-  assert(xmss.verify(kp2.getPublic, message, sig2))
+  val xmss = new Xmss_bc
+  println("xmss key pair generation")
+  val (sk,pk) = xmss.generateKeyPair
+  println("xmss sign")
+  val sig = xmss.sign(sk, message)
+  println("xmss verify")
+  assert(xmss.verify(pk, message, sig))
+
 }
 
 

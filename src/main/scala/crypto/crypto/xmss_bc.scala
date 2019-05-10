@@ -39,37 +39,45 @@ import org.bouncycastle.util.encoders.Base64
 
 class Xmss_bc {
 
-  if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) == null) Security.addProvider(new BouncyCastlePQCProvider)
-
-  def generateKeyPair(): KeyPair = {
+  def generateKeyPair: (PrivateKey,PublicKey) = {
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) == null) Security.addProvider(new BouncyCastlePQCProvider)
     val kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC")
-    kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512), new SecureRandom())
-    kpg.generateKeyPair
+    kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512))
+    val kp = kpg.generateKeyPair
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) != null) Security.removeProvider(BouncyCastlePQCProvider.PROVIDER_NAME)
+    (kp.getPrivate,kp.getPublic)
   }
 
-  def generateKeyPair(seed: Array[Byte]): KeyPair = {
+  def generateKeyPair(seed: Array[Byte]): (PrivateKey,PublicKey) = {
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) == null) Security.addProvider(new BouncyCastlePQCProvider)
     val rnd: SecureRandom = SecureRandom.getInstance("SHA1PRNG")
     rnd.setSeed(seed)
     val kpg = KeyPairGenerator.getInstance("XMSS", "BCPQC")
-    kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512), rnd)
-    kpg.generateKeyPair
+    kpg.initialize(new XMSSParameterSpec(10, XMSSParameterSpec.SHA512),rnd)
+    val kp = kpg.generateKeyPair
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) != null) Security.removeProvider(BouncyCastlePQCProvider.PROVIDER_NAME)
+    (kp.getPrivate,kp.getPublic)
   }
 
-  def sign(kp: KeyPair,msg: Array[Byte]): Array[Byte] = {
+  def sign(sk: PrivateKey,msg: Array[Byte]): Array[Byte] = {
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) == null) Security.addProvider(new BouncyCastlePQCProvider)
     val sig = Signature.getInstance("SHA512withXMSS", "BCPQC")
     assert(sig.isInstanceOf[StateAwareSignature])
     val xmssSig = sig.asInstanceOf[StateAwareSignature]
-    xmssSig.initSign(kp.getPrivate)
+    xmssSig.initSign(sk)
     xmssSig.update(msg, 0, msg.length)
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) != null) Security.removeProvider(BouncyCastlePQCProvider.PROVIDER_NAME)
     sig.sign
   }
 
   def verify(pk: PublicKey, msg: Array[Byte], s: Array[Byte]): Boolean = {
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) == null) Security.addProvider(new BouncyCastlePQCProvider)
     val sig = Signature.getInstance("SHA512withXMSS", "BCPQC")
     assert(sig.isInstanceOf[StateAwareSignature])
     val xmssSig = sig.asInstanceOf[StateAwareSignature]
     xmssSig.initVerify(pk)
     xmssSig.update(msg, 0, msg.length)
+    if (Security.getProvider(BouncyCastlePQCProvider.PROVIDER_NAME) != null) Security.removeProvider(BouncyCastlePQCProvider.PROVIDER_NAME)
     xmssSig.verify(s)
   }
 
