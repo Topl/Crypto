@@ -221,11 +221,48 @@ if (true) {
 
   val xmss = new Xmss_bc
   println("xmss key pair generation")
-  val (sk,pk) = xmss.generateKeyPair
+  var kp = xmss.generateKeyPair
+  var sk = kp._1
+  val pk = kp._2
+  kp = null
   println("xmss sign")
-  val sig = xmss.sign(sk, message)
+  val msg1 = FastCryptographicHash(uuid)
+  val sig1 = xmss.sign(sk, msg1)
+  //sk = xmss.updateKey(sk)
+  val msg2 = FastCryptographicHash(uuid)
+  val sig2 = xmss.sign(sk, msg2)
+  //sk = xmss.updateKey(sk)
+  val msg3 = FastCryptographicHash(uuid)
+  val sig3 = xmss.sign(sk, msg3)
+  val msg4 = FastCryptographicHash(uuid)
+  val sig4 = xmss.sign(sk, msg4)
+  sk = xmss.updateKey(sk)
+  val msg5 = FastCryptographicHash(uuid)
+  val sig5 = xmss.sign(sk, msg5)
+  val msg6 = FastCryptographicHash(uuid)
+  val sig6 = xmss.sign(sk, msg6)
+  //sk = xmss.updateKey(sk)
+  val msg7 = FastCryptographicHash(uuid)
+  val sig7 = xmss.sign(sk, msg7)
+  val msg8 = FastCryptographicHash(uuid)
+  val sig8 = xmss.sign(sk, msg8)
+  //sk = xmss.updateKey(sk)
   println("xmss verify")
-  assert(xmss.verify(pk, message, sig))
+  assert(xmss.verify(pk, msg1, sig1))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg2, sig2))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg3, sig3))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg4, sig4))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg5, sig5))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg6, sig6))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg7, sig7))
+  println("xmss verify")
+  assert(xmss.verify(pk, msg8, sig8))
 
 }
 
