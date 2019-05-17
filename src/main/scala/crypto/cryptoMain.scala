@@ -13,8 +13,36 @@ import crypto.forwardtypes.forwardTypes._
 import crypto.forwardkeygen.ForwardKeyFile.uuid
 import scala.math.BigInt
 import crypto.crypto.xmss_bc.Xmss_bc
+import crypto.crypto.malkinKES.MalkinKES
 
 object cryptoMain extends forwardSignatures with App {
+
+  println("kes keypair")
+  val l = 128
+  t = 0
+  val seed1 = FastCryptographicHash(uuid)
+  val kesKeypair = MalkinKES.sumKeyGen(seed1,l)
+  val pk = kesKeypair._1
+  var sk = kesKeypair._2
+  println("Public Key:")
+  println(binaryArrayToHex(pk))
+  println("Private Key Length:")
+  println(sk.length)
+  println("KES Update")
+  sk = MalkinKES.sumUpdate(t,l,sk)
+  t += 1
+  sk = MalkinKES.sumUpdate(t,l,sk)
+  t += 1
+  sk = MalkinKES.sumUpdate(t,l,sk)
+  t += 1
+  sk = MalkinKES.sumUpdate(t,l,sk)
+  t += 1
+  println("Private Key Length:")
+  println(sk.length)
+  println("Signature")
+  val sig1 = MalkinKES.sumSign(t,l,sk,message)
+
+
 
 
 
