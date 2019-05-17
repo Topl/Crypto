@@ -17,6 +17,7 @@ import crypto.crypto.xmss_bc.Xmss_bc
 object cryptoMain extends forwardSignatures with App {
 
 
+
 if (true) {
   //Verifiable Random Function (VRF) scheme using Ed25519
 
@@ -217,7 +218,7 @@ if (true) {
 }
 
 
-if (true) {
+if (false) {
 
   val xmss = new Xmss_bc
   println("xmss key pair generation")
