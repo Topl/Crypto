@@ -9,6 +9,8 @@ import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import scorex.crypto.hash.Sha512
+import crypto.crypto.tree.{Tree,Node,Leaf,Empty}
+
 
 
 object MalkinKES {
@@ -16,6 +18,7 @@ object MalkinKES {
   val seedBytes = 32
   val pkBytes = Ed25519.PUBLIC_KEY_SIZE
   val skBytes = Ed25519.SECRET_KEY_SIZE
+  val hashBytes = 32
 
   def SHA1PRNG_secureRandom(seed: Array[Byte]):SecureRandom = {
     //This algorithm uses SHA-1 as the foundation of the PRNG. It computes the SHA-1 hash over a true-random seed value
@@ -62,75 +65,164 @@ object MalkinKES {
     (pk,sk)
   }
 
-  def sKeypairFast(seed: Array[Byte]): (Array[Byte],Array[Byte]) = {
+  def sKeypairFast(seed: Array[Byte]): Array[Byte] = {
     val sk = FastCryptographicHash(seed)
     var pk = Array.fill(32){0x00.toByte}
     Ed25519.generatePublicKey(sk,0,pk,0)
-    (pk,sk)
+    sk++pk
   }
 
-  def sPublic(seed: Array[Byte]): Array[Byte] = {sKeypairFast(seed)._1}
+  def sPublic(seed: Array[Byte]): Array[Byte] = {
+    val sk = FastCryptographicHash(seed)
+    var pk = Array.fill(32){0x00.toByte}
+    Ed25519.generatePublicKey(sk,0,pk,0)
+    pk
+  }
 
-  def sPrivate(seed: Array[Byte]): Array[Byte] = {sKeypairFast(seed)._2}
+  def sPrivate(seed: Array[Byte]): Array[Byte] = {
+    FastCryptographicHash(seed)
+  }
 
-  def sumKeyGen(seed: Array[Byte],l: Int): (Array[Byte],Array[Byte]) = {
-    if(l==0) {
-      val r = PRNG(seed)
-      val kp1 = sKeypairFast(r._1)
-      val pk1 = kp1._1
-      val sk1 = kp1._2
-      val pk2 = sPublic(r._2)
-      val pk = FastCryptographicHash(kp1._1++pk2)
-      (pk,sk1++r._2++pk1++pk2)
+  def sumKeyGen(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
+    println("Making new key: "+i.toString)
+    if (i==0){
+      val t: Tree[Array[Byte]] = Leaf(seed)
+      t
     } else {
       val r = PRNG(seed)
-      val kp1 = sumKeyGen(r._1,l-1)
-      val pk1 = kp1._1
-      val sk1 = kp1._2
-      val pk2 = sPublic(r._2)
-      val pk = FastCryptographicHash(kp1._1++pk2)
-      (pk,sk1++r._2++pk1++pk2)
+      val t: Tree[Array[Byte]] = Node(r._2,sumKeyGen(r._1,i-1),Empty)
+      t
     }
   }
 
-  def sumUpdate(t: Int, l: Int, sk: Array[Byte]): Array[Byte] = {
-    if (t+1<l/2) {
-      sumUpdate(t,l/2,sk)
-    } else {
-      if (t+1 == l/2) {
-        val r = sk.slice(skBytes,skBytes+seedBytes)
-        val pk = sk.slice(skBytes+seedBytes+pkBytes,skBytes+seedBytes+2*pkBytes)
-        val skp = sPrivate(r)
-        var pkp = Array.fill(32){0x00.toByte}
-        Ed25519.generatePublicKey(skp,0,pkp,0)
-        assert(pk.deep == pkp.deep)
-        sPrivate(r)++sk.drop(skBytes+seedBytes+2*pkBytes)
-      } else {
-        sumUpdate(t-l/2,l/2,sk)
+  def sumUpdate(key: Tree[Array[Byte]],t:Int): Tree[Array[Byte]] = {
+    def isRightBranch(t: Tree[Array[Byte]]): Boolean = {
+      t match {
+        case n: Node[Array[Byte]] =>{
+          val left = n.l match {
+            case n: Node[Array[Byte]] => false
+            case l: Leaf[Array[Byte]] => false
+            case _ => true
+          }
+          val right = n.r match {
+            case n: Node[Array[Byte]] => isRightBranch(n)
+            case l: Leaf[Array[Byte]] => true
+            case _ => false
+          }
+          left && right
+        }
+        case l: Leaf[Array[Byte]] => false
+        case _ => false
       }
     }
-  }
 
-  def sumSign(t:Int,l:Int,sk: Array[Byte],m: Array[Byte]): Array[Byte] = {
+    def loop(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
+      t match {
+        case n: Node[Array[Byte]] => {
+          var leftIsEmpty = false
+          var leftIsLeaf = false
+          var leftIsNode = false
+          var leftVal: Array[Byte] = Array()
+          var rightIsEmpty = false
+          var rightIsLeaf = false
+          var rightIsNode = false
+          var rightVal: Array[Byte] = Array()
 
-    val skp = sk.take(sk.length-seedBytes-2*pkBytes)
-    println(l)
-    println(skp.length.toString)
-    if (l==0) {
-      Array(0x00.toByte)
-    } else if(t<l/2) {
-      if (skp.length == skBytes+seedBytes+2*pkBytes) {
-        var sig = Array.fill(Ed25519.SIGNATURE_SIZE){0x00.toByte}
-        Ed25519.sign(sk.take(skBytes),0,sk.drop(sk.length-pkBytes),0,m,0,m.length,sig,0)
-        sig
-      } else {
-        sumSign(t, l/2, skp, m)
+          val left = n.l match {
+            case n: Node[Array[Byte]] => println("left node found");leftIsNode = true;leftVal=n.v;n
+            case l: Leaf[Array[Byte]] => println("left leaf found");leftIsLeaf = true;leftVal=l.v;l
+            case _ => leftIsEmpty = true; n.l
+          }
+          val right = n.r match {
+            case n: Node[Array[Byte]] => println("right node found");rightIsNode=true;rightVal=n.v;n
+            case l: Leaf[Array[Byte]] => println("right leaf found");rightIsLeaf=true;rightVal=l.v;l
+            case _ => rightIsEmpty = true; n.r
+          }
+          val cutBranch = isRightBranch(left)
+          println("cut branch:"+cutBranch.toString)
+          if (rightIsEmpty && leftIsLeaf) {
+            println("right is empty and left is leaf")
+            val newLeaf = Leaf(n.v)
+            Node(n.v,Empty,newLeaf)
+          } else if (cutBranch) {
+            Node(n.v,Empty,sumKeyGen(n.v,n.height-1))
+          } else if (leftIsNode && rightIsEmpty) {
+            Node(leftVal,loop(left),Empty)
+          } else if (leftIsEmpty && rightIsNode) {
+            println("left is empty and right is node")
+            Node(rightVal, Empty, loop(right))
+          } else if (leftIsEmpty && rightIsLeaf) {
+            println("left is empty and right is leaf")
+            Empty
+          } else if (leftIsEmpty && rightIsEmpty) {
+            println("left and right is empty")
+            Empty
+          } else {
+            println("did nothing")
+            Node(n.v,left,right)
+          }
+        }
+        case l: Leaf[Array[Byte]] => l
+        case _ => t
       }
+    }
+    val keyH = key.height
+    val T = scala.math.pow(2,key.height).toInt
+    val keyTime = sumGetKeyTimeStep(key)
+    if (t<T && keyTime < t){
+      var tempKey = key
+      for(i <- keyTime+1 to t) {
+        println(sumGetKeyTimeStep(tempKey))
+        println("updating key")
+        tempKey = loop(tempKey)
+      }
+      tempKey
     } else {
-      sumSign(t-l/2, l/2, skp, m)
+      println("Time step error, key not updated")
+      println("T: "+T.toString+", key t:"+keyTime.toString+", t:"+t.toString)
+      key
     }
   }
 
-  def sumVerify = {}
+  def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
+    def loop(t: Tree[Array[Byte]]): Int = {
+      val out = t match {
+        case n: Node[Array[Byte]] => {
+          val left = n.l match {
+            case n: Node[Array[Byte]] => {
+              val out = loop(n)
+              //println("left node found: "+out.toString)
+              out
+            }
+            case l: Leaf[Array[Byte]] => {
+              val out = 0
+              //println("left leaf found: "+out.toString)
+              out
+            }
+            case _ => 0
+          }
+          val right = n.r match {
+            case n: Node[Array[Byte]] => {
+              val out =loop(n)+scala.math.pow(2,n.height).toInt
+              //println("right node found: "+out.toString)
+              out
+            }
+            case l: Leaf[Array[Byte]] => {
+              val out = 1
+              //println("right leaf found: "+out.toString)
+              out
+            }
+            case _ => 0
+          }
+          left+right
+        }
+        case l: Leaf[Array[Byte]] => 0
+        case _ => 0
+      }
+      //println("out "+out.toString)
+      out
+    }
+    loop(key)
+  }
 
 }

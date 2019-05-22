@@ -18,35 +18,29 @@ import crypto.crypto.malkinKES.MalkinKES
 object cryptoMain extends forwardSignatures with App {
 
   println("kes keypair")
-  val l = 128
+  val logl = 7
+  val l = scala.math.pow(2,logl).toInt
+  println(l.toString+" time steps")
+
   t = 0
   val seed1 = FastCryptographicHash(uuid)
-  val kesKeypair = MalkinKES.sumKeyGen(seed1,l)
-  val pk = kesKeypair._1
-  var sk = kesKeypair._2
-  println("Public Key:")
-  println(binaryArrayToHex(pk))
-  println("Private Key Length:")
-  println(sk.length)
-  println("KES Update")
-  sk = MalkinKES.sumUpdate(t,l,sk)
-  t += 1
-  sk = MalkinKES.sumUpdate(t,l,sk)
-  t += 1
-  sk = MalkinKES.sumUpdate(t,l,sk)
-  t += 1
-  sk = MalkinKES.sumUpdate(t,l,sk)
-  t += 1
-  println("Private Key Length:")
-  println(sk.length)
-  println("Signature")
-  val sig1 = MalkinKES.sumSign(t,l,sk,message)
+  var kesTree = MalkinKES.sumKeyGen(seed1,logl)
+  println("tree: " + kesTree)
+  println("Target Private Key Length:")
+  println(MalkinKES.skBytes*logl+2*MalkinKES.pkBytes+3*MalkinKES.hashBytes*logl)
+  println("Private Key Time Step:")
+  println(MalkinKES.sumGetKeyTimeStep(kesTree))
+  println("Private Key Update:")
+  t+=4
+  val kesTree0 = kesTree
+  kesTree = MalkinKES.sumUpdate(kesTree,t)
+  t+=100
+  kesTree = MalkinKES.sumUpdate(kesTree,t)
+  println("Key t:"+MalkinKES.sumGetKeyTimeStep(kesTree).toString)
+  println("t:"+t.toString)
 
 
-
-
-
-if (true) {
+  if (false) {
   //Verifiable Random Function (VRF) scheme using Ed25519
 
   //In EdDSA the private key is 256-bit random data
