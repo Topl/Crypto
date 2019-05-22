@@ -84,15 +84,80 @@ object MalkinKES {
   }
 
   def sumKeyGen(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
-    println("Making new key: "+i.toString)
     if (i==0){
-      val t: Tree[Array[Byte]] = Leaf(seed)
-      t
+      Leaf(seed)
     } else {
       val r = PRNG(seed)
-      val t: Tree[Array[Byte]] = Node(r._2,sumKeyGen(r._1,i-1),Empty)
-      t
+      Node(r._2,sumKeyGen(r._1,i-1),Empty)
     }
+  }
+
+  def sumKeyGenMerkle(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
+    if (i==0){
+      Leaf(seed)
+    } else {
+      val r = PRNG(seed)
+      Node(r._2,sumKeyGenMerkle(r._1,i-1),sumKeyGenMerkle(r._2,i-1))
+    }
+  }
+
+  def generateKey(seed: Array[Byte],i:Int):Tree[Array[Byte]] = {
+    val seedTree = sumKeyGenMerkle(seed,i)
+    def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
+      t match {
+        case n: Node[Array[Byte]] => {
+          Node(n.v,populateLeaf(n.l),populateLeaf(n.r))
+        }
+        case l: Leaf[Array[Byte]] => {
+          Leaf(l.v++sKeypairFast(l.v))
+        }
+        case _ => {
+          Empty
+        }
+      }
+    }
+    val keyTree = populateLeaf(seedTree)
+    def merklePublicKeys(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
+      t match {
+        case n: Node[Array[Byte]] => {
+          var leftVal:Array[Byte] = Array()
+          var rightVal:Array[Byte] = Array()
+          val left = merklePublicKeys(n.l) match {
+            case nn: Node[Array[Byte]] => {
+              leftVal = nn.v
+              nn
+            }
+            case ll: Leaf[Array[Byte]] => {
+              leftVal = ll.v
+              ll
+            }
+          }
+          val right = merklePublicKeys(n.r) match {
+            case nn: Node[Array[Byte]] => {
+              rightVal = nn.v
+              nn
+            }
+            case ll: Leaf[Array[Byte]] => {
+              rightVal = ll.v
+              ll
+            }
+          }
+          val sk0 = leftVal.slice(seedBytes,seedBytes+skBytes)
+          val pk0 = leftVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
+          val pk1 = rightVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
+          val pk = FastCryptographicHash(pk0++pk1)
+          Node(n.v++sk0++pk0++pk1++pk,
+            left,right)
+        }
+        case l: Leaf[Array[Byte]] => {
+          l
+        }
+        case _ => {
+          Empty
+        }
+      }
+    }
+    merklePublicKeys(keyTree)
   }
 
   def sumUpdate(key: Tree[Array[Byte]],t:Int): Tree[Array[Byte]] = {

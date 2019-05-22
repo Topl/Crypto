@@ -18,7 +18,7 @@ import crypto.crypto.malkinKES.MalkinKES
 object cryptoMain extends forwardSignatures with App {
 
   println("kes keypair")
-  val logl = 7
+  val logl = 4
   val l = scala.math.pow(2,logl).toInt
   println(l.toString+" time steps")
 
@@ -34,10 +34,13 @@ object cryptoMain extends forwardSignatures with App {
   t+=4
   val kesTree0 = kesTree
   kesTree = MalkinKES.sumUpdate(kesTree,t)
-  t+=100
+  t+=5
   kesTree = MalkinKES.sumUpdate(kesTree,t)
   println("Key t:"+MalkinKES.sumGetKeyTimeStep(kesTree).toString)
   println("t:"+t.toString)
+
+  val newTree = MalkinKES.generateKey(seed,logl)
+  println(newTree)
 
 
   if (false) {
