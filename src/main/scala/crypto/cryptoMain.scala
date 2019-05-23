@@ -18,29 +18,44 @@ import crypto.crypto.malkinKES.MalkinKES
 object cryptoMain extends forwardSignatures with App {
 
   println("kes keypair")
-  val logl = 4
+  val logl = 7
   val l = scala.math.pow(2,logl).toInt
   println(l.toString+" time steps")
 
   t = 0
   val seed1 = FastCryptographicHash(uuid)
-  var kesTree = MalkinKES.sumKeyGen(seed1,logl)
-  println("tree: " + kesTree)
+  val seed2 = FastCryptographicHash(uuid)
+  var sk = MalkinKES.generateKey(seed1,logl)
+  var sk2 = MalkinKES.generateKey(seed2,logl)
+  var pk = MalkinKES.getPk(sk)
+  var pk2 = MalkinKES.getPk(sk2)
+  val pkstring1 = binaryArrayToHex(pk)
+  println("tree: " + sk)
   println("Target Private Key Length:")
   println(MalkinKES.skBytes*logl+2*MalkinKES.pkBytes+3*MalkinKES.hashBytes*logl)
   println("Private Key Time Step:")
-  println(MalkinKES.sumGetKeyTimeStep(kesTree))
+  println(MalkinKES.sumGetKeyTimeStep(sk))
+  println("Verifying key pair<-------------------------------")
+  println(MalkinKES.sumVerifyKeyPair(sk,pk))
   println("Private Key Update:")
-  t+=4
-  val kesTree0 = kesTree
-  kesTree = MalkinKES.sumUpdate(kesTree,t)
-  t+=5
-  kesTree = MalkinKES.sumUpdate(kesTree,t)
-  println("Key t:"+MalkinKES.sumGetKeyTimeStep(kesTree).toString)
-  println("t:"+t.toString)
+  t+=15
+  sk = MalkinKES.sumUpdate(sk,t)
+  println("Key t: "+MalkinKES.sumGetKeyTimeStep(sk).toString)
+  println("t: "+t.toString)
+  println("Tree height: "+sk.height.toString)
+  println("Verifying key pair<-------------------------------")
+  pk = MalkinKES.getPk(sk)
+  val pkstring2 = binaryArrayToHex(pk)
+  println(pkstring1)
+  println(pkstring2)
+  println(MalkinKES.sumVerifyKeyPair(sk,pk))
+  println(MalkinKES.sumVerifyKeyPair(sk2,pk))
+  println(MalkinKES.sumVerifyKeyPair(sk,pk2))
+  println(MalkinKES.sumVerifyKeyPair(sk2,pk2))
+  val sig = MalkinKES.sumSign(sk,message,t)
+  assert(MalkinKES.sumVerify(pk,message,sig))
 
-  val newTree = MalkinKES.generateKey(seed,logl)
-  println(newTree)
+
 
 
   if (false) {

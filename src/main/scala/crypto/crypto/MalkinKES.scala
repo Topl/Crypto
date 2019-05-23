@@ -18,6 +18,7 @@ object MalkinKES {
   val seedBytes = 32
   val pkBytes = Ed25519.PUBLIC_KEY_SIZE
   val skBytes = Ed25519.SECRET_KEY_SIZE
+  val sigBytes = Ed25519.SIGNATURE_SIZE
   val hashBytes = 32
 
   def SHA1PRNG_secureRandom(seed: Array[Byte]):SecureRandom = {
@@ -83,6 +84,16 @@ object MalkinKES {
     FastCryptographicHash(seed)
   }
 
+  def sSign(m: Array[Byte], sk: Array[Byte]): Array[Byte] = {
+    var sig: Array[Byte] = Array.fill(sigBytes){0x00.toByte}
+    Ed25519.sign(sk,0,m,0,m.length,sig,0)
+    sig
+  }
+
+  def sVerify(m: Array[Byte], sig: Array[Byte], pk: Array[Byte]): Boolean = {
+    Ed25519.verify(sig,0,pk,0,m,0,m.length)
+  }
+
   def sumKeyGen(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
     if (i==0){
       Leaf(seed)
@@ -101,8 +112,19 @@ object MalkinKES {
     }
   }
 
+  def getPk(t: Tree[Array[Byte]]): Array[Byte] = {
+    t match {
+      case n: Node[Array[Byte]] => {
+        val pk0 = n.v.slice(seedBytes, seedBytes + pkBytes)
+        val pk1 = n.v.slice(seedBytes + pkBytes, seedBytes + 2 * pkBytes)
+        FastCryptographicHash(pk0 ++ pk1)
+      }
+      case _ => Array()
+    }
+  }
+
   def generateKey(seed: Array[Byte],i:Int):Tree[Array[Byte]] = {
-    val seedTree = sumKeyGenMerkle(seed,i)
+
     def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -116,18 +138,31 @@ object MalkinKES {
         }
       }
     }
-    val keyTree = populateLeaf(seedTree)
+
     def merklePublicKeys(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] => {
+          var sk0:Array[Byte] = Array()
+          var pk0:Array[Byte] = Array()
+          var pk00:Array[Byte] = Array()
+          var pk01:Array[Byte] = Array()
+          var sk1:Array[Byte] = Array()
+          var pk1:Array[Byte] = Array()
+          var pk10:Array[Byte] = Array()
+          var pk11:Array[Byte] = Array()
+          var pk:Array[Byte] = Array()
+          var r0:Array[Byte] = Array()
+          var r1:Array[Byte] = Array()
           var leftVal:Array[Byte] = Array()
           var rightVal:Array[Byte] = Array()
+          var leafLevel = false
           val left = merklePublicKeys(n.l) match {
             case nn: Node[Array[Byte]] => {
               leftVal = nn.v
               nn
             }
             case ll: Leaf[Array[Byte]] => {
+              leafLevel = true
               leftVal = ll.v
               ll
             }
@@ -138,16 +173,29 @@ object MalkinKES {
               nn
             }
             case ll: Leaf[Array[Byte]] => {
+              leafLevel = true
               rightVal = ll.v
               ll
             }
           }
-          val sk0 = leftVal.slice(seedBytes,seedBytes+skBytes)
-          val pk0 = leftVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
-          val pk1 = rightVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
-          val pk = FastCryptographicHash(pk0++pk1)
-          Node(n.v++sk0++pk0++pk1++pk,
-            left,right)
+          if (leafLevel) {
+            r0 = leftVal.slice(0,seedBytes)
+            sk0 = leftVal.slice(seedBytes,seedBytes+skBytes)
+            pk0 = leftVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
+            r1 = rightVal.slice(0,seedBytes)
+            sk1 = rightVal.slice(seedBytes,seedBytes+skBytes)
+            pk1 = rightVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
+            assert(n.v.deep == r1.deep)
+            Node(n.v++pk0++pk1,Leaf(sk0++pk0),Leaf(sk1++pk1))
+          } else {
+            pk00 = leftVal.slice(seedBytes,seedBytes+pkBytes)
+            pk01 = leftVal.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
+            pk10 = rightVal.slice(seedBytes,seedBytes+pkBytes)
+            pk11 = rightVal.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
+            pk0 = FastCryptographicHash(pk00++pk01)
+            pk1 = FastCryptographicHash(pk10++pk11)
+            Node(n.v++pk0++pk1,left,right)
+          }
         }
         case l: Leaf[Array[Byte]] => {
           l
@@ -157,10 +205,68 @@ object MalkinKES {
         }
       }
     }
-    merklePublicKeys(keyTree)
+
+    def trimTree(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
+      t match {
+        case n: Node[Array[Byte]] => {
+          Node(n.v,trimTree(n.l),Empty)
+        }
+        case l: Leaf[Array[Byte]] => {
+          l
+        }
+        case _ => {
+          Empty
+        }
+      }
+    }
+    trimTree(merklePublicKeys(populateLeaf(sumKeyGenMerkle(seed,i))))
+  }
+
+  def sumVerifyKeyPair(t: Tree[Array[Byte]], pk:Array[Byte]): Boolean = {
+    def loop(t: Tree[Array[Byte]]): Boolean = {
+      t match {
+        case n: Node[Array[Byte]] =>{
+          var pk0:Array[Byte] = Array()
+          var pk00:Array[Byte] = Array()
+          var pk01:Array[Byte] = Array()
+          var pk1:Array[Byte] = Array()
+          var pk10:Array[Byte] = Array()
+          var pk11:Array[Byte] = Array()
+          val left = n.l match {
+            case nn: Node[Array[Byte]] => {
+              pk00 = nn.v.slice(seedBytes,seedBytes+pkBytes)
+              pk01 = nn.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
+              pk0 = FastCryptographicHash(pk00++pk01)
+              loop(nn) && (pk0.deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep)
+            }
+            case ll: Leaf[Array[Byte]] => {
+              ll.v.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep
+            }
+            case _ => true
+          }
+          val right = n.r match {
+            case nn: Node[Array[Byte]] => {
+              pk10 = nn.v.slice(seedBytes,seedBytes+pkBytes)
+              pk11 = nn.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
+              pk1 = FastCryptographicHash(pk10++pk11)
+              loop(nn) && (pk1.deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
+            }
+            case ll: Leaf[Array[Byte]] => {
+              ll.v.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep
+            }
+            case _ => true
+          }
+          left && right
+        }
+        case l: Leaf[Array[Byte]] => false
+        case _ => false
+      }
+    }
+    (pk.deep == getPk(t).deep) && loop(t)
   }
 
   def sumUpdate(key: Tree[Array[Byte]],t:Int): Tree[Array[Byte]] = {
+
     def isRightBranch(t: Tree[Array[Byte]]): Boolean = {
       t match {
         case n: Node[Array[Byte]] =>{
@@ -204,36 +310,40 @@ object MalkinKES {
             case _ => rightIsEmpty = true; n.r
           }
           val cutBranch = isRightBranch(left)
-          println("cut branch:"+cutBranch.toString)
           if (rightIsEmpty && leftIsLeaf) {
             println("right is empty and left is leaf")
-            val newLeaf = Leaf(n.v)
-            Node(n.v,Empty,newLeaf)
+            val keyPair = sKeypairFast(n.v.slice(0,seedBytes))
+            assert(keyPair.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
+            Node(n.v,Empty,Leaf(keyPair))
           } else if (cutBranch) {
-            Node(n.v,Empty,sumKeyGen(n.v,n.height-1))
+            println("cut branch")
+            Node(n.v,Empty,generateKey(n.v.slice(0,seedBytes),n.height-1))
           } else if (leftIsNode && rightIsEmpty) {
-            Node(leftVal,loop(left),Empty)
+            println("left is node and right is empty")
+            Node(n.v,loop(left),Empty)
           } else if (leftIsEmpty && rightIsNode) {
             println("left is empty and right is node")
-            Node(rightVal, Empty, loop(right))
+            Node(n.v, Empty, loop(right))
           } else if (leftIsEmpty && rightIsLeaf) {
-            println("left is empty and right is leaf")
-            Empty
+            println("Error: cut branch failed, left is empty and right is leaf")
+            n
           } else if (leftIsEmpty && rightIsEmpty) {
-            println("left and right is empty")
-            Empty
+            println("Error: left and right is empty")
+            n
           } else {
-            println("did nothing")
-            Node(n.v,left,right)
+            println("Error: did nothing")
+            n
           }
         }
         case l: Leaf[Array[Byte]] => l
         case _ => t
       }
     }
+
     val keyH = key.height
     val T = scala.math.pow(2,key.height).toInt
     val keyTime = sumGetKeyTimeStep(key)
+
     if (t<T && keyTime < t){
       var tempKey = key
       for(i <- keyTime+1 to t) {
@@ -247,6 +357,56 @@ object MalkinKES {
       println("T: "+T.toString+", key t:"+keyTime.toString+", t:"+t.toString)
       key
     }
+  }
+
+  def sumSign(sk: Tree[Array[Byte]],m: Array[Byte],t:Int): Array[Byte] = {
+    assert(sumVerifyKeyPair(sk,getPk(sk)))
+    assert(t == sumGetKeyTimeStep(sk))
+    def loop(t: Tree[Array[Byte]]): Array[Byte] = {
+      t match {
+        case n: Node[Array[Byte]] => {
+          val left = n.l match {
+            case nn: Node[Array[Byte]] => {
+              loop(nn)
+            }
+            case ll: Leaf[Array[Byte]] => {
+              sSign(m,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)
+            }
+            case _ => Array()
+          }
+          val right = n.r match {
+            case nn: Node[Array[Byte]] => {
+              loop(nn)
+            }
+            case ll: Leaf[Array[Byte]] => {
+              sSign(m,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)
+            }
+            case _ => Array()
+          }
+          left++right++n.v.slice(seedBytes,seedBytes+2*pkBytes)
+        }
+        case _ => {
+          Array()
+        }
+      }
+    }
+    loop(sk)
+  }
+
+  def sumVerify(pk: Array[Byte],m: Array[Byte],sig: Array[Byte]): Boolean = {
+    val pkSeq = sig.drop(sigBytes+pkBytes)
+    var pkLogic = true
+    for (i <- 0 to pkSeq.length) {
+      val pk0:Array[Byte] = pkSeq.slice((i+2)*pkBytes,(i+3)*pkBytes)
+      val pk00:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
+      val pk01:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
+      val pk1:Array[Byte] = pkSeq.slice((i+3)*pkBytes,(i+4)*pkBytes)
+      val pk10:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
+      val pk11:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
+      pkLogic &= pk0.deep == FastCryptographicHash(pk00++pk01).deep || pk1.deep == FastCryptographicHash(pk10++pk11).deep
+    }
+    pkLogic &= pk.deep == FastCryptographicHash(pkSeq.slice(pkSeq.length-2*pkBytes,pkSeq.length)).deep
+    sVerify(m,sig.slice(0,sigBytes),sig.slice(sigBytes,sigBytes+pkBytes)) && pkLogic
   }
 
   def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
