@@ -17,11 +17,10 @@ import crypto.crypto.malkinKES.MalkinKES
 
 object cryptoMain extends forwardSignatures with App {
 
-  println("kes keypair")
+  println("MMM construction sum composition")
   val logl = 7
   val l = scala.math.pow(2,logl).toInt
   println(l.toString+" time steps")
-
   t = 0
   val seed1 = FastCryptographicHash(uuid)
   val seed2 = FastCryptographicHash(uuid)
@@ -29,33 +28,39 @@ object cryptoMain extends forwardSignatures with App {
   var sk2 = MalkinKES.generateKey(seed2,logl)
   var pk = MalkinKES.getPk(sk)
   var pk2 = MalkinKES.getPk(sk2)
-  val pkstring1 = binaryArrayToHex(pk)
   println("tree: " + sk)
   println("Target Private Key Length:")
   println(MalkinKES.skBytes*logl+2*MalkinKES.pkBytes+3*MalkinKES.hashBytes*logl)
+  println("Tree Byte Length:")
+  var data: Array[Byte] = Array()
+  for (item <- sk.toSeq) {
+    data = data++item
+  }
+  println(data.length)
   println("Private Key Time Step:")
   println(MalkinKES.sumGetKeyTimeStep(sk))
   println("Verifying key pair<-------------------------------")
-  println(MalkinKES.sumVerifyKeyPair(sk,pk))
+  assert(MalkinKES.sumVerifyKeyPair(sk,pk))
   println("Private Key Update:")
-  t+=15
+  t+=5
   sk = MalkinKES.sumUpdate(sk,t)
   println("Key t: "+MalkinKES.sumGetKeyTimeStep(sk).toString)
   println("t: "+t.toString)
   println("Tree height: "+sk.height.toString)
   println("Verifying key pair<-------------------------------")
   pk = MalkinKES.getPk(sk)
-  val pkstring2 = binaryArrayToHex(pk)
-  println(pkstring1)
-  println(pkstring2)
-  println(MalkinKES.sumVerifyKeyPair(sk,pk))
-  println(MalkinKES.sumVerifyKeyPair(sk2,pk))
-  println(MalkinKES.sumVerifyKeyPair(sk,pk2))
-  println(MalkinKES.sumVerifyKeyPair(sk2,pk2))
-  val sig = MalkinKES.sumSign(sk,message,t)
-  assert(MalkinKES.sumVerify(pk,message,sig))
-
-
+  assert(MalkinKES.sumVerifyKeyPair(sk,pk))
+  assert(!MalkinKES.sumVerifyKeyPair(sk2,pk))
+  assert(!MalkinKES.sumVerifyKeyPair(sk,pk2))
+  assert(MalkinKES.sumVerifyKeyPair(sk2,pk2))
+  var sig1 = MalkinKES.sumSign(sk,message,t)
+  assert(MalkinKES.sumVerify(pk,message,sig1))
+  t+=44
+  sk = MalkinKES.sumUpdate(sk,t)
+  var sig2 = MalkinKES.sumSign(sk,message,t)
+  sig1 = MalkinKES.sumSign(sk,message,t)
+  assert(MalkinKES.sumVerify(pk,message,sig2))
+  assert(MalkinKES.sumVerify(pk,message,sig1))
 
 
   if (false) {

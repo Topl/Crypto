@@ -10,6 +10,7 @@ import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import scorex.crypto.hash.Sha512
 import crypto.crypto.tree.{Tree,Node,Leaf,Empty}
+import scala.math.BigInt
 
 
 
@@ -186,7 +187,7 @@ object MalkinKES {
             sk1 = rightVal.slice(seedBytes,seedBytes+skBytes)
             pk1 = rightVal.slice(seedBytes+skBytes,seedBytes+skBytes+pkBytes)
             assert(n.v.deep == r1.deep)
-            Node(n.v++pk0++pk1,Leaf(sk0++pk0),Leaf(sk1++pk1))
+            Node(n.v++FastCryptographicHash(pk0)++FastCryptographicHash(pk1),Leaf(sk0++pk0),Leaf(sk1++pk1))
           } else {
             pk00 = leftVal.slice(seedBytes,seedBytes+pkBytes)
             pk01 = leftVal.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
@@ -240,7 +241,7 @@ object MalkinKES {
               loop(nn) && (pk0.deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep)
             }
             case ll: Leaf[Array[Byte]] => {
-              ll.v.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep
+              FastCryptographicHash(ll.v.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep
             }
             case _ => true
           }
@@ -252,7 +253,7 @@ object MalkinKES {
               loop(nn) && (pk1.deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
             }
             case ll: Leaf[Array[Byte]] => {
-              ll.v.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep
+              FastCryptographicHash(ll.v.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep
             }
             case _ => true
           }
@@ -300,38 +301,38 @@ object MalkinKES {
           var rightVal: Array[Byte] = Array()
 
           val left = n.l match {
-            case n: Node[Array[Byte]] => println("left node found");leftIsNode = true;leftVal=n.v;n
-            case l: Leaf[Array[Byte]] => println("left leaf found");leftIsLeaf = true;leftVal=l.v;l
+            case n: Node[Array[Byte]] => leftIsNode = true;leftVal=n.v;n
+            case l: Leaf[Array[Byte]] => leftIsLeaf = true;leftVal=l.v;l
             case _ => leftIsEmpty = true; n.l
           }
           val right = n.r match {
-            case n: Node[Array[Byte]] => println("right node found");rightIsNode=true;rightVal=n.v;n
-            case l: Leaf[Array[Byte]] => println("right leaf found");rightIsLeaf=true;rightVal=l.v;l
+            case n: Node[Array[Byte]] => rightIsNode=true;rightVal=n.v;n
+            case l: Leaf[Array[Byte]] => rightIsLeaf=true;rightVal=l.v;l
             case _ => rightIsEmpty = true; n.r
           }
           val cutBranch = isRightBranch(left)
           if (rightIsEmpty && leftIsLeaf) {
-            println("right is empty and left is leaf")
+            //println("right is empty and left is leaf")
             val keyPair = sKeypairFast(n.v.slice(0,seedBytes))
-            assert(keyPair.slice(skBytes,skBytes+pkBytes).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
+            assert(FastCryptographicHash(keyPair.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
             Node(n.v,Empty,Leaf(keyPair))
           } else if (cutBranch) {
-            println("cut branch")
+            //println("cut branch")
             Node(n.v,Empty,generateKey(n.v.slice(0,seedBytes),n.height-1))
           } else if (leftIsNode && rightIsEmpty) {
-            println("left is node and right is empty")
+            //println("left is node and right is empty")
             Node(n.v,loop(left),Empty)
           } else if (leftIsEmpty && rightIsNode) {
-            println("left is empty and right is node")
+            //println("left is empty and right is node")
             Node(n.v, Empty, loop(right))
           } else if (leftIsEmpty && rightIsLeaf) {
-            println("Error: cut branch failed, left is empty and right is leaf")
+            //println("Error: cut branch failed, left is empty and right is leaf")
             n
           } else if (leftIsEmpty && rightIsEmpty) {
-            println("Error: left and right is empty")
+            //println("Error: left and right is empty")
             n
           } else {
-            println("Error: did nothing")
+            //println("Error: did nothing")
             n
           }
         }
@@ -347,8 +348,8 @@ object MalkinKES {
     if (t<T && keyTime < t){
       var tempKey = key
       for(i <- keyTime+1 to t) {
-        println(sumGetKeyTimeStep(tempKey))
-        println("updating key")
+        //println(sumGetKeyTimeStep(tempKey))
+        //println("updating key")
         tempKey = loop(tempKey)
       }
       tempKey
@@ -359,9 +360,12 @@ object MalkinKES {
     }
   }
 
-  def sumSign(sk: Tree[Array[Byte]],m: Array[Byte],t:Int): Array[Byte] = {
+  def sumSign(sk: Tree[Array[Byte]],m: Array[Byte],step:Int): Array[Byte] = {
     assert(sumVerifyKeyPair(sk,getPk(sk)))
-    assert(t == sumGetKeyTimeStep(sk))
+    assert(step == sumGetKeyTimeStep(sk))
+    val stepBytesBigInt = BigInt(step).toByteArray
+    val stepBytes = Array.fill(seedBytes-stepBytesBigInt.length){0x00.toByte}++stepBytesBigInt
+
     def loop(t: Tree[Array[Byte]]): Array[Byte] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -370,7 +374,7 @@ object MalkinKES {
               loop(nn)
             }
             case ll: Leaf[Array[Byte]] => {
-              sSign(m,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)
+              sSign(m++stepBytes,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)++stepBytes
             }
             case _ => Array()
           }
@@ -379,7 +383,7 @@ object MalkinKES {
               loop(nn)
             }
             case ll: Leaf[Array[Byte]] => {
-              sSign(m,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)
+              sSign(m++stepBytes,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)++stepBytes
             }
             case _ => Array()
           }
@@ -394,19 +398,25 @@ object MalkinKES {
   }
 
   def sumVerify(pk: Array[Byte],m: Array[Byte],sig: Array[Byte]): Boolean = {
-    val pkSeq = sig.drop(sigBytes+pkBytes)
+    val pkSeq = sig.drop(sigBytes+pkBytes+seedBytes)
+    val stepBytes = sig.slice(sigBytes+pkBytes,sigBytes+pkBytes+seedBytes)
+    val step = BigInt(stepBytes)
     var pkLogic = true
-    for (i <- 0 to pkSeq.length) {
+    for (i <- 0 to pkSeq.length/pkBytes-4 by 2) {
       val pk0:Array[Byte] = pkSeq.slice((i+2)*pkBytes,(i+3)*pkBytes)
       val pk00:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
       val pk01:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
       val pk1:Array[Byte] = pkSeq.slice((i+3)*pkBytes,(i+4)*pkBytes)
       val pk10:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
       val pk11:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
-      pkLogic &= pk0.deep == FastCryptographicHash(pk00++pk01).deep || pk1.deep == FastCryptographicHash(pk10++pk11).deep
+      if((step.toInt/scala.math.pow(2,i/2+1).toInt) % 2 == 0) {
+        pkLogic &= pk0.deep == FastCryptographicHash(pk00++pk01).deep
+      } else {
+        pkLogic &= pk1.deep == FastCryptographicHash(pk10++pk11).deep
+      }
     }
     pkLogic &= pk.deep == FastCryptographicHash(pkSeq.slice(pkSeq.length-2*pkBytes,pkSeq.length)).deep
-    sVerify(m,sig.slice(0,sigBytes),sig.slice(sigBytes,sigBytes+pkBytes)) && pkLogic
+    sVerify(m++stepBytes,sig.slice(0,sigBytes),sig.slice(sigBytes,sigBytes+pkBytes)) && pkLogic
   }
 
   def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
@@ -416,12 +426,10 @@ object MalkinKES {
           val left = n.l match {
             case n: Node[Array[Byte]] => {
               val out = loop(n)
-              //println("left node found: "+out.toString)
               out
             }
             case l: Leaf[Array[Byte]] => {
               val out = 0
-              //println("left leaf found: "+out.toString)
               out
             }
             case _ => 0
@@ -429,12 +437,10 @@ object MalkinKES {
           val right = n.r match {
             case n: Node[Array[Byte]] => {
               val out =loop(n)+scala.math.pow(2,n.height).toInt
-              //println("right node found: "+out.toString)
               out
             }
             case l: Leaf[Array[Byte]] => {
               val out = 1
-              //println("right leaf found: "+out.toString)
               out
             }
             case _ => 0
@@ -444,10 +450,8 @@ object MalkinKES {
         case l: Leaf[Array[Byte]] => 0
         case _ => 0
       }
-      //println("out "+out.toString)
       out
     }
     loop(key)
   }
-
 }
