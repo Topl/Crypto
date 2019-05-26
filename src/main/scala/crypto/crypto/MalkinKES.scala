@@ -12,8 +12,6 @@ import scorex.crypto.hash.Sha512
 import crypto.crypto.tree.{Tree,Node,Leaf,Empty}
 import scala.math.BigInt
 
-
-
 object MalkinKES {
 
   val seedBytes = 32
@@ -21,6 +19,9 @@ object MalkinKES {
   val skBytes = Ed25519.SECRET_KEY_SIZE
   val sigBytes = Ed25519.SIGNATURE_SIZE
   val hashBytes = 32
+
+  type MalkinKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
+  type MalkinSignature = (Array[Byte],Array[Byte],Array[Byte])
 
   def SHA1PRNG_secureRandom(seed: Array[Byte]):SecureRandom = {
     //This algorithm uses SHA-1 as the foundation of the PRNG. It computes the SHA-1 hash over a true-random seed value
@@ -95,24 +96,6 @@ object MalkinKES {
     Ed25519.verify(sig,0,pk,0,m,0,m.length)
   }
 
-  def sumKeyGen(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
-    if (i==0){
-      Leaf(seed)
-    } else {
-      val r = PRNG(seed)
-      Node(r._2,sumKeyGen(r._1,i-1),Empty)
-    }
-  }
-
-  def sumKeyGenMerkle(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
-    if (i==0){
-      Leaf(seed)
-    } else {
-      val r = PRNG(seed)
-      Node(r._2,sumKeyGenMerkle(r._1,i-1),sumKeyGenMerkle(r._2,i-1))
-    }
-  }
-
   def getPk(t: Tree[Array[Byte]]): Array[Byte] = {
     t match {
       case n: Node[Array[Byte]] => {
@@ -124,7 +107,16 @@ object MalkinKES {
     }
   }
 
-  def generateKey(seed: Array[Byte],i:Int):Tree[Array[Byte]] = {
+  def sumGenerateKey(seed: Array[Byte],i:Int):Tree[Array[Byte]] = {
+
+    def sumKeyGenMerkle(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
+      if (i==0){
+        Leaf(seed)
+      } else {
+        val r = PRNG(seed)
+        Node(r._2,sumKeyGenMerkle(r._1,i-1),sumKeyGenMerkle(r._2,i-1))
+      }
+    }
 
     def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
@@ -318,7 +310,7 @@ object MalkinKES {
             Node(n.v,Empty,Leaf(keyPair))
           } else if (cutBranch) {
             //println("cut branch")
-            Node(n.v,Empty,generateKey(n.v.slice(0,seedBytes),n.height-1))
+            Node(n.v,Empty,sumGenerateKey(n.v.slice(0,seedBytes),n.height-1))
           } else if (leftIsNode && rightIsEmpty) {
             //println("left is node and right is empty")
             Node(n.v,loop(left),Empty)
@@ -402,6 +394,11 @@ object MalkinKES {
     val stepBytes = sig.slice(sigBytes+pkBytes,sigBytes+pkBytes+seedBytes)
     val step = BigInt(stepBytes)
     var pkLogic = true
+    if ((step.toInt/scala.math.pow(2,1).toInt) % 2 == 0) {
+      pkLogic &= FastCryptographicHash(sig.slice(sigBytes,sigBytes+pkBytes)).deep == pkSeq.slice(0,pkBytes).deep
+    } else {
+      pkLogic &= FastCryptographicHash(sig.slice(sigBytes,sigBytes+pkBytes)).deep == pkSeq.slice(pkBytes,2*pkBytes).deep
+    }
     for (i <- 0 to pkSeq.length/pkBytes-4 by 2) {
       val pk0:Array[Byte] = pkSeq.slice((i+2)*pkBytes,(i+3)*pkBytes)
       val pk00:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
@@ -420,38 +417,108 @@ object MalkinKES {
   }
 
   def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
-    def loop(t: Tree[Array[Byte]]): Int = {
-      val out = t match {
-        case n: Node[Array[Byte]] => {
-          val left = n.l match {
-            case n: Node[Array[Byte]] => {
-              val out = loop(n)
-              out
-            }
-            case l: Leaf[Array[Byte]] => {
-              val out = 0
-              out
-            }
-            case _ => 0
-          }
-          val right = n.r match {
-            case n: Node[Array[Byte]] => {
-              val out =loop(n)+scala.math.pow(2,n.height).toInt
-              out
-            }
-            case l: Leaf[Array[Byte]] => {
-              val out = 1
-              out
-            }
-            case _ => 0
-          }
-          left+right
+    key match {
+      case n: Node[Array[Byte]] => {
+        val left = n.l match {
+          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)}
+          case l: Leaf[Array[Byte]] => {0}
+          case _ => 0
         }
-        case l: Leaf[Array[Byte]] => 0
-        case _ => 0
+        val right = n.r match {
+          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)+scala.math.pow(2,n.height).toInt}
+          case l: Leaf[Array[Byte]] => {1}
+          case _ => 0
+        }
+        left+right
       }
-      out
+      case l: Leaf[Array[Byte]] => 0
+      case _ => 0
     }
-    loop(key)
   }
+
+  def prodKeyGen(seed: Array[Byte],logl:Int): MalkinKey = {
+    val r = PRNG(seed)
+    val rp = PRNG(r._2)
+    val L = sumGenerateKey(r._1,logl)
+    val Si = sumGenerateKey(rp._1,0)
+    val pk1 = getPk(Si)
+    val sig = sumSign(L,pk1,0)
+    (L,Si,sig,pk1,rp._2)
+  }
+
+  def prodUpdate(key: MalkinKey,t:Int): MalkinKey = {
+    val keyTime = prodGetKeyTimeStep(key)
+    var L = key._1
+    var Si = key._2
+    var sig = key._3
+    var pk1 = key._4
+    var seed = key._5
+    val Tl = scala.math.pow(2,L.height).toInt
+    var Ti = scala.math.pow(2,Si.height).toInt
+    var tl = sumGetKeyTimeStep(L)
+    var ti = sumGetKeyTimeStep(Si)
+    if (keyTime < t) {
+      for(i <- keyTime+1 to t) {
+        tl = sumGetKeyTimeStep(L)
+        ti = sumGetKeyTimeStep(Si)
+        //println(ti.toString+":"+Ti.toString)
+        //println(tl.toString+":"+Tl.toString)
+        //println()
+        if (ti+1 < Ti) {
+          Si = sumUpdate(Si, ti + 1)
+        } else if (tl < Tl) {
+          val r = PRNG(seed)
+          Si = sumGenerateKey(r._1, tl + 1)
+          pk1 = getPk(Si)
+          seed = r._2
+          Ti = scala.math.pow(2,Si.height).toInt
+          L = sumUpdate(L, tl + 1)
+          sig = sumSign(L,pk1,tl+1)
+        } else {
+          println("Error: max time steps reached")
+        }
+      }
+    } else {
+      println("Error: t less than given keyTime")
+    }
+    (L,Si,sig,pk1,seed)
+  }
+
+  def prodGetKeyTimeStep(key: MalkinKey): Int = {
+    val L = key._1
+    val Si = key._2
+    val tl = sumGetKeyTimeStep(L)
+    val ti = sumGetKeyTimeStep(Si)
+    scala.math.pow(2,tl).toInt-1+ti
+  }
+
+  def sign(key: MalkinKey,m: Array[Byte],step:Int): MalkinSignature = {
+    val keyTime = prodGetKeyTimeStep(key)
+    val L = key._1
+    val Si = key._2
+    val sig1 = key._3
+    val pk1 = key._4
+    val seed = key._5
+    val ti = sumGetKeyTimeStep(Si)
+    val tl = sumGetKeyTimeStep(L)
+    val sig2 = sumSign(Si,m,ti)
+    //assert(sumVerifyKeyPair(Si,pk1))
+    //assert(sumVerify(pk1,m,sig2))
+    (sig1,sig2,pk1)
+  }
+
+  def verify(pk: Array[Byte],m: Array[Byte],sig: MalkinSignature): Boolean = {
+    val sig1 = sig._1
+    val sig2 = sig._2
+    val pk1 = sig._3
+    println(sumVerify(pk,pk1,sig2))
+    println(sumVerify(pk1,m,sig1))
+    sumVerify(pk,pk1,sig2) && sumVerify(pk1,m,sig1)
+  }
+
+  def publicKey(key: MalkinKey):  Array[Byte] = {
+    getPk(key._1)
+  }
+
+
 }

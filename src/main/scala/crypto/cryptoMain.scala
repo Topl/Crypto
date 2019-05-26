@@ -24,8 +24,8 @@ object cryptoMain extends forwardSignatures with App {
   t = 0
   val seed1 = FastCryptographicHash(uuid)
   val seed2 = FastCryptographicHash(uuid)
-  var sk = MalkinKES.generateKey(seed1,logl)
-  var sk2 = MalkinKES.generateKey(seed2,logl)
+  var sk = MalkinKES.sumGenerateKey(seed1,logl)
+  var sk2 = MalkinKES.sumGenerateKey(seed2,logl)
   var pk = MalkinKES.getPk(sk)
   var pk2 = MalkinKES.getPk(sk2)
   println("tree: " + sk)
@@ -42,7 +42,7 @@ object cryptoMain extends forwardSignatures with App {
   println("Verifying key pair<-------------------------------")
   assert(MalkinKES.sumVerifyKeyPair(sk,pk))
   println("Private Key Update:")
-  t+=5
+  t+=(l*3)/4
   sk = MalkinKES.sumUpdate(sk,t)
   println("Key t: "+MalkinKES.sumGetKeyTimeStep(sk).toString)
   println("t: "+t.toString)
@@ -55,13 +55,35 @@ object cryptoMain extends forwardSignatures with App {
   assert(MalkinKES.sumVerifyKeyPair(sk2,pk2))
   var sig1 = MalkinKES.sumSign(sk,message,t)
   assert(MalkinKES.sumVerify(pk,message,sig1))
-  t+=44
+  t+=3
   sk = MalkinKES.sumUpdate(sk,t)
   var sig2 = MalkinKES.sumSign(sk,message,t)
   sig1 = MalkinKES.sumSign(sk,message,t)
   assert(MalkinKES.sumVerify(pk,message,sig2))
   assert(MalkinKES.sumVerify(pk,message,sig1))
-
+  t=1
+  println("Testing MMM product composition")
+  var prodKey = MalkinKES.prodKeyGen(seed1,logl)
+  val prodPk = MalkinKES.publicKey(prodKey)
+  println("Product key time step:")
+  println(MalkinKES.prodGetKeyTimeStep(prodKey))
+  println("Updating MMM product key")
+  prodKey = MalkinKES.prodUpdate(prodKey,t)
+  println("Product key time step:")
+  println(MalkinKES.prodGetKeyTimeStep(prodKey))
+  println("t: "+t.toString)
+  t+=100
+  println("Product key time step:")
+  println(MalkinKES.prodGetKeyTimeStep(prodKey))
+  println("Updating MMM product key")
+  prodKey = MalkinKES.prodUpdate(prodKey,t)
+  println("Product key time step:")
+  println(MalkinKES.prodGetKeyTimeStep(prodKey))
+  println("t: "+t.toString)
+  println("product sign")
+  val sigProd = MalkinKES.sign(prodKey,message,t)
+  println("product verify")
+  println(MalkinKES.verify(prodPk,message,sigProd))
 
   if (false) {
   //Verifiable Random Function (VRF) scheme using Ed25519
