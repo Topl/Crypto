@@ -106,7 +106,7 @@ object cryptoMain extends forwardSignatures with App {
   println(MalkinKES.getKeyTimeStep(prodKey))
   println("Updating MMM product key")
   prodKey = MalkinKES.updateKey(prodKey,t)
-  t+=5
+  t+=1000
   println("Product key time step:")
   println(MalkinKES.getKeyTimeStep(prodKey))
   println("Updating MMM product key")
@@ -117,6 +117,16 @@ object cryptoMain extends forwardSignatures with App {
   assert(MalkinKES.verify(prodPk,message,sigProd))
   println("Product key time step: "+MalkinKES.getKeyTimeStep(prodKey).toString)
   println("t: "+t.toString)
+
+  data = Array()
+  for (item <- prodKey._1.toSeq) {
+    data = data++item
+  }
+  for (item <- prodKey._2.toSeq) {
+    data = data++item
+  }
+  data = data++prodKey._3++prodKey._4++prodKey._5
+  println("Key byte legnth: "+data.length.toString)
 
 
   if (false) {

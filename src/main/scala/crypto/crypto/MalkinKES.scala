@@ -17,6 +17,10 @@ object MalkinKES {
   type MalkinKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
   type MalkinSignature = (Array[Byte],Array[Byte],Array[Byte])
 
+  def exp(n: Int): Int = {
+    scala.math.pow(2,n).toInt
+  }
+
   def PRNG(k: Array[Byte]): (Array[Byte],Array[Byte]) = {
     val r1 = FastCryptographicHash(k)
     val r2 = FastCryptographicHash(Sha512(r1++k))
@@ -308,7 +312,7 @@ object MalkinKES {
     }
 
     val keyH = key.height
-    val T = scala.math.pow(2,key.height).toInt
+    val T = exp(key.height)
     val keyTime = sumGetKeyTimeStep(key)
 
     if (t<T && keyTime < t){
@@ -382,7 +386,7 @@ object MalkinKES {
       val pk1:Array[Byte] = pkSeq.slice((i+3)*pkBytes,(i+4)*pkBytes)
       val pk10:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
       val pk11:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
-      if((step.toInt/scala.math.pow(2,i/2+1).toInt) % 2 == 0) {
+      if((step.toInt/exp(i/2+1)) % 2 == 0) {
         pkLogic &= pk0.deep == FastCryptographicHash(pk00++pk01).deep
       } else {
         pkLogic &= pk1.deep == FastCryptographicHash(pk10++pk11).deep
@@ -401,7 +405,7 @@ object MalkinKES {
           case _ => 0
         }
         val right = n.r match {
-          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)+scala.math.pow(2,n.height).toInt}
+          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)+exp(n.height)}
           case l: Leaf[Array[Byte]] => {1}
           case _ => 0
         }
@@ -430,8 +434,8 @@ object MalkinKES {
     var sig = key._3
     var pk1 = key._4
     var seed = key._5
-    val Tl = scala.math.pow(2,L.height).toInt
-    var Ti = scala.math.pow(2,Si.height).toInt
+    val Tl = exp(L.height)
+    var Ti = exp(Si.height)
     var tl = sumGetKeyTimeStep(L)
     var ti = sumGetKeyTimeStep(Si)
     if (keyTime < t) {
@@ -445,7 +449,7 @@ object MalkinKES {
           Si = sumGenerateKey(r._1, tl + 1)
           pk1 = sumGetPublicKey(Si)
           seed = r._2
-          Ti = scala.math.pow(2,Si.height).toInt
+          Ti = exp(Si.height)
           L = sumUpdate(L, tl + 1)
           tl = sumGetKeyTimeStep(L)
           sig = sumSign(L,pk1,tl)
@@ -459,12 +463,59 @@ object MalkinKES {
     (L,Si,sig,pk1,seed)
   }
 
+
+  def updateKeyFast(key: MalkinKey,t:Int): MalkinKey = {
+    val keyTime = getKeyTimeStep(key)
+    var L = key._1
+    var Si = key._2
+    var sig = key._3
+    var pk1 = key._4
+    var seed = key._5
+    val Tl = exp(L.height)
+    var Ti = exp(Si.height)
+    var tl = sumGetKeyTimeStep(L)
+    var ti = sumGetKeyTimeStep(Si)
+    if (keyTime < t) {
+      var i = keyTime+1
+      while(i < t) {
+        tl = sumGetKeyTimeStep(L)
+        ti = sumGetKeyTimeStep(Si)
+        if (t-i > exp(tl)-ti) {
+          val r = PRNG(seed)
+          seed = r._2
+          L = sumUpdate(L, tl + 1)
+          tl = sumGetKeyTimeStep(L)
+          sig = sumSign(L,pk1,tl)
+        } else {
+          if (ti+1 < Ti) {
+            Si = sumUpdate(Si, ti + 1)
+          } else if (tl < Tl) {
+            val r = PRNG(seed)
+            Si = sumGenerateKey(r._1, tl + 1)
+            pk1 = sumGetPublicKey(Si)
+            seed = r._2
+            Ti = exp(Si.height)
+            L = sumUpdate(L, tl + 1)
+            tl = sumGetKeyTimeStep(L)
+            sig = sumSign(L,pk1,tl)
+          } else {
+            println("Error: max time steps reached")
+          }
+        }
+        i+=1
+      }
+    } else {
+      println("Error: t less than given keyTime")
+    }
+    (L,Si,sig,pk1,seed)
+  }
+
   def getKeyTimeStep(key: MalkinKey): Int = {
     val L = key._1
     val Si = key._2
     val tl = sumGetKeyTimeStep(L)
     val ti = sumGetKeyTimeStep(Si)
-    scala.math.pow(2,tl).toInt-1+ti
+    exp(tl)-1+ti
   }
 
   def sign(key: MalkinKey,m: Array[Byte],step:Int): MalkinSignature = {
