@@ -6,6 +6,19 @@ import scorex.crypto.hash.Sha512
 import crypto.crypto.tree.{Tree,Node,Leaf,Empty}
 import scala.math.BigInt
 
+
+/**
+  * Implementation of the MMM construction:
+  * Malkin, T., Micciancio, D. and Miner, S. (2002) ‘Efficient generic
+  * forward-secure signatures with an unbounded number of time
+  * periods’, Advances in Cryptology Eurocrypt ’02, LNCS 2332,
+  * Springer, pp.400–417.
+  *
+  * Provides forward secure signatures that cannot be reforged with a leaked private key that has been updated
+  * Number of time steps is determined by logl argument upon key generation, practically unbounded for logl = 7
+  * Sum compostion is based on underlying Ed25519 signing routine provided by Bouncy Castle
+  */
+
 object MalkinKES {
 
   val seedBytes = 32
@@ -13,20 +26,39 @@ object MalkinKES {
   val skBytes = Ed25519.SECRET_KEY_SIZE
   val sigBytes = Ed25519.SIGNATURE_SIZE
   val hashBytes = 32
+  val logl = 7
 
   type MalkinKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
   type MalkinSignature = (Array[Byte],Array[Byte],Array[Byte])
 
+  /**
+    * Exponent base two of the argument
+    * @param n integer
+    * @return 2 to the n
+    */
   def exp(n: Int): Int = {
     scala.math.pow(2,n).toInt
   }
 
+  /**
+    * Pseudorandom number generator used for seed doubling
+    * input must be non-recoverable from from k and outputs
+    * cannot be used to determine one from the other
+    * @param k
+    * @return
+    */
+
   def PRNG(k: Array[Byte]): (Array[Byte],Array[Byte]) = {
     val r1 = FastCryptographicHash(k)
-    val r2 = FastCryptographicHash(Sha512(r1++k))
+    val r2 = FastCryptographicHash(r1++k)
     (r1,r2)
   }
 
+  /**
+    * generates a keypair for Ed25519 signing and returns it in a single byte array
+    * @param seed input entropy for keypair generation
+    * @return byte array sk||pk
+    */
   def sKeypairFast(seed: Array[Byte]): Array[Byte] = {
     val sk = FastCryptographicHash(seed)
     var pk = Array.fill(32){0x00.toByte}
@@ -34,6 +66,11 @@ object MalkinKES {
     sk++pk
   }
 
+  /**
+    * Returns only the public key for a given seed
+    * @param seed input entropy for keypair generation
+    * @return byte array pk
+    */
   def sPublic(seed: Array[Byte]): Array[Byte] = {
     val sk = FastCryptographicHash(seed)
     var pk = Array.fill(32){0x00.toByte}
@@ -41,20 +78,43 @@ object MalkinKES {
     pk
   }
 
+  /**
+    * Returns only the private key for a given seed
+    * @param seed input entropy for keypair generation
+    * @return byte array sk
+    */
   def sPrivate(seed: Array[Byte]): Array[Byte] = {
     FastCryptographicHash(seed)
   }
 
+  /**
+    * Signing routine for Ed25519
+    * @param m message to be signed
+    * @param sk Ed25519 secret key to be signed
+    * @return Ed25519 signature
+    */
   def sSign(m: Array[Byte], sk: Array[Byte]): Array[Byte] = {
     var sig: Array[Byte] = Array.fill(sigBytes){0x00.toByte}
     Ed25519.sign(sk,0,m,0,m.length,sig,0)
     sig
   }
 
+  /**
+    * Verify routine for Ed25519
+    * @param m message for given signature
+    * @param sig signature to be verified
+    * @param pk public key corresponding to signature
+    * @return true if valid signature, false if otherwise
+    */
   def sVerify(m: Array[Byte], sig: Array[Byte], pk: Array[Byte]): Boolean = {
     Ed25519.verify(sig,0,pk,0,m,0,m.length)
   }
 
+  /**
+    * Gets the public key in the sum composition
+    * @param t binary tree for which the key is to be calculated
+    * @return binary array public key
+    */
   def sumGetPublicKey(t: Tree[Array[Byte]]): Array[Byte] = {
     t match {
       case n: Node[Array[Byte]] => {
@@ -69,8 +129,16 @@ object MalkinKES {
     }
   }
 
+  /**
+    * Generates keys in the sum composition, recursive functions construct the tree in steps and the output is
+    * the leftmost branch
+    * @param seed input entropy for binary tree and keypair generation
+    * @param i height of tree
+    * @return binary tree at time step 0
+    */
   def sumGenerateKey(seed: Array[Byte],i:Int):Tree[Array[Byte]] = {
 
+    // generate the binary tree with the pseudorandom number generator
     def sumKeyGenMerkle(seed: Array[Byte],i:Int): Tree[Array[Byte]] = {
       if (i==0){
         Leaf(seed)
@@ -80,6 +148,7 @@ object MalkinKES {
       }
     }
 
+    // generates the Ed25519 keypairs on each leaf
     def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -94,6 +163,7 @@ object MalkinKES {
       }
     }
 
+    // generates the Merkle tree of the public keys and stores the hash values on each node
     def merklePublicKeys(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       def loop(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
         t match {
@@ -174,6 +244,7 @@ object MalkinKES {
       }
     }
 
+    //removes all but the leftmost branch leaving the leftmost leaf
     def trimTree(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -188,11 +259,18 @@ object MalkinKES {
       }
     }
 
+    //executes the above functions in order
     trimTree(merklePublicKeys(populateLeaf(sumKeyGenMerkle(seed,i))))
   }
 
+  /**
+    * Verify a public key with a binary tree
+    * @param t binary tree that contains Merkle tree hash values
+    * @param pk root of the Merkle tree
+    * @return true if pk is the root of the Merkle tree, false if otherwise
+    */
   def sumVerifyKeyPair(t: Tree[Array[Byte]], pk:Array[Byte]): Boolean = {
-
+    //loops through the tree to verify Merkle witness path
     def loop(t: Tree[Array[Byte]]): Boolean = {
       t match {
         case n: Node[Array[Byte]] =>{
@@ -232,12 +310,17 @@ object MalkinKES {
         case _ => false
       }
     }
-
     (pk.deep == sumGetPublicKey(t).deep) && loop(t)
   }
 
+  /**
+    * Updates the key in the sum composition
+    * @param key binary tree to be updated
+    * @param t time step key is to be updated to
+    * @return updated key to be written to key
+    */
   def sumUpdate(key: Tree[Array[Byte]],t:Int): Tree[Array[Byte]] = {
-
+    //checks if the sub tree is right most
     def isRightBranch(t: Tree[Array[Byte]]): Boolean = {
       t match {
         case n: Node[Array[Byte]] =>{
@@ -258,6 +341,7 @@ object MalkinKES {
       }
     }
 
+    //main loop that steps the tree to the next time step
     def loop(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -310,11 +394,10 @@ object MalkinKES {
         case _ => t
       }
     }
-
     val keyH = key.height
     val T = exp(key.height)
     val keyTime = sumGetKeyTimeStep(key)
-
+    //steps key through time steps one at a time until key step == t
     if (t<T && keyTime < t){
       var tempKey = key
       for(i <- keyTime+1 to t) {
@@ -328,12 +411,19 @@ object MalkinKES {
     }
   }
 
+  /**
+    * Signature in the sum composition
+    * @param sk secret key tree of the sum composition
+    * @param m message to be signed
+    * @param step  current time step of signing key sk
+    * @return byte array signature
+    */
   def sumSign(sk: Tree[Array[Byte]],m: Array[Byte],step:Int): Array[Byte] = {
     assert(step == sumGetKeyTimeStep(sk))
     assert(sumVerifyKeyPair(sk,sumGetPublicKey(sk)))
     val stepBytesBigInt = BigInt(step).toByteArray
     val stepBytes = Array.fill(seedBytes-stepBytesBigInt.length){0x00.toByte}++stepBytesBigInt
-
+    //loop that generates the signature of m++step and stacks up the witness path of the key
     def loop(t: Tree[Array[Byte]]): Array[Byte] = {
       t match {
         case n: Node[Array[Byte]] => {
@@ -365,10 +455,16 @@ object MalkinKES {
         }
       }
     }
-
     loop(sk)
   }
 
+  /**
+    * Verify in the sum composition
+    * @param pk public key of the sum composition
+    * @param m message corresponding to the signature
+    * @param sig signature to be verified
+    * @return true if the signature is valid false if otherwise
+    */
   def sumVerify(pk: Array[Byte],m: Array[Byte],sig: Array[Byte]): Boolean = {
     val pkSeq = sig.drop(sigBytes+pkBytes+seedBytes)
     val stepBytes = sig.slice(sigBytes+pkBytes,sigBytes+pkBytes+seedBytes)
@@ -396,6 +492,11 @@ object MalkinKES {
     sVerify(m++stepBytes,sig.slice(0,sigBytes),sig.slice(sigBytes,sigBytes+pkBytes)) && pkLogic
   }
 
+  /**
+    * Get the current time step of a sum composition key
+    * @param key binary tree key
+    * @return time step
+    */
   def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
     key match {
       case n: Node[Array[Byte]] => {
@@ -416,23 +517,37 @@ object MalkinKES {
     }
   }
 
-  def generateKey(seed: Array[Byte],logl:Int): MalkinKey = {
+  /**
+    * Generate key in the MMM composition
+    * @param seed input entropy for key generation
+    * @return
+    */
+  def generateKey(seed: Array[Byte]): MalkinKey = {
     val r = PRNG(seed)
     val rp = PRNG(r._2)
+    //super-scheme sum composition
     val L = sumGenerateKey(r._1,logl)
+    //sub-scheme sum composition
     val Si = sumGenerateKey(rp._1,0)
-    val pk1 = sumGetPublicKey(Si)
-    val sig = sumSign(L,pk1,0)
-    assert(sumVerify(sumGetPublicKey(L),pk1,sig))
-    (L,Si,sig,pk1,rp._2)
+    val pki = sumGetPublicKey(Si)
+    val sig = sumSign(L,pki,0)
+    assert(sumVerify(sumGetPublicKey(L),pki,sig))
+    (L,Si,sig,pki,rp._2)
   }
 
+  /**
+    * Updates the key in the MMM composition (product composition with increasing height for
+    * Si as L increments)
+    * @param key  MMM key to be updated
+    * @param t time step key is to be updated to
+    * @return updated MMM key
+    */
   def updateKey(key: MalkinKey,t:Int): MalkinKey = {
     val keyTime = getKeyTimeStep(key)
     var L = key._1
     var Si = key._2
     var sig = key._3
-    var pk1 = key._4
+    var pki = key._4
     var seed = key._5
     val Tl = exp(L.height)
     var Ti = exp(Si.height)
@@ -447,12 +562,12 @@ object MalkinKES {
         } else if (tl < Tl) {
           val r = PRNG(seed)
           Si = sumGenerateKey(r._1, tl + 1)
-          pk1 = sumGetPublicKey(Si)
+          pki = sumGetPublicKey(Si)
           seed = r._2
           Ti = exp(Si.height)
           L = sumUpdate(L, tl + 1)
           tl = sumGetKeyTimeStep(L)
-          sig = sumSign(L,pk1,tl)
+          sig = sumSign(L,pki,tl)
         } else {
           println("Error: max time steps reached")
         }
@@ -460,16 +575,21 @@ object MalkinKES {
     } else {
       println("Error: t less than given keyTime")
     }
-    (L,Si,sig,pk1,seed)
+    (L,Si,sig,pki,seed)
   }
 
-
+  /**
+    * Fast version on updateKey, should be equivalent input and output
+    * @param key
+    * @param t
+    * @return  updated key
+    */
   def updateKeyFast(key: MalkinKey,t:Int): MalkinKey = {
     val keyTime = getKeyTimeStep(key)
     var L = key._1
     var Si = key._2
     var sig = key._3
-    var pk1 = key._4
+    var pki = key._4
     var seed = key._5
     val Tl = exp(L.height)
     var Ti = exp(Si.height)
@@ -485,19 +605,19 @@ object MalkinKES {
           seed = r._2
           L = sumUpdate(L, tl + 1)
           tl = sumGetKeyTimeStep(L)
-          sig = sumSign(L,pk1,tl)
+          sig = sumSign(L,pki,tl)
         } else {
           if (ti+1 < Ti) {
             Si = sumUpdate(Si, ti + 1)
           } else if (tl < Tl) {
             val r = PRNG(seed)
             Si = sumGenerateKey(r._1, tl + 1)
-            pk1 = sumGetPublicKey(Si)
+            pki = sumGetPublicKey(Si)
             seed = r._2
             Ti = exp(Si.height)
             L = sumUpdate(L, tl + 1)
             tl = sumGetKeyTimeStep(L)
-            sig = sumSign(L,pk1,tl)
+            sig = sumSign(L,pki,tl)
           } else {
             println("Error: max time steps reached")
           }
@@ -507,9 +627,14 @@ object MalkinKES {
     } else {
       println("Error: t less than given keyTime")
     }
-    (L,Si,sig,pk1,seed)
+    (L,Si,sig,pki,seed)
   }
 
+  /**
+    * Get the current time step of an MMM key
+    * @param key MMM key to be inspected
+    * @return Current time step of key
+    */
   def getKeyTimeStep(key: MalkinKey): Int = {
     val L = key._1
     val Si = key._2
@@ -518,26 +643,45 @@ object MalkinKES {
     exp(tl)-1+ti
   }
 
+  /**
+    * Signature in the MMM composition
+    * @param key signing secret key
+    * @param m message to be signed
+    * @param step current time step
+    * @return signature of m
+    */
   def sign(key: MalkinKey,m: Array[Byte],step:Int): MalkinSignature = {
     val keyTime = getKeyTimeStep(key)
     val L = key._1
     val Si = key._2
-    val sig1 = key._3
-    val pk1 = key._4
+    val sigi = key._3
+    val pki = key._4
     val seed = key._5
     val ti = sumGetKeyTimeStep(Si)
     val tl = sumGetKeyTimeStep(L)
-    val sig2 = sumSign(Si,m,ti)
-    (sig1,sig2,pk1)
+    val sigm = sumSign(Si,m,ti)
+    (sigi,sigm,pki)
   }
 
+  /**
+    * Verify MMM signature
+    * @param pk public key of the MMM secret key
+    * @param m message corresponding to signature
+    * @param sig signature to be verified
+    * @return true if signature is valid false if otherwise
+    */
   def verify(pk: Array[Byte],m: Array[Byte],sig: MalkinSignature): Boolean = {
-    val sig1 = sig._1
-    val sig2 = sig._2
-    val pk1 = sig._3
-    sumVerify(pk,pk1,sig1) && sumVerify(pk1,m,sig2)
+    val sigi = sig._1
+    val sigm = sig._2
+    val pki = sig._3
+    sumVerify(pk,pki,sigi) && sumVerify(pki,m,sigm)
   }
 
+  /**
+    * Get the public key of an MMM private key
+    * @param key
+    * @return
+    */
   def publicKey(key: MalkinKey):  Array[Byte] = {
     sumGetPublicKey(key._1)
   }

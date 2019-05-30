@@ -63,7 +63,7 @@ object cryptoMain extends forwardSignatures with App {
   assert(MalkinKES.sumVerify(pk,message,sig1))
   t=0
   println("Testing MMM product composition")
-  var prodKey = MalkinKES.generateKey(seed1,logl)
+  var prodKey = MalkinKES.generateKey(seed1)
   val prodPk = MalkinKES.publicKey(prodKey)
   println("Product key time step:")
   println(MalkinKES.getKeyTimeStep(prodKey))
