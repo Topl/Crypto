@@ -11,11 +11,13 @@ import scorex.crypto.signatures.{Curve25519, Curve25519VRF}
 import crypto.forwardsignatures.forwardSignatures
 import crypto.forwardtypes.forwardTypes._
 import crypto.forwardkeygen.ForwardKeyFile.uuid
+
 import scala.math.BigInt
 import crypto.crypto.xmss_bc.Xmss_bc
 import crypto.crypto.malkinKES.MalkinKES
-import crypto.ouroboros.{StakeHolder,Ouroboros}
-import akka.actor.{ Actor, ActorSystem, Props }
+import crypto.ouroboros.{Diffuse, Inbox, Ouroboros, StakeHolder}
+import akka.actor.{Actor, ActorSystem, Props}
+
 import scala.io.StdIn
 
 object cryptoMain extends forwardSignatures with App {
@@ -23,9 +25,18 @@ object cryptoMain extends forwardSignatures with App {
   val system = ActorSystem("stakeholders")
   val n = 10
 
-  val firstRef = system.actorOf(StakeHolder.props, "stakeholder")
-  println(s"Stakeholder: $firstRef")
-  firstRef ! "Diffuse"
+  val holders = List.fill(n){system.actorOf(StakeHolder.props, "holder:"+uuid)}
+  for (holder <- holders){
+    holder ! holders
+    holder ! Diffuse
+  }
+
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
+
+  for (holder <- holders){
+    holder ! Inbox
+  }
 
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()
