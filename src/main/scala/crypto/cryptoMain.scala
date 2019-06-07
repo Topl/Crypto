@@ -15,28 +15,35 @@ import crypto.forwardkeygen.ForwardKeyFile.uuid
 import scala.math.BigInt
 import crypto.crypto.xmss_bc.Xmss_bc
 import crypto.crypto.malkinKES.MalkinKES
-import crypto.ouroboros.{Diffuse, Inbox, Ouroboros, StakeHolder}
+import crypto.ouroboros._
 import akka.actor.{Actor, ActorSystem, Props}
 
 import scala.io.StdIn
 
 object cryptoMain extends forwardSignatures with App {
 
+  //Ouroboros test using akka actors
+
   val system = ActorSystem("stakeholders")
   val n = 10
 
-  val holders = List.fill(n){system.actorOf(StakeHolder.props, "holder:"+uuid)}
-  for (holder <- holders){
-    holder ! holders
-    holder ! Diffuse
-  }
+  val coordinator = system.actorOf(Coordinator.props,"coordinator")
 
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
+  coordinator ! Populate(n)
 
-  for (holder <- holders){
-    holder ! Inbox
-  }
+  coordinator ! Diffuse
+
+  coordinator ! Update
+
+  coordinator ! Diffuse
+
+  coordinator ! Update
+
+  coordinator ! Diffuse
+
+  coordinator ! Inbox
+
+  coordinator ! Status
 
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()
@@ -169,7 +176,7 @@ if (false) {
   var beta: Array[Byte] = Array()
 
   for (i <- 0 until 5) {
-    val (pk, sk) = Ed25519VRF.vrfKeypair
+    val (sk, pk) = Ed25519VRF.vrfKeypair
     println("Private Key")
     println(binaryArrayToHex(sk))
     println("Public Key")
@@ -326,7 +333,7 @@ if (false) {
 
   def bigIntToBinary(b: BigInt): String = String.format("%8s", b.toString(2)).replace(' ', '0')
 
-  val (pk, sk) = Ed25519VRF.vrfKeypair
+  val (sk, pk) = Ed25519VRF.vrfKeypair
   val numIterate = 1000
   var bin: Array[Int] = Array.fill(64)(0)
   for (i <- 1 to numIterate) {

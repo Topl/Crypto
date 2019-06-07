@@ -69,7 +69,7 @@ object Ed25519VRF {
     val kp = kpg.generateKeyPair
     val sk = kp.getPrivate.asInstanceOf[Ed25519PrivateKeyParameters].getEncoded
     val pk = kp.getPublic.asInstanceOf[Ed25519PublicKeyParameters].getEncoded
-    (pk,sk)
+    (sk,pk)
   }
 
   /**
@@ -88,7 +88,7 @@ object Ed25519VRF {
     val kp = kpg.generateKeyPair
     val sk = kp.getPrivate.asInstanceOf[Ed25519PrivateKeyParameters].getEncoded
     val pk = kp.getPublic.asInstanceOf[Ed25519PublicKeyParameters].getEncoded
-    (pk,sk)
+    (sk,pk)
   }
 
   /**
