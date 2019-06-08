@@ -7,6 +7,7 @@ import crypto.crypto.malkinKES.MalkinKES
 import crypto.crypto.malkinKES.MalkinKES.MalkinSignature
 import scorex.crypto.signatures.Curve25519
 import crypto.crypto.obFunctions
+import scala.math.BigInt
 
 object StakeHolder {
   def props: Props = Props(new StakeHolder)
@@ -38,7 +39,7 @@ class Coordinator extends Actor
       }
       send(holders,holders)
       val state: State = holders.map{ case ref:ActorRef => s"${ref.path}" -> 1.0}.toMap
-      val genBlock:Block = (FastCryptographicHash(serialize(state)++eta0), state, t, (Array(),Array(),Array()), eta0, Array())
+      val genBlock:Block = (FastCryptographicHash(serialize(state)++eta0), state, t, (Array(),Array(),Array()), eta0, Array(), (Array(),Array(),Array()))
       send(holders,GenBlock(genBlock))
     }
     case Inbox => send(holders,Inbox)
@@ -113,7 +114,7 @@ class StakeHolder extends Actor
       if (!adverseRound && foreignBlock == 0) {
         roundBlock match {
           case 0 => adverseRound = true
-          case b:Block => localChain++=List(b)
+          case b:Block => localChain++=List(b);stake+=1.0
         }
       }
       if (!adverseRound && roundBlock == 0){
@@ -130,7 +131,11 @@ class StakeHolder extends Actor
       holders = list
       sender() ! "done"
     }
-    case gb: GenBlock =>  genBlock = gb.b;localChain++=List(genBlock); sender() ! "done"
+    case gb: GenBlock =>  {
+      genBlock = gb.b
+      genBlock match {case b:Block => localChain++=List(b)}
+      sender() ! "done"
+    }
     case Inbox => println(inbox); sender() ! "done"
     case Status => {println(holderId+" t="+t.toString+" s="+stake.toString);sender() ! "done"}
     case _ => println("received unknown message");sender() ! "error"
@@ -148,8 +153,18 @@ class StakeHolder extends Actor
     val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta++serialize(slot)++serialize("TEST"))
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
     val alpha = relativeStake
-    val threshold = exp(y.length)*phi(alpha,f_s)
-    false
+    val threshold = phi(alpha,f_s)
+    def convert(y: Array[Byte]):Double = {
+      var sum = 0.0
+      var i = 0
+      for (byte<-y){
+        val n = BigInt(byte & 0xff)
+        sum+=exp(i)*n.toDouble
+        i+=1
+      }
+      sum/exp(i)
+    }
+    convert(y)<threshold
   }
 
   def forgeBlock: Block = {

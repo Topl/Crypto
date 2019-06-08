@@ -31,18 +31,26 @@ object cryptoMain extends forwardSignatures with App {
 
   coordinator ! Populate(n)
 
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Diffuse
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Update
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Diffuse
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Update
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Diffuse
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Inbox
-
+  println(">>> Press ENTER to go <<<")
+  try StdIn.readLine()
   coordinator ! Status
 
   println(">>> Press ENTER to exit <<<")
