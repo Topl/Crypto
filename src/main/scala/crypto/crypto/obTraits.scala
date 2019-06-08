@@ -4,13 +4,16 @@ import akka.actor.ActorRef
 import akka.actor._
 import akka.pattern.ask
 import akka.util.Timeout
+
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+
 import bifrost.crypto.hash.FastCryptographicHash
 import crypto.Ed25519vrf.Ed25519VRF
-import crypto.crypto.malkinKES.MalkinKES.{MalkinSignature,MalkinKey}
+import crypto.crypto.malkinKES.MalkinKES
+import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
 
 trait obFunctions {
@@ -24,26 +27,52 @@ trait obFunctions {
   type Hash = Array[Byte]
   type Pi = Array[Byte]
   type Cert = (PublicKey,Rho,Pi)
-  type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature)
+  type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
   def send(holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
-      implicit val timeout = Timeout(5 seconds)
+      implicit val timeout = Timeout(2 seconds)
       val future = holder ? command
       val result = Await.result(future, timeout.duration)
       assert(result == "done")
     }
   }
 
+  def send(holderId:String, holders:List[ActorRef],command: Any) = {
+    implicit val timeout = Timeout(2 seconds)
+    for (holder <- holders){
+      if (s"${holder.path}" != holderId) {
+        val future = holder ? command
+        val result = Await.result(future, timeout.duration)
+        assert(result == "done")
+      }
+    }
+  }
+
+  def verifyBlock(b:Block): Boolean = {
+    val (hash, state, slot, cert, y, pi_y, sig, pk) = b
+    MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot)
+  }
+
   def verifyBlock(b:Block,c:Chain): Boolean = {
-    true
+    val (hash, state, slot, cert, y, pi_y, sig, pk) = b
+    (FastCryptographicHash(serialize(c.head)).deep == hash.deep
+    && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot))
   }
 
   def verifyChain(c:Chain): Boolean = {
-    true
+    var bool = true
+    var i = 0
+    for (block <- c.tail ) {
+      val (hash, state, slot, cert, y, pi_y, sig, pk) = c(i)
+      i+=1
+      bool &&= (FastCryptographicHash(serialize(block)).deep == hash.deep
+        && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot))
+    }
+    bool
   }
 
   def verifyTxStamp(value: String): Boolean = {

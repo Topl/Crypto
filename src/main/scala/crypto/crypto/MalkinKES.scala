@@ -650,8 +650,8 @@ object MalkinKES {
     * @param step current time step
     * @return signature of m
     */
-  def sign(key: MalkinKey,m: Array[Byte],step:Int): MalkinSignature = {
-    val keyTime = getKeyTimeStep(key)
+  def sign(key: MalkinKey,m: Array[Byte]): MalkinSignature = {
+    val keyTime = BigInt(getKeyTimeStep(key)).toByteArray
     val L = key._1
     val Si = key._2
     val sigi = key._3
@@ -659,7 +659,7 @@ object MalkinKES {
     val seed = key._5
     val ti = sumGetKeyTimeStep(Si)
     val tl = sumGetKeyTimeStep(L)
-    val sigm = sumSign(Si,m,ti)
+    val sigm = sumSign(Si,m++keyTime,ti)
     (sigi,sigm,pki)
   }
 
@@ -670,11 +670,11 @@ object MalkinKES {
     * @param sig signature to be verified
     * @return true if signature is valid false if otherwise
     */
-  def verify(pk: Array[Byte],m: Array[Byte],sig: MalkinSignature): Boolean = {
+  def verify(pk: Array[Byte],m: Array[Byte],sig: MalkinSignature,t: Int): Boolean = {
     val sigi = sig._1
     val sigm = sig._2
     val pki = sig._3
-    sumVerify(pk,pki,sigi) && sumVerify(pki,m,sigm)
+    sumVerify(pk,pki,sigi) && sumVerify(pki,m++BigInt(t).toByteArray,sigm)
   }
 
   /**

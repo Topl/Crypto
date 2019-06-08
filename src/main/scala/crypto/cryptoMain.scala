@@ -22,41 +22,31 @@ import scala.io.StdIn
 
 object cryptoMain extends forwardSignatures with App {
 
+if (true) {
   //Ouroboros test using akka actors
 
   val system = ActorSystem("stakeholders")
-  val n = 10
+  val n = 100
 
-  val coordinator = system.actorOf(Coordinator.props,"coordinator")
+  val coordinator = system.actorOf(Coordinator.props, "coordinator")
 
   coordinator ! Populate(n)
 
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Diffuse
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Update
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Diffuse
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Update
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Diffuse
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
-  coordinator ! Inbox
-  println(">>> Press ENTER to go <<<")
-  try StdIn.readLine()
+  for (i <- 1 to 100) {
+    coordinator ! Update
+  }
+
+  //  println(">>> Press ENTER for Inbox <<<")
+  //   StdIn.readLine()
+  //  coordinator ! Inbox
+  println(">>> Press ENTER for Status <<<")
+  StdIn.readLine()
   coordinator ! Status
 
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()
   finally system.terminate()
-
+}
 
 if (false) {
   println("MMM construction sum composition")
@@ -97,7 +87,7 @@ if (false) {
   assert(MalkinKES.sumVerifyKeyPair(sk2, pk2))
   var sig1 = MalkinKES.sumSign(sk, message, t)
   assert(MalkinKES.sumVerify(pk, message, sig1))
-  t += 0
+  t += 1
   sk = MalkinKES.sumUpdate(sk, t)
   var sig2 = MalkinKES.sumSign(sk, message, t)
   sig1 = MalkinKES.sumSign(sk, message, t)
@@ -114,7 +104,7 @@ if (false) {
   println("Product key time step:")
   println(MalkinKES.getKeyTimeStep(prodKey))
   println("t: " + t.toString)
-  t += 0
+  t += 1
   println("Product key time step:")
   println(MalkinKES.getKeyTimeStep(prodKey))
   println("Updating MMM product key")
@@ -123,9 +113,9 @@ if (false) {
   println(MalkinKES.getKeyTimeStep(prodKey))
   println("t: " + t.toString)
   println("product sign")
-  var sigProd = MalkinKES.sign(prodKey, message, t)
+  var sigProd = MalkinKES.sign(prodKey, message)
   println("product verify")
-  assert(MalkinKES.verify(prodPk, message, sigProd))
+  assert(MalkinKES.verify(prodPk, message, sigProd,t))
 
   t += 1
   println("Product key time step:")
@@ -133,9 +123,9 @@ if (false) {
   println("Updating MMM product key")
   prodKey = MalkinKES.updateKey(prodKey, t)
 
-  sigProd = MalkinKES.sign(prodKey, message, t)
+  sigProd = MalkinKES.sign(prodKey, message)
   println("product verify")
-  assert(MalkinKES.verify(prodPk, message, sigProd))
+  assert(MalkinKES.verify(prodPk, message, sigProd,t))
 
   t += 2
   println("Product key time step:")
@@ -154,9 +144,9 @@ if (false) {
   println("Updating MMM product key")
   prodKey = MalkinKES.updateKey(prodKey, t)
 
-  sigProd = MalkinKES.sign(prodKey, message, t)
+  sigProd = MalkinKES.sign(prodKey, message)
   println("product verify")
-  assert(MalkinKES.verify(prodPk, message, sigProd))
+  assert(MalkinKES.verify(prodPk, message, sigProd,t))
   println("Product key time step: " + MalkinKES.getKeyTimeStep(prodKey).toString)
   println("t: " + t.toString)
 
