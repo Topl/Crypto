@@ -8,6 +8,7 @@ import crypto.crypto.malkinKES.MalkinKES.MalkinSignature
 import scorex.crypto.signatures.Curve25519
 import crypto.crypto.obFunctions
 import scala.math.BigInt
+import scala.util.Random
 
 object StakeHolder {
   def props: Props = Props(new StakeHolder)
@@ -25,6 +26,7 @@ case class Update(t:Int)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(b: Any)
+case class SendChain(c: Any)
 case object Status
 case object ForgeBlocks
 case object GetGenKeys
@@ -40,7 +42,7 @@ class Coordinator extends Actor
   val (sk_vrf,pk_vrf) = Ed25519VRF.vrfKeypair(seed)
   var malkinKey = MalkinKES.generateKey(seed)
   val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
-  val coordData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
+  val coordData = bytes2hex(pk_sig)+":"+bytes2hex(pk_vrf)+":"+bytes2hex(pk_kes)
   var genKeys:Map[String,String] = Map()
 
   def receive: Receive = {
@@ -56,11 +58,11 @@ class Coordinator extends Actor
     case Inbox => send(holders,Inbox)
     case Update => {
       println("t = "+t.toString)
-      send(holders,Diffuse)
-      send(holders,ForgeBlocks)
-      send(holders,UpdateChain)
+      send(Random.shuffle(holders),Diffuse)
+      send(Random.shuffle(holders),ForgeBlocks)
+      send(Random.shuffle(holders),UpdateChain)
       t+=1
-      send(holders,Update(t))
+      send(Random.shuffle(holders),Update(t))
     }
     case Status => send(holders,Status)
     case _ => println("received unknown message")
@@ -74,7 +76,7 @@ class Coordinator extends Actor
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
     val hash:Hash = FastCryptographicHash(seed)
     val r = scala.util.Random
-    val state: State = holders.map{ case ref:ActorRef => diffuse(coordData,genKeys(s"${ref.path}").replace(";",":")) -> 100.0 * r.nextDouble}.toMap
+    val state: State = holders.map{ case ref:ActorRef => diffuse(genKeys(s"${ref.path}"),coordData) -> 100.0 * r.nextDouble}.toMap
     val cert:Cert = (pk_vrf,rho,pi)
     val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y)
     (hash,state,slot,cert,y,pi_y,sig,pk_kes)
@@ -102,13 +104,15 @@ class StakeHolder extends Actor
   val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
 
   var localChain:Chain = List()
+  var foreignChains:List[Chain] = List()
   var genBlock: Any = 0
   var roundBlock: Any = 0
   var foreignBlock: Any = 0
   var adverseRound = false
-  val f_s = 0.5
-  val forgerReward = 1.0
+  val f_s = 0.9
+  val forgerReward = 10.0
   var eta = Array(0x00.toByte)
+  val confirmationDepth = 10
 
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
@@ -125,19 +129,23 @@ class StakeHolder extends Actor
     }
     case Diffuse => {
       if (!diffuseSent) {
-        send(holderId,holders,diffuse(holderData,holderId))
+        send(holderId,Random.shuffle(holders),diffuse(holderData,holderId))
         diffuseSent = true
       }
       sender() ! "done"
     }
     case ForgeBlocks => {
       if (diffuseSent) {
-        if (slotLeader) roundBlock = forgeBlock
-        send(holderId,holders,SendBlock(roundBlock))
+        if (slotLeader) {roundBlock = forgeBlock}
+        roundBlock match {
+          case b:Block => localChain = List(b)++localChain
+          case _ =>
+        }
+        send(holderId,Random.shuffle(holders),SendChain(localChain))
       }
       sender() ! "done"
     }
-    case value: SendBlock =>{
+    case value: SendBlock => {
       value.b match {
         case b: Block => {
           if (verifyBlock(b,localChain) && foreignBlock == 0 && roundBlock == 0) {
@@ -146,23 +154,26 @@ class StakeHolder extends Actor
             adverseRound = true
           }
         }
-        case 0 =>
+        case _ =>
+      }
+      sender() ! "done"
+    }
+    case value: SendChain => {
+      value.c match {
+        case c: Chain => {
+          foreignChains = foreignChains++List(c)
+        }
+        case _ => println("error")
       }
       sender() ! "done"
     }
     case UpdateChain => {
-      if (!adverseRound && foreignBlock == 0) {
-        roundBlock match {
-          case 0 => adverseRound = true
-          case b:Block => localChain = List(b)++localChain
+      for (chain <- foreignChains) {
+        if (chain.length>localChain.length){
+          if (verifyChain(chain)) localChain = chain
         }
       }
-      if (!adverseRound && roundBlock == 0){
-        foreignBlock match {
-          case 0 => adverseRound = true
-          case b:Block => localChain = List(b)++localChain
-        }
-      }
+      foreignChains = List()
       sender() ! "done"
     }
     case value: String => {
@@ -181,6 +192,8 @@ class StakeHolder extends Actor
     case Inbox => {println(inbox); sender() ! "done"}
     case Status => {
       println(holderId+" t = "+t.toString+" stake = "+stake.toString+" chain length = "+localChain.length.toString+" valid chain = "+verifyChain(localChain).toString)
+      println("chain hash tail: "+bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
+      println("chain hash head: "+bytes2hex(FastCryptographicHash(serialize(localChain.take(confirmationDepth)))))
       sender() ! "done"
     }
     case GetGenKeys => {sender() ! diffuse(holderData,holderId)}
