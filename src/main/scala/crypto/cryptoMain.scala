@@ -26,7 +26,7 @@ if (true) {
   //Ouroboros test using akka actors
 
   val system = ActorSystem("stakeholders")
-  val n = 100
+  val n = 10
 
   val coordinator = system.actorOf(Coordinator.props, "coordinator")
 
@@ -36,9 +36,6 @@ if (true) {
     coordinator ! Update
   }
 
-  //  println(">>> Press ENTER for Inbox <<<")
-  //   StdIn.readLine()
-  //  coordinator ! Inbox
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()
   coordinator ! Status

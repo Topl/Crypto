@@ -41,6 +41,21 @@ trait obFunctions {
     }
   }
 
+  def send(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
+    var list:Map[String,String] = input
+    for (holder <- holders){
+      implicit val timeout = Timeout(2 seconds)
+      val future = holder ? command
+      Await.result(future, timeout.duration) match {
+        case str:String => {
+          if (verifyTxStamp(str)) list = list++Map(s"${holder.path}" -> str)
+        }
+        case _ => println("error")
+      }
+    }
+    list
+  }
+
   def send(holderId:String, holders:List[ActorRef],command: Any) = {
     implicit val timeout = Timeout(2 seconds)
     for (holder <- holders){
@@ -66,11 +81,12 @@ trait obFunctions {
   def verifyChain(c:Chain): Boolean = {
     var bool = true
     var i = 0
+    bool &&= verifyBlock(c.head)
     for (block <- c.tail ) {
-      val (hash, state, slot, cert, y, pi_y, sig, pk) = c(i)
+      val block0 = c(i)
       i+=1
-      bool &&= (FastCryptographicHash(serialize(block)).deep == hash.deep
-        && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot))
+      bool &&= (FastCryptographicHash(serialize(block)).deep == block0._1.deep
+        && verifyBlock(block))
     }
     bool
   }
