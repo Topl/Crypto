@@ -139,9 +139,11 @@ class StakeHolder extends Actor
   var eta_Ep:Array[Byte] = Array()
   var Tr_Ep: Double = 0.0
 
+  //stakeholder public keys
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   def receive: Receive = {
+    /**updates time, the kes key, and resets variables */
     case value: Update => {
       inbox = ""
       roundBlock = 0
@@ -150,6 +152,7 @@ class StakeHolder extends Actor
       malkinKey = MalkinKES.updateKey(malkinKey,t)
       sender() ! "done"
     }
+    /**sends all other stakeholders the public keys, only happens once per round */
     case Diffuse => {
       if (!diffuseSent) {
         send(holderId,Random.shuffle(holders),diffuse(holderData,holderId,sk_sig))
@@ -157,11 +160,12 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+    /**checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
     case ForgeBlocks => {
       if (t%epochLength == 1){
         alpha_Ep = relativeStake(inbox,bytes2hex(pk_sig),localChain)
         Tr_Ep = phi(alpha_Ep,f_s)
-        eta_Ep = eta(localChain)
+        eta_Ep = eta(localChain,t/epochLength)
       }
       if (diffuseSent) {
         if (slotLeader) {roundBlock = forgeBlock}
@@ -177,6 +181,7 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+    /**receives chains from other holders and stores them */
     case value: SendChain => {
       value.c match {
         case c: Chain => {
@@ -186,6 +191,7 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+    /**updates local chain if a longer valid chain is detected */
     case UpdateChain => {
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
@@ -195,14 +201,17 @@ class StakeHolder extends Actor
       foreignChains = List()
       sender() ! "done"
     }
+    /**validates diffused string from other holders and stores in inbox */
     case value: String => {
       if(verifyTxStamp(value)) inbox = inbox+value+"\n"
       sender() ! "done"
     }
+    /**accepts list of other holders from coordinator */
     case list: List[ActorRef] => {
       holders = list
       sender() ! "done"
     }
+    /**accepts genesis block from coordinator */
     case gb: GenBlock =>  {
       genBlock = gb.b
       genBlock match {
@@ -214,16 +223,20 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+    /**prints inbox */
     case Inbox => {println(inbox); sender() ! "done"}
+    /**prints stats */
     case Status => {
       println(holderId+"\nt = "+t.toString+" alpha = "+alpha_Ep.toString+" blocks forged = "+blocksForged.toString+"\n chain length = "+localChain.length.toString+" valid chain = "+verifyChain(localChain).toString)
       println("confirmed chain hash: \n"+bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
       sender() ! "done"
     }
+    /**sends coordinator keys */
     case GetGenKeys => {sender() ! diffuse(holderData,holderId,sk_sig)}
     case _ => {println("received unknown message");sender() ! "error"}
   }
 
+  /**Determines eligibility for a stakeholder to be a slot leader */
   def slotLeader: Boolean = {
     val slot = t
     val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("TEST"))
@@ -231,6 +244,7 @@ class StakeHolder extends Actor
     compare(y,Tr_Ep)
   }
 
+  /**Calculates a block */
   def forgeBlock: Block = {
     val slot:Slot = t
     val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"))

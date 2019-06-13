@@ -33,24 +33,29 @@ trait obFunctions {
   val confirmationDepth = 10
   val f_s = 0.9
   val forgerReward = 10.0
-  val epochLength = 20
+  val epochLength = 3*confirmationDepth
   val initStakeMax = 100.0
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
-  def eta(c:Chain): Eta = {
+  def eta(c:Chain,ep:Int): Eta = {
     val t = c.head._3
-    if(t<epochLength) {
+    println(t)
+    if(t==0) {
+      println("eta0")
+      println(bytes2hex(FastCryptographicHash(c.last._5)))
       FastCryptographicHash(c.last._5)
     } else {
       var v: Array[Byte] = Array()
-      val ep = t/epochLength
-      val epcv = subChain(c,t-t%epochLength-epochLength,t-t%epochLength-epochLength/3)
-      val cnext = subChain(c,0,t-t%epochLength-epochLength)
+      val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
+      val cnext = subChain(c,0,ep*epochLength-epochLength)
       for(block <- epcv) {
         v = v++block._5
       }
-      FastCryptographicHash(eta(cnext)++serialize(ep)++v)
+      val eta_ep = FastCryptographicHash(eta(cnext,ep-1)++serialize(ep)++v)
+      println("eta"+ep.toString)
+      println(bytes2hex(eta_ep))
+      eta_ep
     }
   }
 
