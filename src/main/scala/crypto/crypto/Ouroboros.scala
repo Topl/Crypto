@@ -14,6 +14,7 @@ import scala.util.Random
   * Ouroboros Prosomoiotís:
   *
   * Dynamic proof of stake protocol simulated with akka actors
+  * based on Praos and Genesis revisions of Ouroboros
   *
   */
 
@@ -65,7 +66,7 @@ class Coordinator extends Actor
   var genKeys:Map[String,String] = Map()
 
   def receive: Receive = {
-    //populates the holder list with stakeholder actor refs
+    /**populates the holder list with stakeholder actor refs */
     case value: Populate => {
       holders = List.fill(value.n){
         context.actorOf(StakeHolder.props, "holder:" + uuid)
@@ -75,10 +76,10 @@ class Coordinator extends Actor
       val genBlock:Block = forgeGenBlock
       send(holders,GenBlock(genBlock))
     }
-    //tells actors to print their inbox
+    /**tells actors to print their inbox */
     case Inbox => send(holders,Inbox)
-    //Execute the round by sending each stakeholder a sequence of commands
-    //holders list is shuffled to emulate unpredictable ordering of messages
+    /**Execute the round by sending each stakeholder a sequence of commands */
+    /**holders list is shuffled to emulate unpredictable ordering of messages */
     case Update => {
       if (t%epochLength==0) {send(holders,Status)}
       t+=1
@@ -89,11 +90,11 @@ class Coordinator extends Actor
       send(Random.shuffle(holders),UpdateChain)
 
     }
-    //tells actors to print status
+    //tells actors to print status */
     case Status => send(holders,Status)
     case _ => println("received unknown message")
   }
-  // creates genesis block to be sent to all stakeholders
+  /**creates genesis block to be sent to all stakeholders */
   def forgeGenBlock: Block = {
     val slot:Slot = t
     val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("NONCE"))
@@ -143,6 +144,7 @@ class StakeHolder extends Actor
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   def receive: Receive = {
+
     /**updates time, the kes key, and resets variables */
     case value: Update => {
       inbox = ""
@@ -152,6 +154,7 @@ class StakeHolder extends Actor
       malkinKey = MalkinKES.updateKey(malkinKey,t)
       sender() ! "done"
     }
+
     /**sends all other stakeholders the public keys, only happens once per round */
     case Diffuse => {
       if (!diffuseSent) {
@@ -160,6 +163,7 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+
     /**checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
     case ForgeBlocks => {
       if (t%epochLength == 1){
@@ -181,6 +185,7 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+
     /**receives chains from other holders and stores them */
     case value: SendChain => {
       value.c match {
@@ -191,6 +196,7 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+
     /**updates local chain if a longer valid chain is detected */
     case UpdateChain => {
       for (chain <- foreignChains) {
@@ -201,16 +207,19 @@ class StakeHolder extends Actor
       foreignChains = List()
       sender() ! "done"
     }
+
     /**validates diffused string from other holders and stores in inbox */
     case value: String => {
       if(verifyTxStamp(value)) inbox = inbox+value+"\n"
       sender() ! "done"
     }
+
     /**accepts list of other holders from coordinator */
     case list: List[ActorRef] => {
       holders = list
       sender() ! "done"
     }
+
     /**accepts genesis block from coordinator */
     case gb: GenBlock =>  {
       genBlock = gb.b
@@ -223,16 +232,22 @@ class StakeHolder extends Actor
       }
       sender() ! "done"
     }
+
     /**prints inbox */
     case Inbox => {println(inbox); sender() ! "done"}
+
     /**prints stats */
     case Status => {
-      println(holderId+"\nt = "+t.toString+" alpha = "+alpha_Ep.toString+" blocks forged = "+blocksForged.toString+"\n chain length = "+localChain.length.toString+" valid chain = "+verifyChain(localChain).toString)
+      println(holderId+"\nt = "+t.toString+" alpha = "+alpha_Ep.toString+" blocks forged = "
+        +blocksForged.toString+"\n chain length = "+localChain.length.toString+" valid chain = "
+        +verifyChain(localChain).toString)
       println("confirmed chain hash: \n"+bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
       sender() ! "done"
     }
+
     /**sends coordinator keys */
     case GetGenKeys => {sender() ! diffuse(holderData,holderId,sk_sig)}
+
     case _ => {println("received unknown message");sender() ! "error"}
   }
 

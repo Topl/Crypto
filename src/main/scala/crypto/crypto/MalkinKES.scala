@@ -674,7 +674,9 @@ object MalkinKES {
     val sigi = sig._1
     val sigm = sig._2
     val pki = sig._3
-    sumVerify(pk,pki,sigi) && sumVerify(pki,m++BigInt(t).toByteArray,sigm)
+    val stepL = BigInt(sigi.slice(sigBytes+pkBytes,sigBytes+pkBytes+seedBytes)).toInt
+    val stepSi = BigInt(sigm.slice(sigBytes+pkBytes,sigBytes+pkBytes+seedBytes)).toInt
+    sumVerify(pk,pki,sigi) && sumVerify(pki,m++BigInt(t).toByteArray,sigm) && (t==exp(stepL)-1+stepSi)
   }
 
   /**
