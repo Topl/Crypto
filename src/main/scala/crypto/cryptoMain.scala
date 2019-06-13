@@ -26,13 +26,13 @@ if (true) {
   //Ouroboros test using akka actors
 
   val system = ActorSystem("stakeholders")
-  val n = 10
+  val n = 4
 
   val coordinator = system.actorOf(Coordinator.props, "coordinator")
 
   coordinator ! Populate(n)
 
-  for (i <- 1 to 100) {
+  for (i <- 1 to 125) {
     coordinator ! Update
   }
 

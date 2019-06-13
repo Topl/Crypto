@@ -15,6 +15,7 @@ import crypto.Ed25519vrf.Ed25519VRF
 import crypto.crypto.malkinKES.MalkinKES
 import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
+import scala.math.BigInt
 
 trait obFunctions {
   type Eta = Array[Byte]
@@ -29,8 +30,74 @@ trait obFunctions {
   type Cert = (PublicKey,Rho,Pi)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
+  val confirmationDepth = 10
+  val f_s = 0.9
+  val forgerReward = 10.0
+  val epochLength = 20
+  val initStakeMax = 100.0
 
   def uuid: String = java.util.UUID.randomUUID.toString
+
+  def eta(c:Chain): Eta = {
+    val t = c.head._3
+    if(t<epochLength) {
+      FastCryptographicHash(c.last._5)
+    } else {
+      var v: Array[Byte] = Array()
+      val ep = t/epochLength
+      val epcv = subChain(c,t-t%epochLength-epochLength,t-t%epochLength-epochLength/3)
+      val cnext = subChain(c,0,t-t%epochLength-epochLength)
+      for(block <- epcv) {
+        v = v++block._5
+      }
+      FastCryptographicHash(eta(cnext)++serialize(ep)++v)
+    }
+  }
+
+  def subChain(c:Chain,t1:Int,t2:Int): Chain = {
+    var out: Chain = List()
+    for (b <- c) {
+      if(b._3 <= t2 && b._3 >= t1) {out = out++List(b)}
+    }
+    out
+  }
+
+  def phi (a:Double,f:Double): Double = {
+    1.0 - scala.math.pow(1.0 - f,a)
+  }
+
+  def compare(y: Array[Byte],t: Double):Boolean = {
+    var net = 0.0
+    var i =0
+    for (byte<-y){
+      i+=1
+      val n = BigInt(byte & 0xff).toDouble
+      val norm = scala.math.pow(2.0,8.0*i)
+      net += n/norm
+    }
+    net<t
+  }
+
+  def relativeStake(party:String,holderKey:String,chain:Chain): Double = {
+    var holderStake = 0.0
+    var netStake = 0.0
+    for (block<-chain) {
+      if (verifyBlock(block)) {
+        val (hash, state, slot, cert, y, pi_y, sig, pk) = block
+        for (entry <- state) {
+          if(verifyTxStamp(entry._1)) {
+            if (entry._1.contains(holderKey)) {holderStake+=entry._2; netStake += entry._2}
+            if (party.contains(entry._1.take(2*Curve25519.KeyLength))) {netStake += entry._2}
+          }
+        }
+      }
+    }
+    holderStake/netStake
+  }
+
+  def diffuse(str: String,id: String,sk_sig: Array[Byte]): String = {
+    str+";"+id+";"+bytes2hex(Curve25519.sign(sk_sig,serialize(str+";"+id)))
+  }
 
   def send(holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
@@ -68,14 +135,14 @@ trait obFunctions {
   }
 
   def verifyBlock(b:Block): Boolean = {
-    val (hash, state, slot, cert, y, pi_y, sig, pk) = b
-    MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot)
+    val (hash, state, slot, cert, rho, pi, sig, pk) = b
+    MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi,sig,slot)
   }
 
   def verifyBlock(b:Block,c:Chain): Boolean = {
-    val (hash, state, slot, cert, y, pi_y, sig, pk) = b
+    val (hash, state, slot, cert, rho, pi, sig, pk) = b
     (FastCryptographicHash(serialize(c.head)).deep == hash.deep
-    && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++y++pi_y,sig,slot))
+    && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi,sig,slot))
   }
 
   def verifyChain(c:Chain): Boolean = {
