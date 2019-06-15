@@ -28,7 +28,7 @@ trait obFunctions {
   type PrivateKey = Array[Byte]
   type Hash = Array[Byte]
   type Pi = Array[Byte]
-  type Cert = (PublicKey,Rho,Pi,PublicKey,Party)
+  type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Double)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
   val confirmationDepth = 10
@@ -123,7 +123,8 @@ trait obFunctions {
   def relativeStake(party:String,holderKey:String,chain:Chain,t:Int): Double = {
     var holderStake = 0.0
     var netStake = 0.0
-    val sc = subChain(chain,0,(t/epochLength)*epochLength-epochLength)
+    val ep = t/epochLength
+    val sc = subChain(chain,0,ep*epochLength-epochLength)
     for (block<-sc) {
       val state = block._2
       for (entry <- state) {
@@ -207,7 +208,7 @@ trait obFunctions {
     */
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
-    val (pk_vrf,_,_,pk_sig,party) = cert
+    val (pk_vrf,_,_,pk_sig,party,_) = cert
     val holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
     val members:Array[String] = party.split("\n")
     (MalkinKES.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
@@ -227,20 +228,20 @@ trait obFunctions {
     var ep = t/epochLength
     var stakingParty = c.head._4._5
     var alpha_Ep = 0.0
-    var Tr_Ep = 0.0
+    var tr_Ep = 0.0
     var eta_Ep = eta(c,ep)
 
     for (block <- c.tail ) {
       val block0 = c(i)
       val (hash, _, slot, cert, rho, pi, _, _) = block0
-      val (pk_vrf,y,pi_y,pk_sig,party) = cert
+      val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
       if (slot<ep*epochLength+1){
         stakingParty = party
         ep-=1
         eta_Ep = eta(c.drop(i),ep)
       }
-      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c.drop(i),slot)
-      Tr_Ep = phi(alpha_Ep,f_s)
+      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c,ep*epochLength+1)
+      tr_Ep = phi(alpha_Ep,f_s)
       def compareParties(p1:Party,p2:Party): Boolean = {
         var bool = true
         val m1:Array[String] = p1.split("\n").sorted
@@ -250,7 +251,6 @@ trait obFunctions {
         bool &&= m1.deep == m2.deep
         bool
       }
-
       bool &&= (
         FastCryptographicHash(serialize(block)).deep == hash.deep
         && verifyBlock(block0)
@@ -260,7 +260,8 @@ trait obFunctions {
         && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
         && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
         && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
-        && compare(y,Tr_Ep)
+        && tr_Ep == tr_c
+        && compare(y,tr_Ep)
         )
       i+=1
     }

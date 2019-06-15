@@ -4,9 +4,10 @@ import akka.actor.{Actor, ActorRef, Props}
 import bifrost.crypto.hash.FastCryptographicHash
 import crypto.Ed25519vrf.Ed25519VRF
 import crypto.crypto.malkinKES.MalkinKES
-import crypto.crypto.malkinKES.MalkinKES.MalkinSignature
+import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
 import crypto.crypto.obFunctions
+
 import scala.math.BigInt
 import scala.util.Random
 
@@ -111,7 +112,7 @@ class Coordinator extends Actor
     for (entry <- state){
       party += entry._1
     }
-    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party)
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party,1.0)
     val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }
@@ -135,7 +136,7 @@ class StakeHolder extends Actor
   var t = 0
   val seed = FastCryptographicHash(uuid)
   val (sk_vrf,pk_vrf) = Ed25519VRF.vrfKeypair(seed)
-  var malkinKey = MalkinKES.generateKey(seed)
+  var malkinKey:MalkinKey = MalkinKES.generateKey(seed)
   val (sk_sig,pk_sig) = Curve25519.createKeyPair(seed)
   val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
   var localChain:Chain = List()
@@ -212,8 +213,8 @@ class StakeHolder extends Actor
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
           val trueChain = verifyChain(chain,genBlockHash)
-          if(trueChain == false) println("error: invalid chain")
-          assert(trueChain)
+          if(!trueChain) println("error: invalid chain")
+          //assert(trueChain)
           if (trueChain) localChain = chain
         }
       }
@@ -256,7 +257,6 @@ class StakeHolder extends Actor
         +blocksForged.toString+"\n chain length = "+localChain.length.toString+" valid chain = "
         +trueChain.toString)
       println("confirmed chain hash: \n"+bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
-      assert(trueChain)
       sender() ! "done"
     }
 
@@ -284,7 +284,7 @@ class StakeHolder extends Actor
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
     val hash:Hash = FastCryptographicHash(serialize(localChain.head))
     val state:State = Map(txString->forgerReward)
-    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,stakingParty)
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,stakingParty,Tr_Ep)
     val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }
