@@ -37,7 +37,7 @@ case class Update(t:Int)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(b: Any)
-case class SendChain(c: Any)
+case class SendChain(c: Any,s:String)
 case object Status
 case object ForgeBlocks
 case object GetGenKeys
@@ -66,13 +66,15 @@ class Coordinator extends Actor
   var genKeys:Map[String,String] = Map()
 
   def receive: Receive = {
-    /**populates the holder list with stakeholder actor refs */
+    /**populates the holder list with stakeholder actor refs
+      * This is the F_init functionality */
     case value: Populate => {
       holders = List.fill(value.n){
         context.actorOf(StakeHolder.props, "holder:" + uuid)
       }
       send(holders,holders)
       genKeys = send(holders,GetGenKeys,genKeys)
+      assert(!containsDuplicates(genKeys))
       val genBlock:Block = forgeGenBlock
       send(holders,GenBlock(genBlock))
     }
@@ -81,7 +83,7 @@ class Coordinator extends Actor
     /**Execute the round by sending each stakeholder a sequence of commands */
     /**holders list is shuffled to emulate unpredictable ordering of messages */
     case Update => {
-      if (t%epochLength==0) {send(holders,Status)}
+      if (t%epochLength==1) {send(holders,Status)}
       t+=1
       println("t = "+t.toString)
       send(Random.shuffle(holders),Update(t))
@@ -105,11 +107,14 @@ class Coordinator extends Actor
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
     val state: State = holders.map{ case ref:ActorRef => diffuse(genKeys(s"${ref.path}"),coordData,sk_sig) -> initStakeMax * r.nextDouble}.toMap
-    val cert:Cert = (pk_vrf,y,pi_y)
-    val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi)
+    var party: String = ""
+    for (entry <- state){
+      party += entry._1
+    }
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party)
+    val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }
-
 }
 
 /**
@@ -120,6 +125,7 @@ class Coordinator extends Actor
 class StakeHolder extends Actor
   with obFunctions {
   var inbox:String = ""
+  var stakingParty:String = ""
   var holderData: String = ""
   var holders: List[ActorRef] = List()
   var diffuseSent = false
@@ -167,7 +173,9 @@ class StakeHolder extends Actor
     /**checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
     case ForgeBlocks => {
       if (t%epochLength == 1){
-        alpha_Ep = relativeStake(inbox,bytes2hex(pk_sig),localChain)
+        val txString = diffuse(holderData,holderId,sk_sig)
+        stakingParty = txString+"\n"+inbox
+        alpha_Ep = relativeStake(stakingParty,bytes2hex(pk_sig),localChain,t)
         Tr_Ep = phi(alpha_Ep,f_s)
         eta_Ep = eta(localChain,t/epochLength)
       }
@@ -176,7 +184,7 @@ class StakeHolder extends Actor
         roundBlock match {
           case b:Block => {
             localChain = List(b)++localChain
-            send(holderId,Random.shuffle(holders),SendChain(localChain))
+            send(holderId,Random.shuffle(holders),SendChain(localChain,diffuse(holderData,holderId,sk_sig)))
             blocksForged+=1
           }
           case _ =>
@@ -188,11 +196,13 @@ class StakeHolder extends Actor
 
     /**receives chains from other holders and stores them */
     case value: SendChain => {
-      value.c match {
-        case c: Chain => {
-          foreignChains = foreignChains++List(c)
+      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s)) && stakingParty.contains(idInfo(value.s))) {
+        value.c match {
+          case c: Chain => {
+            foreignChains = foreignChains ++ List(c)
+          }
+          case _ => println("error")
         }
-        case _ => println("error")
       }
       sender() ! "done"
     }
@@ -201,7 +211,10 @@ class StakeHolder extends Actor
     case UpdateChain => {
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
-          if (verifyChain(chain) && FastCryptographicHash(serialize(chain.last)).deep == genBlockHash.deep) localChain = chain
+          val trueChain = verifyChain(chain,genBlockHash)
+          if(trueChain == false) println("error: invalid chain")
+          assert(trueChain)
+          if (trueChain) localChain = chain
         }
       }
       foreignChains = List()
@@ -238,10 +251,12 @@ class StakeHolder extends Actor
 
     /**prints stats */
     case Status => {
+      val trueChain = verifyChain(localChain,genBlockHash)
       println(holderId+"\nt = "+t.toString+" alpha = "+alpha_Ep.toString+" blocks forged = "
         +blocksForged.toString+"\n chain length = "+localChain.length.toString+" valid chain = "
-        +verifyChain(localChain).toString)
+        +trueChain.toString)
       println("confirmed chain hash: \n"+bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
+      assert(trueChain)
       sender() ! "done"
     }
 
@@ -261,15 +276,16 @@ class StakeHolder extends Actor
 
   /**Calculates a block */
   def forgeBlock: Block = {
+    val txString = diffuse(holderData,holderId,sk_sig)
     val slot:Slot = t
     val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"))
     val rho:Rho = Ed25519VRF.vrfProofToHash(pi)
     val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("TEST"))
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
     val hash:Hash = FastCryptographicHash(serialize(localChain.head))
-    val state:State = Map(diffuse(holderData,holderId,sk_sig)->forgerReward)
-    val cert:Cert = (pk_vrf,y,pi_y)
-    val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi)
+    val state:State = Map(txString->forgerReward)
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,stakingParty)
+    val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }
 

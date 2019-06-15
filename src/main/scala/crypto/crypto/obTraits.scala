@@ -24,10 +24,11 @@ trait obFunctions {
   type State = Map[String,Double]
   type Rho = Array[Byte]
   type PublicKey = Array[Byte]
+  type Party = String
   type PrivateKey = Array[Byte]
   type Hash = Array[Byte]
   type Pi = Array[Byte]
-  type Cert = (PublicKey,Rho,Pi)
+  type Cert = (PublicKey,Rho,Pi,PublicKey,Party)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
   val confirmationDepth = 10
@@ -35,6 +36,7 @@ trait obFunctions {
   val forgerReward = 10.0
   val epochLength = 3*confirmationDepth
   val initStakeMax = 100.0
+  val waitTime = 5 seconds
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
@@ -45,9 +47,7 @@ trait obFunctions {
     * @return hash nonce
     */
   def eta(c:Chain,ep:Int): Eta = {
-    val t = c.head._3
-    println(t)
-    if(t==0) {
+    if(ep == 0) {
       //println("eta0")
       //println(bytes2hex(FastCryptographicHash(c.last._5)))
       FastCryptographicHash(c.last._5)
@@ -74,8 +74,12 @@ trait obFunctions {
     */
   def subChain(c:Chain,t1:Int,t2:Int): Chain = {
     var out: Chain = List()
+    var t_lower:Int = 0
+    var t_upper:Int = 0
+    if (t1>0) t_lower = t1
+    if (t2>0) t_upper = t2
     for (b <- c) {
-      if(b._3 <= t2 && b._3 >= t1) {out = out++List(b)}
+      if(b._3 <= t_upper && b._3 >= t_lower) {out = out++List(b)}
     }
     out
   }
@@ -113,19 +117,19 @@ trait obFunctions {
     * @param party string containing all stakeholders participating in the round
     * @param holderKey stakeholder public key
     * @param chain chain containing stakeholders transactions
+    * @param t current time slot
     * @return alpha, between 0.0 and 1.0
     */
-  def relativeStake(party:String,holderKey:String,chain:Chain): Double = {
+  def relativeStake(party:String,holderKey:String,chain:Chain,t:Int): Double = {
     var holderStake = 0.0
     var netStake = 0.0
-    for (block<-chain) {
-      if (verifyBlock(block)) {
-        val (hash, state, slot, cert, y, pi_y, sig, pk) = block
-        for (entry <- state) {
-          if(verifyTxStamp(entry._1)) {
-            if (entry._1.contains(holderKey)) {holderStake+=entry._2; netStake += entry._2}
-            if (party.contains(entry._1.take(2*Curve25519.KeyLength))) {netStake += entry._2}
-          }
+    val sc = subChain(chain,0,(t/epochLength)*epochLength-epochLength)
+    for (block<-sc) {
+      val state = block._2
+      for (entry <- state) {
+        if(verifyTxStamp(entry._1) && party.contains(holderKey)) {
+          if (entry._1.contains(holderKey)) {holderStake+=entry._2}
+          if (party.contains(entry._1.take(2*Curve25519.KeyLength))) {netStake += entry._2}
         }
       }
     }
@@ -150,7 +154,7 @@ trait obFunctions {
     */
   def send(holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
-      implicit val timeout = Timeout(2 seconds)
+      implicit val timeout = Timeout(waitTime)
       val future = holder ? command
       val result = Await.result(future, timeout.duration)
       assert(result == "done")
@@ -167,7 +171,7 @@ trait obFunctions {
   def send(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
-      implicit val timeout = Timeout(2 seconds)
+      implicit val timeout = Timeout(waitTime)
       val future = holder ? command
       Await.result(future, timeout.duration) match {
         case str:String => {
@@ -186,7 +190,7 @@ trait obFunctions {
     * @param command object to be sent
     */
   def send(holderId:String, holders:List[ActorRef],command: Any) = {
-    implicit val timeout = Timeout(2 seconds)
+    implicit val timeout = Timeout(waitTime)
     for (holder <- holders){
       if (s"${holder.path}" != holderId) {
         val future = holder ? command
@@ -202,38 +206,65 @@ trait obFunctions {
     * @returnt true if signature is valid, false otherwise
     */
   def verifyBlock(b:Block): Boolean = {
-    val (hash, state, slot, cert, rho, pi, sig, pk) = b
-    MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi,sig,slot)
-  }
-
-  /**
-    * Block verify using key evolving signature and hash rule
-    * @param b input block
-    * @param c chain with head corresponding to b
-    * @return true if signature is valid and b corresponds to c, false otherwise
-    */
-  def verifyBlock(b:Block,c:Chain): Boolean = {
-    val (hash, state, slot, cert, rho, pi, sig, pk) = b
-    (FastCryptographicHash(serialize(c.head)).deep == hash.deep
-    && MalkinKES.verify(pk,hash++serialize(state)++serialize(slot)++cert._1++cert._2++cert._3++rho++pi,sig,slot))
+    val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
+    val (pk_vrf,_,_,pk_sig,party) = cert
+    val holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
+    val members:Array[String] = party.split("\n")
+    (MalkinKES.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
+      && members(0).contains(holderData))
   }
 
   /**
     * Verify chain using key evolving siganture and hash rule
     * @param c chain to be verified
+    * @param gh genesis block hash
     * @return true if chain is valid, false otherwise
     */
-  def verifyChain(c:Chain): Boolean = {
+  def verifyChain(c:Chain, gh:Hash): Boolean = {
     var bool = true
     var i = 0
-    bool &&= verifyBlock(c.head)
+    val t = c.head._3
+    var ep = t/epochLength
+    var stakingParty = c.head._4._5
+    var alpha_Ep = 0.0
+    var Tr_Ep = 0.0
+    var eta_Ep = eta(c,ep)
+
     for (block <- c.tail ) {
       val block0 = c(i)
+      val (hash, _, slot, cert, rho, pi, _, _) = block0
+      val (pk_vrf,y,pi_y,pk_sig,party) = cert
+      if (slot<ep*epochLength+1){
+        stakingParty = party
+        ep-=1
+        eta_Ep = eta(c.drop(i),ep)
+      }
+      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c.drop(i),slot)
+      Tr_Ep = phi(alpha_Ep,f_s)
+      def compareParties(p1:Party,p2:Party): Boolean = {
+        var bool = true
+        val m1:Array[String] = p1.split("\n").sorted
+        val m2:Array[String] = p2.split("\n").sorted
+        for (member <- m1) {bool &&= verifyTxStamp(member)}
+        for (member <- m2) {bool &&= verifyTxStamp(member)}
+        bool &&= m1.deep == m2.deep
+        bool
+      }
+
+      bool &&= (
+        FastCryptographicHash(serialize(block)).deep == hash.deep
+        && verifyBlock(block0)
+        && block._3<block0._3
+        //&& compareParties(stakingParty,party)
+        && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
+        && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
+        && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
+        && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+        && compare(y,Tr_Ep)
+        )
       i+=1
-      bool &&= (FastCryptographicHash(serialize(block)).deep == block0._1.deep
-        && verifyBlock(block))
     }
-    bool
+    bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
   }
 
   /**
@@ -245,6 +276,16 @@ trait obFunctions {
     val values: Array[String] = value.split(";")
     val m = values(0)+";"+values(1)+";"+values(2)+";"+values(3)
     Curve25519.verify(hex2bytes(values(4)),serialize(m),hex2bytes(values(0)))
+  }
+
+  /**
+    * Return Id String from Tx stamp
+    * @param value stamp to be parsed
+    * @return string containing unique info
+    */
+  def idInfo(value: String): String = {
+    val values: Array[String] = value.split(";")
+    values(0)+";"+values(1)+";"+values(2)+";"+values(3)
   }
 
   /**
@@ -284,6 +325,16 @@ trait obFunctions {
     } else {
       hex.sliding(2, 2).toArray.map(Integer.parseInt(_, 16).toByte)
     }
+  }
+
+  def containsDuplicates(s:Map[String,String]):Boolean = {
+    var s1:List[String] = List()
+    var s2:List[String] = List()
+    for (entry <- s) {
+      s1 ++= List(entry._1)
+      s2 ++= List(entry._2)
+    }
+    (s1.distinct.size != s1.size) && (s2.distinct.size != s2.size)
   }
 
 }
