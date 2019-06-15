@@ -7,7 +7,7 @@ import crypto.crypto.malkinKES.MalkinKES
 import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
 import crypto.crypto.obFunctions
-
+import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
 
@@ -34,6 +34,7 @@ case object Diffuse
 case object Inbox
 case object Update
 case object UpdateChain
+case object UpdateChainFast
 case class Update(t:Int)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
@@ -84,17 +85,19 @@ class Coordinator extends Actor
     /**Execute the round by sending each stakeholder a sequence of commands */
     /**holders list is shuffled to emulate unpredictable ordering of messages */
     case Update => {
-      if (t%epochLength==1) {send(holders,Status)}
+      //if (t%epochLength==1) {send(holders,Status)}
       t+=1
       println("t = "+t.toString)
       send(Random.shuffle(holders),Update(t))
       send(Random.shuffle(holders),Diffuse)
       send(Random.shuffle(holders),ForgeBlocks)
-      send(Random.shuffle(holders),UpdateChain)
+      send(Random.shuffle(holders),UpdateChainFast)
 
     }
     //tells actors to print status */
-    case Status => send(holders,Status)
+    case Status => {
+      send(holders,Status)
+    }
     case _ => println("received unknown message")
   }
   /**creates genesis block to be sent to all stakeholders */
@@ -216,6 +219,44 @@ class StakeHolder extends Actor
           if(!trueChain) println("error: invalid chain")
           //assert(trueChain)
           if (trueChain) localChain = chain
+        }
+      }
+      foreignChains = List()
+      sender() ! "done"
+    }
+    /**updates local chain if a longer valid chain is detected
+      * finds common prefix and only checks new blocks */
+    case UpdateChainFast => {
+      for (chain <- foreignChains) {
+        if (chain.length>localChain.length){
+          var trueChain = false
+          if (localChain.length == 1) {
+            //println("inheriting chain")
+            trueChain = verifyChain(chain,genBlockHash)
+          }
+          else {
+            var prefixIndex = 0
+            var foundCommonPrefix = false
+            breakable {
+              for (block <- chain.drop(chain.length-localChain.length)) {
+                if (block._1.deep == localChain(prefixIndex)._1.deep) {
+                  //println("found common prefix at i = "+prefixIndex.toString)
+                  foundCommonPrefix = true
+                  trueChain = verifyChain(chain, genBlockHash,prefixIndex)
+                  break
+                }
+                prefixIndex += 1
+              }
+            }
+            if (!foundCommonPrefix) {
+              //println("no prefix found, checking entire chain")
+              trueChain = verifyChain(chain,genBlockHash)
+            }
+          }
+          if(!trueChain) println("error: invalid chain")
+          //assert(trueChain)
+          if (trueChain) localChain = chain
+          //assert(verifyChain(localChain,genBlockHash))
         }
       }
       foreignChains = List()

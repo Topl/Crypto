@@ -32,7 +32,7 @@ if (true) {
 
   coordinator ! Populate(n)
 
-  for (i <- 1 to 125) {
+  for (i <- 1 to 200) {
     coordinator ! Update
   }
 

@@ -36,7 +36,7 @@ trait obFunctions {
   val forgerReward = 10.0
   val epochLength = 3*confirmationDepth
   val initStakeMax = 100.0
-  val waitTime = 5 seconds
+  val waitTime = 60 seconds
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
@@ -216,7 +216,7 @@ trait obFunctions {
   }
 
   /**
-    * Verify chain using key evolving siganture and hash rule
+    * Verify chain using key evolving siganture, VRF proofs, and hash rule
     * @param c chain to be verified
     * @param gh genesis block hash
     * @return true if chain is valid, false otherwise
@@ -242,20 +242,11 @@ trait obFunctions {
       }
       alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c,ep*epochLength+1)
       tr_Ep = phi(alpha_Ep,f_s)
-      def compareParties(p1:Party,p2:Party): Boolean = {
-        var bool = true
-        val m1:Array[String] = p1.split("\n").sorted
-        val m2:Array[String] = p2.split("\n").sorted
-        for (member <- m1) {bool &&= verifyTxStamp(member)}
-        for (member <- m2) {bool &&= verifyTxStamp(member)}
-        bool &&= m1.deep == m2.deep
-        bool
-      }
       bool &&= (
         FastCryptographicHash(serialize(block)).deep == hash.deep
         && verifyBlock(block0)
         && block._3<block0._3
-        //&& compareParties(stakingParty,party)
+        && compareParties(stakingParty,party)
         && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
         && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
         && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
@@ -266,6 +257,64 @@ trait obFunctions {
       i+=1
     }
     bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+  }
+
+  /**
+    * Verify chain using key evolving siganture, VRF proofs, and hash rule
+    * @param c chain to be verified
+    * @param gh genesis block hash
+    * @param prefix index to verify up to
+    * @return true if chain is valid, false otherwise
+    */
+  def verifyChain(c:Chain, gh:Hash,prefix:Int): Boolean = {
+    var bool = true
+    var i = 0
+    val t = c.head._3
+    var ep = t/epochLength
+    var stakingParty = c.head._4._5
+    var alpha_Ep = 0.0
+    var tr_Ep = 0.0
+    var eta_Ep = eta(c,ep)
+
+    for (block <- c.tail.take(prefix+1) ) {
+      val block0 = c(i)
+      val (hash, _, slot, cert, rho, pi, _, _) = block0
+      val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
+      if (slot<ep*epochLength+1){
+        stakingParty = party
+        ep-=1
+        eta_Ep = eta(c.drop(i),ep)
+      }
+      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c,ep*epochLength+1)
+      tr_Ep = phi(alpha_Ep,f_s)
+      bool &&= (
+        FastCryptographicHash(serialize(block)).deep == hash.deep
+          && verifyBlock(block0)
+          && block._3<block0._3
+          && compareParties(stakingParty,party)
+          && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
+          && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
+          && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
+          && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+          && tr_Ep == tr_c
+          && compare(y,tr_Ep)
+        )
+      i+=1
+    }
+    bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+  }
+
+
+  def compareParties(p1:Party,p2:Party): Boolean = {
+    var bool = true
+    val m1:Array[String] = p1.split("\n")
+    val m2:Array[String] = p2.split("\n")
+    for (member <- m1) {bool &&= verifyTxStamp(member)}
+    for (member <- m2) {bool &&= verifyTxStamp(member)}
+    val id1 = m1.map(idInfo(_)).sorted
+    val id2 = m2.map(idInfo(_)).sorted
+    bool &&= id1.deep == id2.deep
+    bool
   }
 
   /**
