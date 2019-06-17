@@ -10,6 +10,7 @@ import crypto.crypto.obFunctions
 import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
+import java.io.{BufferedWriter, FileWriter}
 
 /**
   * Ouroboros Prosomoiotís:
@@ -40,6 +41,9 @@ case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(b: Any)
 case class SendChain(c: Any,s:String)
+case class WriteFile(fw: Any)
+case class NewDataFile(name:String)
+case object CloseDataFile
 case object Status
 case object ForgeBlocks
 case object GetGenKeys
@@ -66,6 +70,7 @@ class Coordinator extends Actor
   val coordData = bytes2hex(pk_sig)+":"+bytes2hex(pk_vrf)+":"+bytes2hex(pk_kes)
   //empty list of keys to be populated by stakeholders once they are instantiated
   var genKeys:Map[String,String] = Map()
+  var fileWriter:Any = 0
 
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
@@ -92,11 +97,33 @@ class Coordinator extends Actor
       send(Random.shuffle(holders),Diffuse)
       send(Random.shuffle(holders),ForgeBlocks)
       send(Random.shuffle(holders),UpdateChainFast)
-
+      send(holders,WriteFile(fileWriter))
     }
     //tells actors to print status */
     case Status => {
       send(holders,Status)
+    }
+    case value:NewDataFile => {
+      fileWriter = new BufferedWriter(new FileWriter(value.name))
+      val fileString = (
+        "Holder_number"
+        + " t"
+        + " alpha"
+        + " blocks_forged"
+        + " chain_length"
+        + " chain_hash"
+        +"\n"
+        )
+      fileWriter match {
+        case fw: BufferedWriter => fw.write(fileString)
+        case _ => println("error: file writer not initialized")
+      }
+    }
+    case CloseDataFile => {
+      fileWriter match {
+        case fw:BufferedWriter => fw.close()
+        case _ => println("error: file writer close on non writer object")
+      }
     }
     case _ => println("received unknown message")
   }
@@ -107,7 +134,7 @@ class Coordinator extends Actor
     val rho:Rho = Ed25519VRF.vrfProofToHash(pi)
     val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
-    val hash:Hash = FastCryptographicHash(seed)
+    val hash:Hash = eta0
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
     val state: State = holders.map{ case ref:ActorRef => diffuse(genKeys(s"${ref.path}"),coordData,sk_sig) -> initStakeMax * r.nextDouble}.toMap
@@ -149,14 +176,15 @@ class StakeHolder extends Actor
   var roundBlock: Any = 0
   var eta_Ep:Array[Byte] = Array()
   var Tr_Ep: Double = 0.0
+  var holderIndex = 0
 
   //stakeholder public keys
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   def receive: Receive = {
-
     /**updates time, the kes key, and resets variables */
     case value: Update => {
+      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Update")}
       inbox = ""
       roundBlock = 0
       diffuseSent = false
@@ -176,6 +204,7 @@ class StakeHolder extends Actor
 
     /**checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
     case ForgeBlocks => {
+      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Forge")}
       if (t%epochLength == 1){
         val txString = diffuse(holderData,holderId,sk_sig)
         stakingParty = txString+"\n"+inbox
@@ -193,7 +222,6 @@ class StakeHolder extends Actor
           }
           case _ =>
         }
-
       }
       sender() ! "done"
     }
@@ -227,6 +255,7 @@ class StakeHolder extends Actor
     /**updates local chain if a longer valid chain is detected
       * finds common prefix and only checks new blocks */
     case UpdateChainFast => {
+      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Update Chain")}
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
           var trueChain = false
@@ -272,6 +301,11 @@ class StakeHolder extends Actor
     /**accepts list of other holders from coordinator */
     case list: List[ActorRef] => {
       holders = list
+      var i = 0
+      for (holder<- holders){
+        if (holderId == s"${holder.path}") holderIndex = i
+        i+=1
+      }
       sender() ! "done"
     }
 
@@ -303,6 +337,25 @@ class StakeHolder extends Actor
 
     /**sends coordinator keys */
     case GetGenKeys => {sender() ! diffuse(holderData,holderId,sk_sig)}
+
+    case value:WriteFile => {
+      value.fw match {
+        case fileWriter: BufferedWriter => {
+          val fileString = (
+            holderIndex.toString+" "
+              +t.toString+" "
+              +alpha_Ep.toString+" "
+              +blocksForged.toString+" "
+              +localChain.length.toString+" "
+              +bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth))))
+            +"\n"
+            )
+          fileWriter.write(fileString)
+        }
+        case _ => println("error: data file writer not initialized")
+      }
+      sender() ! "done"
+    }
 
     case _ => {println("received unknown message");sender() ! "error"}
   }

@@ -1,5 +1,8 @@
 package crypto.cryptomain
 
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
 import bifrost.crypto.hash.FastCryptographicHash
 import crypto.forwardkeygen.ForwardKeyFile
 import bifrost.keygen.KeyFile
@@ -19,22 +22,35 @@ import crypto.ouroboros._
 import akka.actor.{Actor, ActorSystem, Props}
 
 import scala.io.StdIn
+import scala.reflect.io.Path
 
 object cryptoMain extends forwardSignatures with App {
 
 if (true) {
   //Ouroboros test using akka actors
 
+  val dataFileDir = "/home/aaron/topl/data"
+  //"/tmp/scorex/test-data/crypto"
+  //val dataPath = Path(dataFileDir)
+  //Try(dataPath.deleteRecursively())
+  //Try(dataPath.createDirectory())
+
+  val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+
   val system = ActorSystem("stakeholders")
-  val n = 5
+  val n = 10
 
   val coordinator = system.actorOf(Coordinator.props, "coordinator")
+
+  coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
   coordinator ! Populate(n)
 
   for (i <- 1 to 200) {
     coordinator ! Update
   }
+
+  coordinator ! CloseDataFile
 
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()

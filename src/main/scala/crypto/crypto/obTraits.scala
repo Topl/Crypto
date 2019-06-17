@@ -49,8 +49,8 @@ trait obFunctions {
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
       //println("eta0")
-      //println(bytes2hex(FastCryptographicHash(c.last._5)))
-      FastCryptographicHash(c.last._5)
+      //println(bytes2hex(FastCryptographicHash(c.last._1++serialize(ep)++c.last._5)))
+      FastCryptographicHash(c.last._1++serialize(ep)++c.last._5)
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
