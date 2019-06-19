@@ -21,22 +21,31 @@ trait obFunctions {
   type Eta = Array[Byte]
   type Sig = Array[Byte]
   type Slot = Int
-  type State = Map[String,Double]
   type Rho = Array[Byte]
   type PublicKey = Array[Byte]
-  type Party = String
+  type Sid = Array[Byte]
+  type PublicKeys = (PublicKey,PublicKey,PublicKey)
+  type Party = List[PublicKeys]
   type PrivateKey = Array[Byte]
   type Hash = Array[Byte]
   type Pi = Array[Byte]
-  type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Double)
+  type Tx = (Array[Byte],Sid,Sig,PublicKey)
+  type State = Map[Tx,Double]
+  type Tr = Double
+  type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Tr)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
   val confirmationDepth = 10
   val f_s = 0.9
-  val forgerReward = 10.0
+  val forgerReward = 100.0
   val epochLength = 3*confirmationDepth
   val initStakeMax = 100.0
   val waitTime = 60 seconds
+  val timingFlag = true
+  val performanceFlag = false
+  val printFlag = true
+  val dataOutFlag = true
+  val dataOutInterval = 1
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
@@ -120,7 +129,7 @@ trait obFunctions {
     * @param t current time slot
     * @return alpha, between 0.0 and 1.0
     */
-  def relativeStake(party:String,holderKey:String,chain:Chain,t:Int): Double = {
+  def relativeStake(party:Party,holderKey:PublicKey,chain:Chain,t:Int): Double = {
     var holderStake = 0.0
     var netStake = 0.0
     val ep = t/epochLength
@@ -128,13 +137,26 @@ trait obFunctions {
     for (block<-sc) {
       val state = block._2
       for (entry <- state) {
-        if(verifyTxStamp(entry._1) && party.contains(holderKey)) {
-          if (entry._1.contains(holderKey)) {holderStake+=entry._2}
-          if (party.contains(entry._1.take(2*Curve25519.KeyLength))) {netStake += entry._2}
+        if(verifyTx(entry._1)) {
+          val txPk:PublicKey = entry._1._4
+          if (txPk.deep == holderKey.deep || entry._1._1.deep == holderKey.deep) {holderStake+=entry._2}
+          for (member<-party) {
+            if(member._1.deep == txPk.deep || member._1.deep == entry._1._1.deep){netStake += entry._2}
+          }
         }
       }
     }
     holderStake/netStake
+  }
+
+  def setParty(s:String): Party = {
+    val members = s.split("\n")
+    var party:Party = List()
+    for (member<-members){
+      val values = member.split(";")
+      party = party++List((hex2bytes(values(0)),hex2bytes(values(1)),hex2bytes(values(2))))
+    }
+    party
   }
 
   /**
@@ -144,8 +166,16 @@ trait obFunctions {
     * @param sk_sig holder signature secret key
     * @return string to be diffused
     */
-  def diffuse(str: String,id: String,sk_sig: Array[Byte]): String = {
+  def diffuse(str: String,id: String,sk_sig: PrivateKey): String = {
     str+";"+id+";"+bytes2hex(Curve25519.sign(sk_sig,serialize(str+";"+id)))
+  }
+
+  def signTx(data: Array[Byte],id:Sid,sk_sig: Sig,pk_sig: PublicKey): Tx = {
+    (data,id,Curve25519.sign(sk_sig,data++id),pk_sig)
+  }
+
+  def verifyTx(tx:Tx): Boolean = {
+    Curve25519.verify(tx._3,tx._1++tx._2,tx._4)
   }
 
   /**
@@ -209,10 +239,9 @@ trait obFunctions {
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
     val (pk_vrf,_,_,pk_sig,party,_) = cert
-    val holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
-    val members:Array[String] = party.split("\n")
     (MalkinKES.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
-      && members(0).contains(holderData))
+      && serialize(party.head).deep == serialize((pk_sig,pk_vrf,pk_kes)).deep
+      )
   }
 
   /**
@@ -222,41 +251,42 @@ trait obFunctions {
     * @return true if chain is valid, false otherwise
     */
   def verifyChain(c:Chain, gh:Hash): Boolean = {
-    var bool = true
-    var i = 0
-    val t = c.head._3
-    var ep = t/epochLength
-    var stakingParty = c.head._4._5
-    var alpha_Ep = 0.0
-    var tr_Ep = 0.0
-    var eta_Ep = eta(c,ep)
+    if (!performanceFlag) {
+      var bool = true
+      var i = 0
+      val t = c.head._3
+      var ep = t / epochLength
+      var stakingParty = c.head._4._5
+      var alpha_Ep = 0.0
+      var tr_Ep = 0.0
+      var eta_Ep = eta(c, ep)
 
-    for (block <- c.tail ) {
-      val block0 = c(i)
-      val (hash, _, slot, cert, rho, pi, _, _) = block0
-      val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
-      if (slot<ep*epochLength+1){
-        stakingParty = party
-        ep-=1
-        eta_Ep = eta(c.drop(i),ep)
+      for (block <- c.tail) {
+        val block0 = c(i)
+        val (hash, _, slot, cert, rho, pi, _, _) = block0
+        val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
+        if (slot < ep * epochLength + 1) {
+          stakingParty = party
+          ep -= 1
+          eta_Ep = eta(c.drop(i), ep)
+        }
+        alpha_Ep = relativeStake(party, pk_sig, c, ep * epochLength + 1)
+        tr_Ep = phi(alpha_Ep, f_s)
+        bool &&= (
+          FastCryptographicHash(serialize(block)).deep == hash.deep
+            && verifyBlock(block0)
+            && block._3 < block0._3
+            && Ed25519VRF.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+            && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
+            && Ed25519VRF.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+            && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+            && tr_Ep == tr_c
+            && compare(y, tr_Ep)
+          )
+        i += 1
       }
-      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c,ep*epochLength+1)
-      tr_Ep = phi(alpha_Ep,f_s)
-      bool &&= (
-        FastCryptographicHash(serialize(block)).deep == hash.deep
-        && verifyBlock(block0)
-        && block._3<block0._3
-        && compareParties(stakingParty,party)
-        && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
-        && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
-        && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
-        && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
-        && tr_Ep == tr_c
-        && compare(y,tr_Ep)
-        )
-      i+=1
-    }
-    bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+      bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+    } else { true }
   }
 
   /**
@@ -267,55 +297,44 @@ trait obFunctions {
     * @return true if chain is valid, false otherwise
     */
   def verifyChain(c:Chain, gh:Hash,prefix:Int): Boolean = {
-    var bool = true
-    var i = 0
-    val t = c.head._3
-    var ep = t/epochLength
-    var stakingParty = c.head._4._5
-    var alpha_Ep = 0.0
-    var tr_Ep = 0.0
-    var eta_Ep = eta(c,ep)
+    if (!performanceFlag) {
+      var bool = true
+      var i = 0
+      val t = c.head._3
+      var ep = t/epochLength
+      var stakingParty = c.head._4._5
+      var alpha_Ep = 0.0
+      var tr_Ep = 0.0
+      var eta_Ep = eta(c,ep)
 
-    for (block <- c.tail.take(prefix+1) ) {
-      val block0 = c(i)
-      val (hash, _, slot, cert, rho, pi, _, _) = block0
-      val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
-      if (slot<ep*epochLength+1){
-        stakingParty = party
-        ep-=1
-        eta_Ep = eta(c.drop(i),ep)
+      for (block <- c.tail.take(prefix+1) ) {
+        val block0 = c(i)
+        val (hash, _, slot, cert, rho, pi, _, _) = block0
+        val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
+        if (slot<ep*epochLength+1){
+          stakingParty = party
+          ep-=1
+          eta_Ep = eta(c.drop(i),ep)
+        }
+        alpha_Ep = relativeStake(party,pk_sig,c,ep*epochLength+1)
+        tr_Ep = phi(alpha_Ep,f_s)
+        bool &&= (
+          FastCryptographicHash(serialize(block)).deep == hash.deep
+            && verifyBlock(block0)
+            && block._3<block0._3
+            && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
+            && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
+            && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
+            && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+            && tr_Ep == tr_c
+            && compare(y,tr_Ep)
+          )
+        i+=1
       }
-      alpha_Ep = relativeStake(party,bytes2hex(pk_sig),c,ep*epochLength+1)
-      tr_Ep = phi(alpha_Ep,f_s)
-      bool &&= (
-        FastCryptographicHash(serialize(block)).deep == hash.deep
-          && verifyBlock(block0)
-          && block._3<block0._3
-          && compareParties(stakingParty,party)
-          && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
-          && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
-          && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
-          && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
-          && tr_Ep == tr_c
-          && compare(y,tr_Ep)
-        )
-      i+=1
-    }
-    bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+      bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+    } else { true }
   }
 
-
-  def compareParties(p1:Party,p2:Party): Boolean = {
-    var bool = true
-    val m1:Array[String] = p1.split("\n")
-    val m2:Array[String] = p2.split("\n")
-    for (member <- m1) {bool &&= verifyTxStamp(member)}
-    for (member <- m2) {bool &&= verifyTxStamp(member)}
-    val id1 = m1.map(idInfo(_)).sorted
-    val id2 = m2.map(idInfo(_)).sorted
-    bool &&= id1.deep == id2.deep
-    bool
-  }
 
   /**
     * Verify diffused strings with public key included in the string
@@ -323,9 +342,11 @@ trait obFunctions {
     * @return true if signature is valid, false otherwise
     */
   def verifyTxStamp(value: String): Boolean = {
-    val values: Array[String] = value.split(";")
-    val m = values(0)+";"+values(1)+";"+values(2)+";"+values(3)
-    Curve25519.verify(hex2bytes(values(4)),serialize(m),hex2bytes(values(0)))
+    if (!performanceFlag) {
+      val values: Array[String] = value.split(";")
+      val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
+      Curve25519.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
+    } else { true }
   }
 
   /**
@@ -337,6 +358,7 @@ trait obFunctions {
     val values: Array[String] = value.split(";")
     values(0)+";"+values(1)+";"+values(2)+";"+values(3)
   }
+
 
   /**
     * Byte serialization
@@ -363,6 +385,7 @@ trait obFunctions {
     value
   }
 
+
   def bytes2hex(b: Array[Byte]): String = {
     b.map("%02x" format _).mkString
   }
@@ -385,6 +408,18 @@ trait obFunctions {
       s2 ++= List(entry._2)
     }
     (s1.distinct.size != s1.size) && (s2.distinct.size != s2.size)
+  }
+
+  def time[R](block: => R,id:Int): R = {
+    if (timingFlag && id == 0) {
+      val t0 = System.nanoTime()
+      val result = block // call-by-name
+      val t1 = System.nanoTime()
+      println("Elapsed time: " + (t1 - t0) + "ns")
+      result
+    } else {
+      block
+    }
   }
 
 }

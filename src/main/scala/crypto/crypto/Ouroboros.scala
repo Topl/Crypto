@@ -39,7 +39,7 @@ case object UpdateChainFast
 case class Update(t:Int)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
-case class SendBlock(b: Any)
+case class SendBlock(b: Any,s:Array[Byte])
 case class SendChain(c: Any,s:String)
 case class WriteFile(fw: Any)
 case class NewDataFile(name:String)
@@ -67,7 +67,8 @@ class Coordinator extends Actor
   val (sk_vrf,pk_vrf) = Ed25519VRF.vrfKeypair(seed)
   var malkinKey = MalkinKES.generateKey(seed)
   val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
-  val coordData = bytes2hex(pk_sig)+":"+bytes2hex(pk_vrf)+":"+bytes2hex(pk_kes)
+  val coordData:String = bytes2hex(pk_sig)+":"+bytes2hex(pk_vrf)+":"+bytes2hex(pk_kes)
+  val coordKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
   //empty list of keys to be populated by stakeholders once they are instantiated
   var genKeys:Map[String,String] = Map()
   var fileWriter:Any = 0
@@ -97,13 +98,13 @@ class Coordinator extends Actor
       send(Random.shuffle(holders),Diffuse)
       send(Random.shuffle(holders),ForgeBlocks)
       send(Random.shuffle(holders),UpdateChainFast)
-      send(holders,WriteFile(fileWriter))
+      if (dataOutFlag && t%dataOutInterval==0) send(holders,WriteFile(fileWriter))
     }
     //tells actors to print status */
     case Status => {
       send(holders,Status)
     }
-    case value:NewDataFile => {
+    case value:NewDataFile => if(dataOutFlag) {
       fileWriter = new BufferedWriter(new FileWriter(value.name))
       val fileString = (
         "Holder_number"
@@ -119,7 +120,7 @@ class Coordinator extends Actor
         case _ => println("error: file writer not initialized")
       }
     }
-    case CloseDataFile => {
+    case CloseDataFile => if(dataOutFlag) {
       fileWriter match {
         case fw:BufferedWriter => fw.close()
         case _ => println("error: file writer close on non writer object")
@@ -137,10 +138,11 @@ class Coordinator extends Actor
     val hash:Hash = eta0
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
-    val state: State = holders.map{ case ref:ActorRef => diffuse(genKeys(s"${ref.path}"),coordData,sk_sig) -> initStakeMax * r.nextDouble}.toMap
-    var party: String = ""
-    for (entry <- state){
-      party += entry._1
+    val state: State = holders.map{ case ref:ActorRef => signTx(hex2bytes(genKeys(s"${ref.path}").split(";")(0)),serialize(coordId),sk_sig,pk_sig) -> initStakeMax * r.nextDouble}.toMap
+    var party: Party = List()
+    for (holder <- holders){
+      val values = genKeys(s"${holder.path}").split(";")
+      party ++= List((hex2bytes(values(0)),hex2bytes(values(1)),hex2bytes(values(2))))
     }
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party,1.0)
     val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
@@ -156,7 +158,7 @@ class Coordinator extends Actor
 class StakeHolder extends Actor
   with obFunctions {
   var inbox:String = ""
-  var stakingParty:String = ""
+  var stakingParty:Party = List()
   var holderData: String = ""
   var holders: List[ActorRef] = List()
   var diffuseSent = false
@@ -176,22 +178,22 @@ class StakeHolder extends Actor
   var roundBlock: Any = 0
   var eta_Ep:Array[Byte] = Array()
   var Tr_Ep: Double = 0.0
-  var holderIndex = 0
+  var holderIndex = -1
 
   //stakeholder public keys
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   def receive: Receive = {
     /**updates time, the kes key, and resets variables */
-    case value: Update => {
-      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Update")}
+    case value: Update => time({
+      if (holderIndex == 0 && printFlag) {println("holder "+holderIndex.toString+" Update")}
       inbox = ""
       roundBlock = 0
       diffuseSent = false
       t = value.t
       malkinKey = MalkinKES.updateKey(malkinKey,t)
       sender() ! "done"
-    }
+    },holderIndex)
 
     /**sends all other stakeholders the public keys, only happens once per round */
     case Diffuse => {
@@ -203,17 +205,20 @@ class StakeHolder extends Actor
     }
 
     /**checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
-    case ForgeBlocks => {
-      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Forge")}
+    case ForgeBlocks => time({
+      if (holderIndex == 0 && printFlag) {println("holder "+holderIndex.toString+" ForgeBlocks")}
       if (t%epochLength == 1){
         val txString = diffuse(holderData,holderId,sk_sig)
-        stakingParty = txString+"\n"+inbox
-        alpha_Ep = relativeStake(stakingParty,bytes2hex(pk_sig),localChain,t)
+        stakingParty = setParty(txString+"\n"+inbox)
+        alpha_Ep = relativeStake(stakingParty,pk_sig,localChain,t)
         Tr_Ep = phi(alpha_Ep,f_s)
         eta_Ep = eta(localChain,t/epochLength)
       }
       if (diffuseSent) {
-        if (slotLeader) {roundBlock = forgeBlock}
+        if (slotLeader) {
+          roundBlock = forgeBlock
+          if (holderIndex == 0 && printFlag) {println("holder "+holderIndex.toString+" is slot a leader")}
+        }
         roundBlock match {
           case b:Block => {
             localChain = List(b)++localChain
@@ -224,11 +229,11 @@ class StakeHolder extends Actor
         }
       }
       sender() ! "done"
-    }
+    },holderIndex)
 
     /**receives chains from other holders and stores them */
     case value: SendChain => {
-      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s)) && stakingParty.contains(idInfo(value.s))) {
+      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
         value.c match {
           case c: Chain => {
             foreignChains = foreignChains ++ List(c)
@@ -240,7 +245,7 @@ class StakeHolder extends Actor
     }
 
     /**updates local chain if a longer valid chain is detected */
-    case UpdateChain => {
+    case UpdateChain => time({
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
           val trueChain = verifyChain(chain,genBlockHash)
@@ -251,25 +256,24 @@ class StakeHolder extends Actor
       }
       foreignChains = List()
       sender() ! "done"
-    }
+    },holderIndex)
     /**updates local chain if a longer valid chain is detected
       * finds common prefix and only checks new blocks */
-    case UpdateChainFast => {
-      if (holderIndex == 0) {println("holder "+holderIndex.toString+" Update Chain")}
+    case UpdateChainFast => time({
+      if (holderIndex == 0 && printFlag) {println("holder "+holderIndex.toString+" Update Chain")}
       for (chain <- foreignChains) {
         if (chain.length>localChain.length){
           var trueChain = false
           if (localChain.length == 1) {
-            //println("inheriting chain")
+            if (holderIndex == 0 && printFlag) {println("inheriting chain")}
             trueChain = verifyChain(chain,genBlockHash)
-          }
-          else {
+          } else {
             var prefixIndex = 0
             var foundCommonPrefix = false
             breakable {
               for (block <- chain.drop(chain.length-localChain.length)) {
                 if (block._1.deep == localChain(prefixIndex)._1.deep) {
-                  //println("found common prefix at i = "+prefixIndex.toString)
+                  if (holderIndex == 0 && printFlag) {println("found common prefix at i = "+prefixIndex.toString)}
                   foundCommonPrefix = true
                   trueChain = verifyChain(chain, genBlockHash,prefixIndex)
                   break
@@ -278,19 +282,17 @@ class StakeHolder extends Actor
               }
             }
             if (!foundCommonPrefix) {
-              //println("no prefix found, checking entire chain")
+              if (holderIndex == 0 && printFlag) {println("no prefix found, checking entire chain")}
               trueChain = verifyChain(chain,genBlockHash)
             }
           }
           if(!trueChain) println("error: invalid chain")
-          //assert(trueChain)
           if (trueChain) localChain = chain
-          //assert(verifyChain(localChain,genBlockHash))
         }
       }
       foreignChains = List()
       sender() ! "done"
-    }
+    },holderIndex)
 
     /**validates diffused string from other holders and stores in inbox */
     case value: String => {
@@ -370,14 +372,14 @@ class StakeHolder extends Actor
 
   /**Calculates a block */
   def forgeBlock: Block = {
-    val txString = diffuse(holderData,holderId,sk_sig)
+    val blockTx:Tx = signTx(serialize("FORGER_REWARD"),serialize(holderId),sk_sig,pk_sig)
     val slot:Slot = t
     val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"))
     val rho:Rho = Ed25519VRF.vrfProofToHash(pi)
     val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("TEST"))
     val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
     val hash:Hash = FastCryptographicHash(serialize(localChain.head))
-    val state:State = Map(txString->forgerReward)
+    val state:State = Map(blockTx->forgerReward)
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,stakingParty,Tr_Ep)
     val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
