@@ -45,7 +45,7 @@ trait obFunctions {
   val performanceFlag = false
   val printFlag = true
   val dataOutFlag = true
-  val dataOutInterval = 1
+  val dataOutInterval = 10
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
@@ -415,7 +415,9 @@ trait obFunctions {
       val t0 = System.nanoTime()
       val result = block // call-by-name
       val t1 = System.nanoTime()
-      println("Elapsed time: " + (t1 - t0) + "ns")
+      val outTime = (t1 - t0)*1.0e-9
+      val tString = "%6.6f".format(outTime)
+      println("Elapsed time: "+tString+" s")
       result
     } else {
       block

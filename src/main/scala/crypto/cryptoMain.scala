@@ -50,10 +50,10 @@ if (true) {
   }
 
   coordinator ! CloseDataFile
-
-  println(">>> Press ENTER for Status <<<")
-  StdIn.readLine()
-  coordinator ! Status
+//
+//  println(">>> Press ENTER for Status <<<")
+//  StdIn.readLine()
+//  coordinator ! Status
 
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()
