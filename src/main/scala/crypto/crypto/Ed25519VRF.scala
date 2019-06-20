@@ -56,6 +56,7 @@ object Ed25519VRF {
   val PI_BYTES = Ed25519.POINT_BYTES+Ed25519.SCALAR_BYTES+C_BYTES
   var neutralPointBytes: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
   var NP = new PointAccum
+  val KeyLength = Ed25519.PUBLIC_KEY_SIZE
   Ed25519.pointSetNeutral(NP)
   Ed25519.encodePoint(NP,neutralPointBytes,0)
 

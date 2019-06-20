@@ -138,7 +138,12 @@ class Coordinator extends Actor
     val hash:Hash = eta0
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
-    val state: State = holders.map{ case ref:ActorRef => signTx(hex2bytes(genKeys(s"${ref.path}").split(";")(0)),serialize(coordId),sk_sig,pk_sig) -> initStakeMax * r.nextDouble}.toMap
+    val state: State = holders.map{ case ref:ActorRef => signTx(
+      genesisBytes
+        ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
+        ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
+        ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
+      serialize(coordId),sk_sig,pk_sig) -> initStakeMax * r.nextDouble}.toMap
     var party: Party = List()
     for (holder <- holders){
       val values = genKeys(s"${holder.path}").split(";")
@@ -179,6 +184,9 @@ class StakeHolder extends Actor
   var eta_Ep:Array[Byte] = Array()
   var Tr_Ep: Double = 0.0
   var holderIndex = -1
+  var localState: Map[PublicKey,Double] = Map()
+  var memPool: List[Transfer] = List()
+  val publicKeys = (pk_sig,pk_vrf,pk_kes)
 
   //stakeholder public keys
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
@@ -210,7 +218,7 @@ class StakeHolder extends Actor
       if (t%epochLength == 1){
         val txString = diffuse(holderData,holderId,sk_sig)
         stakingParty = setParty(txString+"\n"+inbox)
-        alpha_Ep = relativeStake(stakingParty,pk_sig,localChain,t)
+        alpha_Ep = relativeStake(stakingParty,publicKeys,localChain,t)
         Tr_Ep = phi(alpha_Ep,f_s)
         eta_Ep = eta(localChain,t/epochLength)
       }
@@ -372,7 +380,7 @@ class StakeHolder extends Actor
 
   /**Calculates a block */
   def forgeBlock: Block = {
-    val blockTx:Tx = signTx(serialize("FORGER_REWARD"),serialize(holderId),sk_sig,pk_sig)
+    val blockTx:Tx = signTx(forgeBytes,serialize(holderId),sk_sig,pk_sig)
     val slot:Slot = t
     val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"))
     val rho:Rho = Ed25519VRF.vrfProofToHash(pi)

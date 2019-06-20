@@ -31,8 +31,8 @@ if (true) {
 
   val dataFileDir = "/tmp/scorex/test-data/crypto"
   val dataPath = Path(dataFileDir)
-  Try(dataPath.deleteRecursively())
-  Try(dataPath.createDirectory())
+  //Try(dataPath.deleteRecursively())
+  //Try(dataPath.createDirectory())
 
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 
@@ -50,10 +50,10 @@ if (true) {
   }
 
   coordinator ! CloseDataFile
-//
-//  println(">>> Press ENTER for Status <<<")
-//  StdIn.readLine()
-//  coordinator ! Status
+
+  println(">>> Press ENTER for Status <<<")
+  StdIn.readLine()
+  coordinator ! Status
 
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()

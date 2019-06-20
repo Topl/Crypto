@@ -30,6 +30,7 @@ trait obFunctions {
   type Hash = Array[Byte]
   type Pi = Array[Byte]
   type Tx = (Array[Byte],Sid,Sig,PublicKey)
+  type Transfer = (PublicKey,PublicKey,Double,Sid)
   type State = Map[Tx,Double]
   type Tr = Double
   type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Tr)
@@ -38,6 +39,7 @@ trait obFunctions {
   val confirmationDepth = 10
   val f_s = 0.9
   val forgerReward = 100.0
+  val transferFee = 0.01
   val epochLength = 3*confirmationDepth
   val initStakeMax = 100.0
   val waitTime = 60 seconds
@@ -46,6 +48,10 @@ trait obFunctions {
   val printFlag = true
   val dataOutFlag = true
   val dataOutInterval = 10
+  val forgeBytes ="FORGER_REWARD".getBytes
+  val transferBytes = "TRANSFER".getBytes
+  val genesisBytes = "GENESIS".getBytes
+  val keyLength = Curve25519.KeyLength+Ed25519VRF.KeyLength+MalkinKES.KeyLength
 
   def uuid: String = java.util.UUID.randomUUID.toString
 
@@ -57,9 +63,7 @@ trait obFunctions {
     */
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
-      //println("eta0")
-      //println(bytes2hex(FastCryptographicHash(c.last._1++serialize(ep)++c.last._5)))
-      FastCryptographicHash(c.last._1++serialize(ep)++c.last._5)
+      c.last._1
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
@@ -67,9 +71,26 @@ trait obFunctions {
       for(block <- epcv) {
         v = v++block._5
       }
-      val eta_ep = FastCryptographicHash(eta(cnext,ep-1)++serialize(ep)++v)
-      //println("eta"+ep.toString)
-      //println(bytes2hex(eta_ep))
+      FastCryptographicHash(eta(cnext,ep-1)++serialize(ep)++v)
+    }
+  }
+  /**
+    * calculates epoch nonce from previous nonce
+    * @param c local chain to be verified
+    * @param ep epoch derived from time step
+    * @param etaP previous eta
+    * @return hash nonce
+    */
+  def eta(c:Chain,ep:Int,etaP:Eta): Eta = {
+    if(ep == 0) {
+      c.last._1
+    } else {
+      var v: Array[Byte] = Array()
+      val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
+      for(block <- epcv) {
+        v = v++block._5
+      }
+      val eta_ep = FastCryptographicHash(etaP++serialize(ep)++v)
       eta_ep
     }
   }
@@ -121,33 +142,6 @@ trait obFunctions {
     net<t
   }
 
-  /**
-    * Gets the relative stake, alpha, of the stakeholder
-    * @param party string containing all stakeholders participating in the round
-    * @param holderKey stakeholder public key
-    * @param chain chain containing stakeholders transactions
-    * @param t current time slot
-    * @return alpha, between 0.0 and 1.0
-    */
-  def relativeStake(party:Party,holderKey:PublicKey,chain:Chain,t:Int): Double = {
-    var holderStake = 0.0
-    var netStake = 0.0
-    val ep = t/epochLength
-    val sc = subChain(chain,0,ep*epochLength-epochLength)
-    for (block<-sc) {
-      val state = block._2
-      for (entry <- state) {
-        if(verifyTx(entry._1)) {
-          val txPk:PublicKey = entry._1._4
-          if (txPk.deep == holderKey.deep || entry._1._1.deep == holderKey.deep) {holderStake+=entry._2}
-          for (member<-party) {
-            if(member._1.deep == txPk.deep || member._1.deep == entry._1._1.deep){netStake += entry._2}
-          }
-        }
-      }
-    }
-    holderStake/netStake
-  }
 
   def setParty(s:String): Party = {
     val members = s.split("\n")
@@ -263,14 +257,14 @@ trait obFunctions {
 
       for (block <- c.tail) {
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, _) = block0
+        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
         val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
         if (slot < ep * epochLength + 1) {
           stakingParty = party
           ep -= 1
           eta_Ep = eta(c.drop(i), ep)
         }
-        alpha_Ep = relativeStake(party, pk_sig, c, ep * epochLength + 1)
+        alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
           FastCryptographicHash(serialize(block)).deep == hash.deep
@@ -309,14 +303,14 @@ trait obFunctions {
 
       for (block <- c.tail.take(prefix+1) ) {
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, _) = block0
+        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
         val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
         if (slot<ep*epochLength+1){
           stakingParty = party
           ep-=1
           eta_Ep = eta(c.drop(i),ep)
         }
-        alpha_Ep = relativeStake(party,pk_sig,c,ep*epochLength+1)
+        alpha_Ep = relativeStake(party,(pk_sig,pk_vrf,pk_kes),c,ep*epochLength+1)
         tr_Ep = phi(alpha_Ep,f_s)
         bool &&= (
           FastCryptographicHash(serialize(block)).deep == hash.deep
@@ -335,6 +329,156 @@ trait obFunctions {
     } else { true }
   }
 
+
+  /**
+    * Gets the relative stake, alpha, of the stakeholder
+    * @param party string containing all stakeholders participating in the round
+    * @param holderKey stakeholder public key
+    * @param chain chain containing stakeholders transactions
+    * @param t current time slot
+    * @return alpha, between 0.0 and 1.0
+    */
+  def relativeStake(party:Party,holderKey:PublicKeys,chain:Chain,t:Int): Double = {
+    var holderStake = 0.0
+    var netStake = 0.0
+    val ep = t/epochLength
+    val sc = subChain(chain,0,ep*epochLength-epochLength)
+    for (block<-sc) {
+      val state = block._2
+      for (entry <- state) {
+        val (tx,delta) = entry
+        if(verifyTx(tx)) {
+          val txPk:PublicKey = tx._4
+          if (txPk.deep == holderKey._1.deep || tx._1.drop(genesisBytes.length).deep == (holderKey._1++holderKey._2++holderKey._3).deep) {holderStake += delta}
+          for (member<-party) {
+            if(member._1.deep == txPk.deep || (member._1++member._2++member._3).deep == tx._1.drop(genesisBytes.length).deep){netStake += delta}
+          }
+        }
+      }
+    }
+    holderStake/netStake
+  }
+
+
+  def updateLocalState(ls: Map[PublicKey,Double],c:Chain): Map[PublicKey,Double] = {
+    var nls:Map[PublicKey,Double] = ls
+    for (b <- c.reverse) {
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
+      val (pk_vrf,_,_,pk_sig,_,_) = cert
+      for (entry <- state) {
+        val (tx:Tx,delta:Double) = entry
+        if (verifyTx(tx)) {
+          val (data:Array[Byte],_,_,pk_tx:PublicKey) = tx
+          val pk_f = pk_sig++pk_vrf++pk_kes
+          val validForger:Boolean =  nls.keySet.contains(pk_f) && pk_tx.deep == pk_sig.deep
+
+          if (data.deep == forgeBytes.deep && validForger) {
+            val netStake:Double = nls(pk_f)
+            val newStake:Double = netStake + delta
+            nls -= pk_f
+            nls += (pk_f -> newStake)
+          }
+
+          if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
+            val netStake:Double = 0.0
+            val newStake:Double = netStake + delta
+            val pk_g = data.drop(genesisBytes.length)
+            if(nls.keySet.contains(pk_g)) nls -= pk_g
+            nls += (pk_g -> newStake)
+          }
+
+          if (data.take(transferBytes.length).deep == transferBytes.deep && validForger) {
+            val pk_s = data.slice(transferBytes.length,transferBytes.length+keyLength)
+            val pk_r = data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength)
+            val validSender = nls.keySet.contains(pk_s) && nls(pk_s) >= delta
+            if (validSender && nls.keySet.contains(pk_r)) {
+              val s_net:Double = nls(pk_s)
+              val r_net:Double = nls(pk_r)
+              val f_net:Double = nls(pk_f)
+              val s_new:Double = s_net - delta
+              val r_new:Double = r_net + delta*(1.0-transferFee)
+              val f_new:Double = f_net + delta*transferFee
+              nls -= pk_s
+              nls -= pk_r
+              nls -= pk_f
+              nls += (pk_s -> s_new)
+              nls += (pk_r -> r_new)
+              nls += (pk_f -> f_new)
+            } else if (validSender) {
+              val s_net:Double = nls(pk_s)
+              val r_net:Double = 0.0
+              val f_net:Double = nls(pk_f)
+              val s_new:Double = s_net - delta
+              val r_new:Double = r_net + delta*(1.0-transferFee)
+              val f_new:Double = f_net + delta*transferFee
+              nls -= pk_s
+              nls -= pk_f
+              nls += (pk_s -> s_new)
+              nls += (pk_r -> r_new)
+              nls += (pk_f -> f_new)
+            }
+          }
+        }
+      }
+    }
+    nls
+  }
+
+  def revertLocalState(ls: Map[PublicKey,Double],c:Chain,mem:List[Transfer]): (Map[PublicKey,Double],List[Transfer]) = {
+    var nls:Map[PublicKey,Double] = ls
+    var nmem:List[Transfer] = mem
+    for (b <- c) {
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
+      val (pk_vrf,_,_,pk_sig,_,_) = cert
+      for (entry <- state) {
+        val (tx:Tx,delta:Double) = entry
+        if (verifyTx(tx)) {
+          val (data:Array[Byte],txId:Sid,_,pk_tx:PublicKey) = tx
+          val pk_f = pk_sig++pk_vrf++pk_kes
+          val validForger:Boolean =  nls.keySet.contains(pk_f) && pk_tx.deep == pk_sig.deep
+
+          if (data.deep == forgeBytes.deep && validForger) {
+            val netStake:Double = nls(pk_f)
+            val newStake:Double = netStake - delta
+            nls -= pk_f
+            nls += (pk_f -> newStake)
+          }
+
+          if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
+            val netStake:Double = 0.0
+            val newStake:Double = netStake + delta
+            val pk_g = data.drop(genesisBytes.length)
+            if(nls.keySet.contains(pk_g)) nls -= pk_g
+            nls += (pk_g -> newStake)
+          }
+
+          if (data.take(transferBytes.length).deep == transferBytes.deep && validForger) {
+            val pk_s = data.slice(transferBytes.length,transferBytes.length+keyLength)
+            val pk_r = data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength)
+            val validSender = nls.keySet.contains(pk_s)
+            val validRecip = nls.keySet.contains(pk_r)
+            if (validSender && validRecip) {
+              val s_net:Double = nls(pk_s)
+              val r_net:Double = nls(pk_r)
+              val f_net:Double = nls(pk_f)
+              val s_new:Double = s_net + delta
+              val r_new:Double = r_net - delta*(1.0-transferFee)
+              val f_new:Double = f_net - delta*transferFee
+              nls -= pk_s
+              nls -= pk_r
+              nls -= pk_f
+              nls += (pk_s -> s_new)
+              if (r_new > 0.0) nls += (pk_r -> r_new)
+              nls += (pk_f -> f_new)
+              val transfer:Transfer = (pk_s,pk_r,delta,txId)
+              nmem ++= List(transfer)
+            }
+          }
+        }
+      }
+    }
+    (nls,nmem)
+  }
 
   /**
     * Verify diffused strings with public key included in the string

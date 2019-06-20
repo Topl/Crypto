@@ -26,6 +26,7 @@ object MalkinKES {
   val skBytes = Ed25519.SECRET_KEY_SIZE
   val sigBytes = Ed25519.SIGNATURE_SIZE
   val hashBytes = 32
+  val KeyLength = hashBytes
   val logl = 7
 
   type MalkinKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
