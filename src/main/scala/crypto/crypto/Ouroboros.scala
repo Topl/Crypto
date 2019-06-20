@@ -143,7 +143,7 @@ class Coordinator extends Actor
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
-      serialize(coordId),sk_sig,pk_sig) -> initStakeMax * r.nextDouble}.toMap
+      serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStakeMax * r.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt}.toMap
     var party: Party = List()
     for (holder <- holders){
       val values = genKeys(s"${holder.path}").split(";")
@@ -184,8 +184,9 @@ class StakeHolder extends Actor
   var eta_Ep:Array[Byte] = Array()
   var Tr_Ep: Double = 0.0
   var holderIndex = -1
-  var localState: Map[PublicKey,Double] = Map()
-  var memPool: List[Transfer] = List()
+  var localState:LocalState = Map()
+  var stakingState:LocalState = Map()
+  var memPool:MemPool = List()
   val publicKeys = (pk_sig,pk_vrf,pk_kes)
 
   //stakeholder public keys
@@ -219,6 +220,14 @@ class StakeHolder extends Actor
         val txString = diffuse(holderData,holderId,sk_sig)
         stakingParty = setParty(txString+"\n"+inbox)
         alpha_Ep = relativeStake(stakingParty,publicKeys,localChain,t)
+        if (holderIndex == 0 && printFlag) {
+          println("holder "+holderIndex.toString+" alpha = "+alpha_Ep.toString)
+          stakingState = updateLocalState(stakingState,subChain(localChain,(t/epochLength)*epochLength-2*epochLength+1,(t/epochLength)*epochLength-epochLength))
+          val rs = relativeStake(stakingParty,publicKeys,stakingState)
+          println("alpha = "+rs.toString)
+          println(alpha_Ep == rs)
+          assert(alpha_Ep == rs)
+        }
         Tr_Ep = phi(alpha_Ep,f_s)
         eta_Ep = eta(localChain,t/epochLength)
       }
