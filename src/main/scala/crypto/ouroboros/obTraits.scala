@@ -1,4 +1,4 @@
-package crypto.crypto
+package crypto.ouroboros
 
 import akka.actor.ActorRef
 import akka.actor._

@@ -6,9 +6,7 @@ import crypto.Ed25519vrf.Ed25519VRF
 import crypto.crypto.malkinKES.MalkinKES
 import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
-import crypto.crypto.obFunctions
 import util.control.Breaks._
-import scala.math.BigInt
 import scala.util.Random
 import java.io.{BufferedWriter, FileWriter}
 
