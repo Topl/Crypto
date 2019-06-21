@@ -69,5 +69,4 @@ trait utils {
       block
     }
   }
-
 }

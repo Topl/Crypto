@@ -6,7 +6,6 @@ import scorex.crypto.signatures.Curve25519
 import scala.concurrent.duration._
 
 trait parameters {
-
   val f_s = 0.9
   val forgerReward = BigDecimal(1.0e8).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
   val transferFee = 0.01
@@ -23,5 +22,4 @@ trait parameters {
   val transferBytes = "TRANSFER".getBytes
   val genesisBytes = "GENESIS".getBytes
   val keyLength = Curve25519.KeyLength+Ed25519VRF.KeyLength+MalkinKES.KeyLength
-
 }

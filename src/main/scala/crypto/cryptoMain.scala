@@ -10,7 +10,13 @@ import scala.reflect.io.Path
 
 object cryptoMain extends App {
 
-  //Ouroboros test using akka actors
+  /**
+    * Ouroboros Prosomoiotís:
+    *
+    * Dynamic proof of stake protocol simulated with akka actors
+    * based on Praos and Genesis revisions of Ouroboros
+    *
+    */
 
   val dataFileDir = "/tmp/scorex/test-data/crypto"
   val dataPath = Path(dataFileDir)

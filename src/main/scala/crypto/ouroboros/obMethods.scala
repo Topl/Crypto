@@ -18,12 +18,14 @@ trait obMethods
   extends obTypes
     with parameters
     with utils {
+
   /**
     * calculates epoch nonce recursively
     * @param c local chain to be verified
     * @param ep epoch derived from time step
     * @return hash nonce
     */
+
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
       c.last._1
@@ -37,6 +39,7 @@ trait obMethods
       FastCryptographicHash(eta(cnext,ep-1)++serialize(ep)++v)
     }
   }
+
   /**
     * calculates epoch nonce from previous nonce
     * @param c local chain to be verified
@@ -44,6 +47,7 @@ trait obMethods
     * @param etaP previous eta
     * @return hash nonce
     */
+
   def eta(c:Chain,ep:Int,etaP:Eta): Eta = {
     if(ep == 0) {
       c.last._1
@@ -65,6 +69,7 @@ trait obMethods
     * @param t2 slot upper bound
     * @return all blocks in the interval t1 to t2, including blocks of t1 and t2
     */
+
   def subChain(c:Chain,t1:Int,t2:Int): Chain = {
     var out: Chain = List()
     var t_lower:Int = 0
@@ -83,6 +88,7 @@ trait obMethods
     * @param f active slot coefficient
     * @return probability of being elected slot leader
     */
+
   def phi (a:Double,f:Double): Double = {
     1.0 - scala.math.pow(1.0 - f,a)
   }
@@ -93,6 +99,7 @@ trait obMethods
     * @param t threshold between 0.0 and 1.0
     * @return true if y mapped to double between 0.0 and 1.0 is less than threshold
     */
+
   def compare(y: Array[Byte],t: Double):Boolean = {
     var net = 0.0
     var i =0
@@ -104,7 +111,6 @@ trait obMethods
     }
     net<t
   }
-
 
   def setParty(s:String): Party = {
     val members = s.split("\n")
@@ -123,6 +129,7 @@ trait obMethods
     * @param sk_sig holder signature secret key
     * @return string to be diffused
     */
+
   def diffuse(str: String,id: String,sk_sig: PrivateKey): String = {
     str+";"+id+";"+bytes2hex(Curve25519.sign(sk_sig,serialize(str+";"+id)))
   }
@@ -140,6 +147,7 @@ trait obMethods
     * @param holders actor list
     * @param command object to be sent
     */
+
   def send(holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
       implicit val timeout = Timeout(waitTime)
@@ -156,6 +164,7 @@ trait obMethods
     * @param input map of holder data
     * @return map of holder data
     */
+
   def send(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
@@ -177,6 +186,7 @@ trait obMethods
     * @param holders actor list
     * @param command object to be sent
     */
+
   def send(holderId:String, holders:List[ActorRef],command: Any) = {
     implicit val timeout = Timeout(waitTime)
     for (holder <- holders){
@@ -193,6 +203,7 @@ trait obMethods
     * @param b input block
     * @returnt true if signature is valid, false otherwise
     */
+
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
     val (pk_vrf,_,_,pk_sig,party,_) = cert
@@ -207,6 +218,7 @@ trait obMethods
     * @param gh genesis block hash
     * @return true if chain is valid, false otherwise
     */
+
   def verifyChain(c:Chain, gh:Hash): Boolean = {
     if (!performanceFlag) {
       var bool = true
@@ -253,6 +265,7 @@ trait obMethods
     * @param prefix index to verify up to
     * @return true if chain is valid, false otherwise
     */
+
   def verifyChain(c:Chain, gh:Hash,prefix:Int): Boolean = {
     if (!performanceFlag) {
       var bool = true
@@ -301,6 +314,7 @@ trait obMethods
     * @param t current time slot
     * @return alpha, between 0.0 and 1.0
     */
+
   def relativeStake(party:Party,holderKey:PublicKeys,chain:Chain,t:Int): Double = {
     var holderStake = BigInt(0)
     var netStake = BigInt(0)
@@ -468,6 +482,7 @@ trait obMethods
     * @param value string to be checked
     * @return true if signature is valid, false otherwise
     */
+
   def verifyTxStamp(value: String): Boolean = {
     if (!performanceFlag) {
       val values: Array[String] = value.split(";")
@@ -481,6 +496,7 @@ trait obMethods
     * @param value stamp to be parsed
     * @return string containing unique info
     */
+
   def idInfo(value: String): String = {
     val values: Array[String] = value.split(";")
     values(0)+";"+values(1)+";"+values(2)+";"+values(3)
