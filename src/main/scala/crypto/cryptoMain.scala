@@ -4,7 +4,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import crypto.ouroboros._
 import akka.actor.ActorSystem
-
+import scala.util.{Try, Success, Failure}
 import scala.io.StdIn
 import scala.reflect.io.Path
 
@@ -14,8 +14,8 @@ object cryptoMain extends App {
 
   val dataFileDir = "/tmp/scorex/test-data/crypto"
   val dataPath = Path(dataFileDir)
-  //Try(dataPath.deleteRecursively())
-  //Try(dataPath.createDirectory())
+  Try(dataPath.deleteRecursively())
+  Try(dataPath.createDirectory())
 
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 

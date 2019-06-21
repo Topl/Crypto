@@ -4,12 +4,9 @@ import akka.actor.ActorRef
 import akka.actor._
 import akka.pattern.ask
 import akka.util.Timeout
-
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration._
 import scala.language.postfixOps
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
-
 import bifrost.crypto.hash.FastCryptographicHash
 import crypto.Ed25519vrf.Ed25519VRF
 import crypto.crypto.malkinKES.MalkinKES
@@ -17,46 +14,10 @@ import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
 import scorex.crypto.signatures.Curve25519
 import scala.math.BigInt
 
-trait obFunctions {
-  type Eta = Array[Byte]
-  type Sig = Array[Byte]
-  type Slot = Int
-  type Rho = Array[Byte]
-  type PublicKey = Array[Byte]
-  type Sid = Array[Byte]
-  type PublicKeys = (PublicKey,PublicKey,PublicKey)
-  type Party = List[PublicKeys]
-  type PrivateKey = Array[Byte]
-  type Hash = Array[Byte]
-  type Pi = Array[Byte]
-  type Tx = (Array[Byte],Sid,Sig,PublicKey)
-  type Transfer = (PublicKey,PublicKey,BigInt,Sid)
-  type State = Map[Tx,BigInt]
-  type LocalState = Map[String,BigInt]
-  type MemPool = List[Transfer]
-  type Tr = Double
-  type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Tr)
-  type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
-  type Chain = List[Block]
-  val f_s = 0.9
-  val forgerReward = BigDecimal(1.0e8).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-  val transferFee = 0.01
-  val confirmationDepth = 10
-  val epochLength = 3*confirmationDepth
-  val initStakeMax = 1.0e9
-  val waitTime = 2 seconds
-  val timingFlag = true
-  val performanceFlag = false
-  val printFlag = true
-  val dataOutFlag = true
-  val dataOutInterval = 10
-  val forgeBytes ="FORGER_REWARD".getBytes
-  val transferBytes = "TRANSFER".getBytes
-  val genesisBytes = "GENESIS".getBytes
-  val keyLength = Curve25519.KeyLength+Ed25519VRF.KeyLength+MalkinKES.KeyLength
-
-  def uuid: String = java.util.UUID.randomUUID.toString
-
+trait obMethods
+  extends obTypes
+    with parameters
+    with utils {
   /**
     * calculates epoch nonce recursively
     * @param c local chain to be verified
@@ -523,71 +484,6 @@ trait obFunctions {
   def idInfo(value: String): String = {
     val values: Array[String] = value.split(";")
     values(0)+";"+values(1)+";"+values(2)+";"+values(3)
-  }
-
-
-  /**
-    * Byte serialization
-    * @param value any object to be serialized
-    * @return byte array
-    */
-  def serialize(value: Any): Array[Byte] = {
-    val stream: ByteArrayOutputStream = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(stream)
-    oos.writeObject(value)
-    oos.close()
-    stream.toByteArray
-  }
-
-  /**
-    * Deserialize a byte array that was serialized with serialize
-    * @param bytes byte array processed with serialize
-    * @return original object
-    */
-  def deserialize(bytes: Array[Byte]): Any = {
-    val ois = new ObjectInputStream(new ByteArrayInputStream(bytes))
-    val value = ois.readObject
-    ois.close()
-    value
-  }
-
-
-  def bytes2hex(b: Array[Byte]): String = {
-    b.map("%02x" format _).mkString
-  }
-
-  def hex2bytes(hex: String): Array[Byte] = {
-    if (hex.contains(" ")) {
-      hex.split(" ").map(Integer.parseInt(_, 16).toByte)
-    } else if (hex.contains("-")) {
-      hex.split("-").map(Integer.parseInt(_, 16).toByte)
-    } else {
-      hex.sliding(2, 2).toArray.map(Integer.parseInt(_, 16).toByte)
-    }
-  }
-
-  def containsDuplicates(s:Map[String,String]):Boolean = {
-    var s1:List[String] = List()
-    var s2:List[String] = List()
-    for (entry <- s) {
-      s1 ++= List(entry._1)
-      s2 ++= List(entry._2)
-    }
-    (s1.distinct.size != s1.size) && (s2.distinct.size != s2.size)
-  }
-
-  def time[R](block: => R,id:Int): R = {
-    if (timingFlag && id == 0) {
-      val t0 = System.nanoTime()
-      val result = block // call-by-name
-      val t1 = System.nanoTime()
-      val outTime = (t1 - t0)*1.0e-9
-      val tString = "%6.6f".format(outTime)
-      println("Elapsed time: "+tString+" s")
-      result
-    } else {
-      block
-    }
   }
 
 }

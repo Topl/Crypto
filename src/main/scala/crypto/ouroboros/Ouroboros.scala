@@ -28,49 +28,14 @@ object Coordinator {
   def props: Props = Props(new Coordinator)
 }
 
-// case objects and classes for pattern matching messages between actors
-case object Diffuse
-case object Inbox
-case object Update
-case object UpdateChain
-case object UpdateChainFast
-case class Update(t:Int)
-case class Populate(n:Int)
-case class GenBlock(b: Any)
-case class SendBlock(b: Any,s:Array[Byte])
-case class SendChain(c: Any,s:String)
-case class WriteFile(fw: Any)
-case class NewDataFile(name:String)
-case object CloseDataFile
-case object Status
-case object ForgeBlocks
-case object GetGenKeys
-
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
   * sends messages to participants to execute a round
   */
 class Coordinator extends Actor
-  with obFunctions {
-  //empty list of stake holders
-  var holders: List[ActorRef] = List()
-  //initial nonce for genesis block
-  val eta0 = FastCryptographicHash(uuid)
+  with obMethods
+  with coordinatorVars {
   val coordId = s"${self.path}"
-  //slot
-  var t = 0
-  //set of keys so gensis block can be signed and verified by verifyBlock
-  val seed = FastCryptographicHash(uuid)
-  val (sk_sig,pk_sig) = Curve25519.createKeyPair(seed)
-  val (sk_vrf,pk_vrf) = Ed25519VRF.vrfKeypair(seed)
-  var malkinKey = MalkinKES.generateKey(seed)
-  val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
-  val coordData:String = bytes2hex(pk_sig)+":"+bytes2hex(pk_vrf)+":"+bytes2hex(pk_kes)
-  val coordKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
-  //empty list of keys to be populated by stakeholders once they are instantiated
-  var genKeys:Map[String,String] = Map()
-  var fileWriter:Any = 0
-
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
       * This is the F_init functionality */
@@ -159,36 +124,10 @@ class Coordinator extends Actor
   */
 
 class StakeHolder extends Actor
-  with obFunctions {
-  var inbox:String = ""
-  var stakingParty:Party = List()
-  var holderData: String = ""
-  var holders: List[ActorRef] = List()
-  var diffuseSent = false
-  val holderId = s"${self.path}"
-  var alpha_Ep = 0.0
-  var blocksForged = 0
-  var t = 0
-  val seed = FastCryptographicHash(uuid)
-  val (sk_vrf,pk_vrf) = Ed25519VRF.vrfKeypair(seed)
-  var malkinKey:MalkinKey = MalkinKES.generateKey(seed)
-  val (sk_sig,pk_sig) = Curve25519.createKeyPair(seed)
-  val pk_kes:PublicKey = MalkinKES.publicKey(malkinKey)
-  var localChain:Chain = List()
-  var foreignChains:List[Chain] = List()
-  var genBlock: Any = 0
-  var genBlockHash: Array[Byte] = Array()
-  var roundBlock: Any = 0
-  var eta_Ep:Array[Byte] = Array()
-  var Tr_Ep: Double = 0.0
-  var holderIndex = -1
-  var localState:LocalState = Map()
-  var stakingState:LocalState = Map()
-  var memPool:MemPool = List()
-  val publicKeys = (pk_sig,pk_vrf,pk_kes)
+  with obMethods
+  with stakeHolderVars {
 
-  //stakeholder public keys
-  holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
+  val holderId = s"${self.path}"
 
   def receive: Receive = {
     /**updates time, the kes key, and resets variables */
@@ -200,7 +139,7 @@ class StakeHolder extends Actor
       t = value.t
       malkinKey = MalkinKES.updateKey(malkinKey,t)
       sender() ! "done"
-    },holderIndex)
+    },holderIndex,timingFlag)
 
     /**sends all other stakeholders the public keys, only happens once per round */
     case Diffuse => {
@@ -244,7 +183,7 @@ class StakeHolder extends Actor
         }
       }
       sender() ! "done"
-    },holderIndex)
+    },holderIndex,timingFlag)
 
     /**receives chains from other holders and stores them */
     case value: SendChain => {
@@ -271,7 +210,7 @@ class StakeHolder extends Actor
       }
       foreignChains = List()
       sender() ! "done"
-    },holderIndex)
+    },holderIndex,timingFlag)
     /**updates local chain if a longer valid chain is detected
       * finds common prefix and only checks new blocks */
     case UpdateChainFast => time({
@@ -307,7 +246,7 @@ class StakeHolder extends Actor
       }
       foreignChains = List()
       sender() ! "done"
-    },holderIndex)
+    },holderIndex,timingFlag)
 
     /**validates diffused string from other holders and stores in inbox */
     case value: String => {
