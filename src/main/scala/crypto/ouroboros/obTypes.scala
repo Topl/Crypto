@@ -1,9 +1,10 @@
 package crypto.ouroboros
 
-import crypto.crypto.malkinKES.MalkinKES.MalkinSignature
 import scala.math.BigInt
 
 trait obTypes {
+  type MalkinKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
+  type MalkinSignature = (Array[Byte],Array[Byte],Array[Byte])
   type Eta = Array[Byte]
   type Sig = Array[Byte]
   type Slot = Int

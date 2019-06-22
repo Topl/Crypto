@@ -1,14 +1,15 @@
-package crypto.cryptomain
+package crypto.ouroboros
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import crypto.ouroboros._
+
 import akka.actor.ActorSystem
-import scala.util.{Try, Success, Failure}
+
 import scala.io.StdIn
 import scala.reflect.io.Path
+import scala.util.Try
 
-object cryptoMain extends App {
+object Prosomo extends App {
 
   /**
     * Ouroboros Prosomoiotís:
@@ -26,24 +27,19 @@ object cryptoMain extends App {
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 
   val system = ActorSystem("stakeholders")
-  val n = 5
 
   val coordinator = system.actorOf(Coordinator.props, "coordinator")
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
-  coordinator ! Populate(n)
+  coordinator ! Populate(5)
 
-  for (i <- 1 to 100) {
-    coordinator ! Update
-  }
-
-  coordinator ! CloseDataFile
+  coordinator ! Run(100)
 
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()
+  coordinator ! CloseDataFile
   coordinator ! Status
-
   println(">>> Press ENTER to exit <<<")
   try StdIn.readLine()
   finally system.terminate()

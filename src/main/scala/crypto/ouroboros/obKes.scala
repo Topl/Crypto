@@ -1,9 +1,8 @@
-package crypto.crypto.malkinKES
+package crypto.ouroboros
 
 import bifrost.crypto.hash.FastCryptographicHash
 import org.bouncycastle.math.ec.rfc8032.Ed25519
-import scorex.crypto.hash.Sha512
-import crypto.ouroboros.{Tree,Node,Leaf,Empty}
+
 import scala.math.BigInt
 
 
@@ -19,7 +18,7 @@ import scala.math.BigInt
   * Sum compostion is based on underlying Ed25519 signing routine provided by Bouncy Castle
   */
 
-object MalkinKES {
+class obKes {
 
   val seedBytes = 32
   val pkBytes = Ed25519.PUBLIC_KEY_SIZE

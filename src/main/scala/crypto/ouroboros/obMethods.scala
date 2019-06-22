@@ -4,20 +4,22 @@ import akka.actor.ActorRef
 import akka.actor._
 import akka.pattern.ask
 import akka.util.Timeout
-import scala.concurrent.{Await, ExecutionContext, Future}
+
+import scala.concurrent.Await
 import scala.language.postfixOps
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import bifrost.crypto.hash.FastCryptographicHash
-import crypto.Ed25519vrf.Ed25519VRF
-import crypto.crypto.malkinKES.MalkinKES
-import crypto.crypto.malkinKES.MalkinKES.{MalkinKey, MalkinSignature}
-import scorex.crypto.signatures.Curve25519
+
 import scala.math.BigInt
+import scala.util.Random
 
 trait obMethods
   extends obTypes
     with parameters
     with utils {
+
+  val vrf = new obVrf
+  val kes = new obKes
+  val sig = new obSig
 
   /**
     * calculates epoch nonce recursively
@@ -131,17 +133,26 @@ trait obMethods
     */
 
   def diffuse(str: String,id: String,sk_sig: PrivateKey): String = {
-    str+";"+id+";"+bytes2hex(Curve25519.sign(sk_sig,serialize(str+";"+id)))
+    str+";"+id+";"+bytes2hex(sig.sign(sk_sig,serialize(str+";"+id)))
   }
 
   def signTx(data: Array[Byte],id:Sid,sk_sig: Sig,pk_sig: PublicKey): Tx = {
-    (data,id,Curve25519.sign(sk_sig,data++id),pk_sig)
+    (data,id,sig.sign(sk_sig,data++id),pk_sig)
   }
 
   def verifyTx(tx:Tx): Boolean = {
-    Curve25519.verify(tx._3,tx._1++tx._2,tx._4)
+    sig.verify(tx._3,tx._1++tx._2,tx._4)
   }
 
+  /**
+    * Sends commands one by one to list of stakeholders
+    * @param holders actor list
+    * @param command object to be sent
+    */
+
+  def send(holder:ActorRef,command: Any) = {
+    holder ! command
+  }
   /**
     * Sends commands one by one to list of stakeholders
     * @param holders actor list
@@ -181,19 +192,16 @@ trait obMethods
   }
 
   /**
-    * Sends commands one by one to list of stakeholders, except ref given by holderId
+    * Sends commands one by one to shuffled list of stakeholders, except ref given by holderId
     * @param holderId actor not to send
     * @param holders actor list
     * @param command object to be sent
     */
 
   def send(holderId:String, holders:List[ActorRef],command: Any) = {
-    implicit val timeout = Timeout(waitTime)
-    for (holder <- holders){
+    for (holder <- Random.shuffle(holders)){
       if (s"${holder.path}" != holderId) {
-        val future = holder ? command
-        val result = Await.result(future, timeout.duration)
-        assert(result == "done")
+        holder ! command
       }
     }
   }
@@ -207,7 +215,7 @@ trait obMethods
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
     val (pk_vrf,_,_,pk_sig,party,_) = cert
-    (MalkinKES.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
+    (kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
       && serialize(party.head).deep == serialize((pk_sig,pk_vrf,pk_kes)).deep
       )
   }
@@ -245,15 +253,16 @@ trait obMethods
           FastCryptographicHash(serialize(block)).deep == hash.deep
             && verifyBlock(block0)
             && block._3 < block0._3
-            && Ed25519VRF.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
-            && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
-            && Ed25519VRF.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
-            && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+            && vrf.vrfProofToHash(pi).deep == rho.deep
+            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+            && vrf.vrfProofToHash(pi_y).deep == y.deep
             && tr_Ep == tr_c
             && compare(y, tr_Ep)
           )
         i += 1
       }
+
       bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
     } else { true }
   }
@@ -292,10 +301,10 @@ trait obMethods
           FastCryptographicHash(serialize(block)).deep == hash.deep
             && verifyBlock(block0)
             && block._3<block0._3
-            && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
-            && Ed25519VRF.vrfProofToHash(pi).deep == rho.deep
-            && Ed25519VRF.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
-            && Ed25519VRF.vrfProofToHash(pi_y).deep == y.deep
+            && vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
+            && vrf.vrfProofToHash(pi).deep == rho.deep
+            && vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
+            && vrf.vrfProofToHash(pi_y).deep == y.deep
             && tr_Ep == tr_c
             && compare(y,tr_Ep)
           )
@@ -487,7 +496,7 @@ trait obMethods
     if (!performanceFlag) {
       val values: Array[String] = value.split(";")
       val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
-      Curve25519.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
+      sig.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
     } else { true }
   }
 

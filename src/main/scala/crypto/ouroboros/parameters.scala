@@ -1,8 +1,5 @@
 package crypto.ouroboros
 
-import crypto.Ed25519vrf.Ed25519VRF
-import crypto.crypto.malkinKES.MalkinKES
-import scorex.crypto.signatures.Curve25519
 import scala.concurrent.duration._
 
 trait parameters {
@@ -12,7 +9,7 @@ trait parameters {
   val confirmationDepth = 10
   val epochLength = 3*confirmationDepth
   val initStakeMax = 1.0e9
-  val waitTime = 2 seconds
+  val waitTime = 60 seconds
   val timingFlag = true
   val performanceFlag = false
   val printFlag = true
@@ -21,5 +18,6 @@ trait parameters {
   val forgeBytes ="FORGER_REWARD".getBytes
   val transferBytes = "TRANSFER".getBytes
   val genesisBytes = "GENESIS".getBytes
-  val keyLength = Curve25519.KeyLength+Ed25519VRF.KeyLength+MalkinKES.KeyLength
+  val keyLength = 3*32
+  val slotT:Long = 200
 }

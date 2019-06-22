@@ -1,17 +1,14 @@
 package crypto.ouroboros
 
 import java.io.{BufferedWriter, FileWriter}
-import akka.actor.{Actor, ActorRef, Props}
-import crypto.Ed25519vrf.Ed25519VRF
-import crypto.crypto.malkinKES.MalkinKES
-import crypto.crypto.malkinKES.MalkinKES.MalkinSignature
-import scala.util.Random
+import akka.actor.{Actor, ActorRef, Props, Timers}
 
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
   * sends messages to participants to execute a round
   */
 class Coordinator extends Actor
+  with Timers
   with obMethods
   with coordinatorVars {
   val coordId = s"${self.path}"
@@ -23,6 +20,7 @@ class Coordinator extends Actor
         context.actorOf(Stakeholder.props, "holder:" + uuid)
       }
       send(holders,holders)
+      send(holders,CoordRef(self))
       genKeys = send(holders,GetGenKeys,genKeys)
       assert(!containsDuplicates(genKeys))
       val genBlock:Block = forgeGenBlock
@@ -30,17 +28,16 @@ class Coordinator extends Actor
     }
     /**tells actors to print their inbox */
     case Inbox => send(holders,Inbox)
-    /**Execute the round by sending each stakeholder a sequence of commands */
-    /**holders list is shuffled to emulate unpredictable ordering of messages */
-    case Update => {
-      //if (t%epochLength==1) {send(holders,Status)}
-      t+=1
-      println("t = "+t.toString)
-      send(Random.shuffle(holders),Update(t))
-      send(Random.shuffle(holders),Diffuse)
-      send(Random.shuffle(holders),ForgeBlocks)
-      send(Random.shuffle(holders),UpdateChainFast)
-      if (dataOutFlag && t%dataOutInterval==0) send(holders,WriteFile(fileWriter))
+
+    case value:Run => {
+      println("starting")
+      val t0 = System.currentTimeMillis()
+      send(holders,StartTime(t0))
+      send(holders,Run(value.max))
+    }
+    case GetTime => {
+      val t1 = System.currentTimeMillis()
+      sender() ! GetTime(t1)
     }
     //tells actors to print status */
     case Status => {
@@ -62,6 +59,7 @@ class Coordinator extends Actor
         case _ => println("error: file writer not initialized")
       }
     }
+    case WriteFile => sender() ! WriteFile(fileWriter)
     case CloseDataFile => if(dataOutFlag) {
       fileWriter match {
         case fw:BufferedWriter => fw.close()
@@ -73,10 +71,10 @@ class Coordinator extends Actor
   /**creates genesis block to be sent to all stakeholders */
   def forgeGenBlock: Block = {
     val slot:Slot = t
-    val pi:Pi = Ed25519VRF.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("NONCE"))
-    val rho:Rho = Ed25519VRF.vrfProofToHash(pi)
-    val pi_y:Pi = Ed25519VRF.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))
-    val y:Rho = Ed25519VRF.vrfProofToHash(pi_y)
+    val pi:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("NONCE"))
+    val rho:Rho = vrf.vrfProofToHash(pi)
+    val pi_y:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))
+    val y:Rho = vrf.vrfProofToHash(pi_y)
     val hash:Hash = eta0
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
@@ -92,7 +90,7 @@ class Coordinator extends Actor
       party ++= List((hex2bytes(values(0)),hex2bytes(values(1)),hex2bytes(values(2))))
     }
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party,1.0)
-    val sig:MalkinSignature = MalkinKES.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
+    val sig:MalkinSignature = kes.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }
 }
