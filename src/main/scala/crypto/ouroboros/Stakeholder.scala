@@ -41,6 +41,103 @@ class Stakeholder extends Actor
     (hash, state, slot, cert, rho, pi, sig, pk_kes)
   }
 
+  def updateChain = {
+    time({
+      if (holderIndex == 0 && printFlag) {
+        println("holder " + holderIndex.toString + " Update Chain")
+      }
+      for (chain <- foreignChains) {
+        if (chain.length > localChain.length) {
+          var trueChain = false
+          if (localChain.length == 1) {
+            if (holderIndex == 0 && printFlag) {
+              println("inheriting chain")
+            }
+            trueChain = verifyChain(chain, genBlockHash)
+          } else {
+            var prefixIndex = 0
+            var foundCommonPrefix = false
+            breakable {
+              for (block <- chain.drop(chain.length - localChain.length)) {
+                if (block._1.deep == localChain(prefixIndex)._1.deep) {
+                  if (holderIndex == 0 && printFlag) {
+                    println("found common prefix at i = " + prefixIndex.toString)
+                  }
+                  foundCommonPrefix = true
+                  trueChain = verifyChain(chain, genBlockHash, prefixIndex)
+                  break
+                }
+                prefixIndex += 1
+              }
+            }
+            if (!foundCommonPrefix) {
+              if (holderIndex == 0 && printFlag) {
+                println("no prefix found, checking entire chain")
+              }
+              trueChain = verifyChain(chain, genBlockHash)
+            }
+          }
+          if (!trueChain) println("error: invalid chain")
+          if (trueChain) localChain = chain
+        }
+      }
+      foreignChains = List()
+    }, holderIndex, timingFlag)
+  }
+
+  def updateSlot = {
+    time({
+      if (holderIndex == 0 && printFlag) {
+        println("holder " + holderIndex.toString + " Update Slot")
+      }
+      currentSlot = time
+      currentEpoch = time / epochLength
+      if (holderIndex == 0) println("slot = " + currentSlot.toString)
+      if (holderIndex == 0 && printFlag) {
+        println("holder " + holderIndex.toString + " Update")
+      }
+
+      /** checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
+      if (holderIndex == 0 && printFlag) {
+        println("holder " + holderIndex.toString + " ForgeBlocks")
+      }
+      if (currentSlot % epochLength == 1) {
+        currentEpoch = currentSlot / epochLength
+        if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
+        val txString = diffuse(holderData, holderId, sk_sig)
+        stakingParty = setParty(txString + "\n" + inbox)
+        alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
+        if (holderIndex == 0 && printFlag) {
+          println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
+          stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+        }
+        Tr_Ep = phi(alpha_Ep, f_s)
+        eta_Ep = eta(localChain, currentSlot / epochLength)
+      }
+      malkinKey = kes.updateKey(malkinKey, currentSlot)
+      if (diffuseSent) {
+        if (slotLeader) {
+          roundBlock = forgeBlock
+          if (holderIndex == 0 && printFlag) {
+            println("holder " + holderIndex.toString + " is slot a leader")
+          }
+        }
+        roundBlock match {
+          case b: Block => {
+            localChain = List(b) ++ localChain
+            send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
+            blocksForged += 1
+          }
+          case _ =>
+        }
+      }
+      roundBlock = 0
+      if (dataOutFlag && currentSlot % dataOutInterval == 0) {
+        coordinatorRef ! WriteFile
+      }
+    }, holderIndex, timingFlag)
+  }
+
   private case object timerKey
 
   def receive: Receive = {
@@ -82,96 +179,9 @@ class Stakeholder extends Actor
 
           coordinatorRef ! GetTime
           if (time > currentSlot) {
-            if (holderIndex == 0 && printFlag) {
-              println("holder " + holderIndex.toString + " Update")
-            }
-            time({
-              currentSlot = time
-              currentEpoch = time / epochLength
-              if (holderIndex == 0) println("slot = " + currentSlot.toString)
-              if (holderIndex == 0 && printFlag) {
-                println("holder " + holderIndex.toString + " Update")
-              }
-
-              /** checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
-              if (holderIndex == 0 && printFlag) {
-                println("holder " + holderIndex.toString + " ForgeBlocks")
-              }
-              if (currentSlot % epochLength == 1) {
-                currentEpoch = currentSlot / epochLength
-                if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
-                val txString = diffuse(holderData, holderId, sk_sig)
-                stakingParty = setParty(txString + "\n" + inbox)
-                alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
-                if (holderIndex == 0 && printFlag) {
-                  println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
-                  stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-                }
-                Tr_Ep = phi(alpha_Ep, f_s)
-                eta_Ep = eta(localChain, currentSlot / epochLength)
-              }
-              malkinKey = kes.updateKey(malkinKey, currentSlot)
-              if (diffuseSent) {
-                if (slotLeader) {
-                  roundBlock = forgeBlock
-                  if (holderIndex == 0 && printFlag) {
-                    println("holder " + holderIndex.toString + " is slot a leader")
-                  }
-                }
-                roundBlock match {
-                  case b: Block => {
-                    localChain = List(b) ++ localChain
-                    send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
-                    blocksForged += 1
-                  }
-                  case _ =>
-                }
-              }
-              roundBlock = 0
-              if (dataOutFlag && currentSlot % dataOutInterval == 0) coordinatorRef ! WriteFile
-            }, holderIndex, timingFlag)
+            updateSlot
           } else if (foreignChains.nonEmpty) {
-            time({
-              if (holderIndex == 0 && printFlag) {
-                println("holder " + holderIndex.toString + " Update Chain")
-              }
-              for (chain <- foreignChains) {
-                if (chain.length > localChain.length) {
-                  var trueChain = false
-                  if (localChain.length == 1) {
-                    if (holderIndex == 0 && printFlag) {
-                      println("inheriting chain")
-                    }
-                    trueChain = verifyChain(chain, genBlockHash)
-                  } else {
-                    var prefixIndex = 0
-                    var foundCommonPrefix = false
-                    breakable {
-                      for (block <- chain.drop(chain.length - localChain.length)) {
-                        if (block._1.deep == localChain(prefixIndex)._1.deep) {
-                          if (holderIndex == 0 && printFlag) {
-                            println("found common prefix at i = " + prefixIndex.toString)
-                          }
-                          foundCommonPrefix = true
-                          trueChain = verifyChain(chain, genBlockHash, prefixIndex)
-                          break
-                        }
-                        prefixIndex += 1
-                      }
-                    }
-                    if (!foundCommonPrefix) {
-                      if (holderIndex == 0 && printFlag) {
-                        println("no prefix found, checking entire chain")
-                      }
-                      trueChain = verifyChain(chain, genBlockHash)
-                    }
-                  }
-                  if (!trueChain) println("error: invalid chain")
-                  if (trueChain) localChain = chain
-                }
-              }
-              foreignChains = List()
-            }, holderIndex, timingFlag)
+            updateChain
           }
         }
         updating = false

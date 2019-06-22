@@ -43,23 +43,27 @@ class Coordinator extends Actor
     case Status => {
       send(holders,Status)
     }
-    case value:NewDataFile => if(dataOutFlag) {
-      fileWriter = new BufferedWriter(new FileWriter(value.name))
-      val fileString = (
-        "Holder_number"
-          + " t"
-          + " alpha"
-          + " blocks_forged"
-          + " chain_length"
-          + " chain_hash"
-          +"\n"
-        )
-      fileWriter match {
-        case fw: BufferedWriter => fw.write(fileString)
-        case _ => println("error: file writer not initialized")
+    case value:NewDataFile => {
+      if(dataOutFlag) {
+        fileWriter = new BufferedWriter(new FileWriter(value.name))
+        val fileString = (
+          "Holder_number"
+            + " t"
+            + " alpha"
+            + " blocks_forged"
+            + " chain_length"
+            + " chain_hash"
+            +"\n"
+          )
+        fileWriter match {
+          case fw: BufferedWriter => {fw.write(fileString)}
+          case _ => println("error: file writer not initialized")
+        }
       }
     }
-    case WriteFile => sender() ! WriteFile(fileWriter)
+    case WriteFile => {
+      sender() ! WriteFile(fileWriter)
+    }
     case CloseDataFile => if(dataOutFlag) {
       fileWriter match {
         case fw:BufferedWriter => fw.close()

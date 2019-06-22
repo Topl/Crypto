@@ -34,7 +34,7 @@ object Prosomo extends App {
 
   coordinator ! Populate(10)
 
-  coordinator ! Run(200)
+  coordinator ! Run(100)
 
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()
