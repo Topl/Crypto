@@ -110,6 +110,7 @@ class Stakeholder extends Actor
         if (holderIndex == 0 && printFlag) {
           println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
           stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+          assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
         }
         Tr_Ep = phi(alpha_Ep, f_s)
         eta_Ep = eta(localChain, currentSlot / epochLength)
