@@ -124,6 +124,19 @@ trait obMethods
     party
   }
 
+  def setParty(c:Chain): Party = {
+    var party:Party = List()
+    val t = c.head._3
+    val ep = t/epochLength
+    for (b <- subChain(c,ep*epochLength-10*epochLength,t)){
+      val state:State = b._2
+      for (entry <- state){
+        val tx = entry._1
+      }
+    }
+    party
+  }
+
   /**
     * Verifiable string for communicating between stakeholders
     * @param str data to be diffused

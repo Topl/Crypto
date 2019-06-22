@@ -19,5 +19,5 @@ trait parameters {
   val transferBytes = "TRANSFER".getBytes
   val genesisBytes = "GENESIS".getBytes
   val keyLength = 3*32
-  val slotT:Long = 200
+  val slotT:Long = 500
 }
