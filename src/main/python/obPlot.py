@@ -54,7 +54,7 @@ cols, indexToName = getColumns(data_file," ",True)
 data_file.close()
 
 
-numHolders = int(max(cols[indexToName[0]]))+1
+numHolders = max([int(numeric_string) for numeric_string in cols[indexToName[0]]])+1
 print("Number of holders:")
 print(numHolders)
 numDataPoints = len(cols[indexToName[0]])

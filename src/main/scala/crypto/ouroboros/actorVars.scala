@@ -26,7 +26,8 @@ trait stakeHolderVars
   var genBlock: Any = 0
   var genBlockHash: Array[Byte] = Array()
   var roundBlock: Any = 0
-  var eta_Ep:Array[Byte] = Array()
+  var eta_Ep:Eta = Array()
+  var eta_prev:Eta = Array()
   var Tr_Ep: Double = 0.0
   var holderIndex = -1
   var localState:LocalState = Map()

@@ -275,6 +275,19 @@ trait obMethods
             && compare(y, tr_Ep)
           )
         i += 1
+        if(false){
+          println(Seq(
+            FastCryptographicHash(serialize(block)).deep == hash.deep //1
+            , verifyBlock(block0) //2
+            , block._3<block0._3 //3
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //4
+            , vrf.vrfProofToHash(pi).deep == rho.deep //5
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //6
+            , vrf.vrfProofToHash(pi_y).deep == y.deep //7
+            , tr_Ep == tr_c //8
+            , compare(y,tr_Ep) //9
+          ))
+        }
       }
 
       bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
@@ -323,6 +336,19 @@ trait obMethods
             && compare(y,tr_Ep)
           )
         i+=1
+        if(false){
+          println(Seq(
+            FastCryptographicHash(serialize(block)).deep == hash.deep
+              , verifyBlock(block0)
+              , block._3<block0._3
+              , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
+              , vrf.vrfProofToHash(pi).deep == rho.deep
+              , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
+              , vrf.vrfProofToHash(pi_y).deep == y.deep
+              , tr_Ep == tr_c
+              , compare(y,tr_Ep)
+          ))
+        }
       }
       bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
     } else { true }

@@ -21,8 +21,8 @@ object Prosomo extends App {
 
   val dataFileDir = "/tmp/scorex/test-data/crypto"
   val dataPath = Path(dataFileDir)
-  Try(dataPath.deleteRecursively())
-  Try(dataPath.createDirectory())
+  //Try(dataPath.deleteRecursively())
+  //Try(dataPath.createDirectory())
 
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 
@@ -32,9 +32,9 @@ object Prosomo extends App {
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
-  coordinator ! Populate(10)
+  coordinator ! Populate(5)
 
-  coordinator ! Run(100)
+  coordinator ! Run(200)
 
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()

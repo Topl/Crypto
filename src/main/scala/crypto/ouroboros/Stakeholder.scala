@@ -1,7 +1,6 @@
 package crypto.ouroboros
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
-import scala.concurrent.duration._
 import bifrost.crypto.hash.FastCryptographicHash
 import util.control.Breaks._
 import java.io.BufferedWriter
@@ -77,7 +76,7 @@ class Stakeholder extends Actor
               trueChain = verifyChain(chain, genBlockHash)
             }
           }
-          if (!trueChain) println("error: invalid chain")
+          //if (!trueChain) println("error: invalid chain")
           if (trueChain) localChain = chain
         }
       }
@@ -101,7 +100,8 @@ class Stakeholder extends Actor
       if (holderIndex == 0 && printFlag) {
         println("holder " + holderIndex.toString + " ForgeBlocks")
       }
-      if (currentSlot % epochLength == 1) {
+
+      if (currentSlot/epochLength > currentEpoch || currentSlot%epochLength == 1) {
         currentEpoch = currentSlot / epochLength
         if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
         val txString = diffuse(holderData, holderId, sk_sig)
@@ -109,11 +109,15 @@ class Stakeholder extends Actor
         alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
         if (holderIndex == 0 && printFlag) {
           println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
-          stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-          assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
+          //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+          //val (stakingState0,memPool0) = revertLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength),memPool)
+          //stakingState = stakingState0
+          //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+          //assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
         }
         Tr_Ep = phi(alpha_Ep, f_s)
-        eta_Ep = eta(localChain, currentSlot / epochLength)
+        eta_prev = eta_Ep
+        eta_Ep = eta(localChain,currentEpoch,eta_prev)
       }
       malkinKey = kes.updateKey(malkinKey, currentSlot)
       if (diffuseSent) {
