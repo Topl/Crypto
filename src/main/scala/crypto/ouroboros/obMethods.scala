@@ -160,7 +160,7 @@ trait obMethods
 
   /**
     * Sends commands one by one to list of stakeholders
-    * @param holders actor list
+    * @param holder actor list
     * @param command object to be sent
     */
 
@@ -244,24 +244,96 @@ trait obMethods
   def verifyChain(c:Chain, gh:Hash): Boolean = {
     if (!performanceFlag) {
       var bool = true
-      var i = 0
-      val t = c.head._3
-      var ep = t / epochLength
-      var stakingParty = c.head._4._5
+      var i = c.length-1
+      var ep = -1
+      var stakingParty:Party = List()
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
-      var eta_Ep = eta(c, ep)
+      var eta_Ep:Eta = eta(c,0)
+      var stakingState:LocalState = Map()
 
-      for (block <- c.tail) {
+      bool &&= FastCryptographicHash(serialize(c.last)).deep == gh.deep
+
+      for (block <- c.tail.reverse) {
+        i -= 1
         val block0 = c(i)
         val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
         val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
-        if (slot < ep * epochLength + 1) {
+
+        if (slot/epochLength > ep) {
           stakingParty = party
-          ep -= 1
-          eta_Ep = eta(c.drop(i), ep)
+          ep = slot/epochLength
+          eta_Ep = eta(c.drop(i), ep, eta_Ep)
+          stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
         }
-        alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
+        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
+        //alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
+        tr_Ep = phi(alpha_Ep, f_s)
+        bool &&= (
+            FastCryptographicHash(serialize(block)).deep == hash.deep
+        && verifyBlock(block0)
+        && block._3 < block0._3
+        && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+        && vrf.vrfProofToHash(pi).deep == rho.deep
+        && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+        && vrf.vrfProofToHash(pi_y).deep == y.deep
+        && tr_Ep == tr_c
+        && compare(y, tr_Ep)
+        )
+        if(!bool){
+          print(slot);print(" ")
+          println(Seq(
+              FastCryptographicHash(serialize(block)).deep == hash.deep //1
+            , verifyBlock(block0) //2
+            , block._3<block0._3 //3
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //4
+            , vrf.vrfProofToHash(pi).deep == rho.deep //5
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //6
+            , vrf.vrfProofToHash(pi_y).deep == y.deep //7
+            , tr_Ep == tr_c //8
+            , compare(y,tr_Ep) //9
+          ))
+        }
+      }
+      bool
+    } else { true }
+  }
+
+  /**
+    * Verify chain using key evolving signature, VRF proofs, and hash rule
+    * @param c chain to be verified
+    * @param ls local state for calculating stake distribution
+    * @return true if chain is valid, false otherwise
+    */
+
+  def verifyChain(c:Chain,ls0:LocalState,eta0:Eta,ep0:Int,ls1:LocalState,eta1:Eta): Boolean = {
+    if (!performanceFlag) {
+      var bool = true
+      var i = c.length-1
+      var ep = ep0
+      var stakingParty:Party = List()
+      var alpha_Ep = 0.0
+      var tr_Ep = 0.0
+      var eta_Ep:Eta = eta0
+      var stakingState:LocalState = ls0
+
+      for (block <- c.tail.reverse) {
+        i -= 1
+        val block0 = c(i)
+        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
+        val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
+        if (slot/epochLength > ep0) {
+          ep = slot/epochLength
+          eta_Ep = eta1
+          stakingState = ls1
+        } else if (slot/epochLength>ep) {
+          ep = slot/epochLength
+          eta_Ep = eta(c, ep, eta_Ep)
+          stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
+        }
+        stakingParty = party
+        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
+        //alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
           FastCryptographicHash(serialize(block)).deep == hash.deep
@@ -274,8 +346,8 @@ trait obMethods
             && tr_Ep == tr_c
             && compare(y, tr_Ep)
           )
-        i += 1
-        if(false){
+        if(!bool){
+          print(slot);print(" ")
           println(Seq(
             FastCryptographicHash(serialize(block)).deep == hash.deep //1
             , verifyBlock(block0) //2
@@ -289,68 +361,7 @@ trait obMethods
           ))
         }
       }
-
-      bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
-    } else { true }
-  }
-
-  /**
-    * Verify chain using key evolving siganture, VRF proofs, and hash rule
-    * @param c chain to be verified
-    * @param gh genesis block hash
-    * @param prefix index to verify up to
-    * @return true if chain is valid, false otherwise
-    */
-
-  def verifyChain(c:Chain, gh:Hash,prefix:Int): Boolean = {
-    if (!performanceFlag) {
-      var bool = true
-      var i = 0
-      val t = c.head._3
-      var ep = t/epochLength
-      var stakingParty = c.head._4._5
-      var alpha_Ep = 0.0
-      var tr_Ep = 0.0
-      var eta_Ep = eta(c,ep)
-
-      for (block <- c.tail.take(prefix+1) ) {
-        val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
-        val (pk_vrf,y,pi_y,pk_sig,party,tr_c) = cert
-        if (slot<ep*epochLength+1){
-          stakingParty = party
-          ep-=1
-          eta_Ep = eta(c.drop(i),ep)
-        }
-        alpha_Ep = relativeStake(party,(pk_sig,pk_vrf,pk_kes),c,ep*epochLength+1)
-        tr_Ep = phi(alpha_Ep,f_s)
-        bool &&= (
-          FastCryptographicHash(serialize(block)).deep == hash.deep
-            && verifyBlock(block0)
-            && block._3<block0._3
-            && vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
-            && vrf.vrfProofToHash(pi).deep == rho.deep
-            && vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
-            && vrf.vrfProofToHash(pi_y).deep == y.deep
-            && tr_Ep == tr_c
-            && compare(y,tr_Ep)
-          )
-        i+=1
-        if(false){
-          println(Seq(
-            FastCryptographicHash(serialize(block)).deep == hash.deep
-              , verifyBlock(block0)
-              , block._3<block0._3
-              , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi)
-              , vrf.vrfProofToHash(pi).deep == rho.deep
-              , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y)
-              , vrf.vrfProofToHash(pi_y).deep == y.deep
-              , tr_Ep == tr_c
-              , compare(y,tr_Ep)
-          ))
-        }
-      }
-      bool && FastCryptographicHash(serialize(c.last)).deep == gh.deep
+      bool
     } else { true }
   }
 

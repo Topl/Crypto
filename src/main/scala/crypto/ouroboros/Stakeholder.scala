@@ -43,14 +43,14 @@ class Stakeholder extends Actor
   def updateChain = {
     time({
       if (holderIndex == 0 && printFlag) {
-        println("holder " + holderIndex.toString + " Update Chain")
+        println("Holder " + holderIndex.toString + " Update Chain")
       }
       for (chain <- foreignChains) {
         if (chain.length > localChain.length) {
           var trueChain = false
           if (localChain.length == 1) {
             if (holderIndex == 0 && printFlag) {
-              println("inheriting chain")
+              println("Inheriting chain")
             }
             trueChain = verifyChain(chain, genBlockHash)
           } else {
@@ -60,10 +60,12 @@ class Stakeholder extends Actor
               for (block <- chain.drop(chain.length - localChain.length)) {
                 if (block._1.deep == localChain(prefixIndex)._1.deep) {
                   if (holderIndex == 0 && printFlag) {
-                    println("found common prefix at i = " + prefixIndex.toString)
+                    println("Found ancestor at i = " + prefixIndex.toString)
                   }
                   foundCommonPrefix = true
-                  trueChain = verifyChain(chain, genBlockHash, prefixIndex)
+                  val eta_Ep_tmp = history(block._3/epochLength)._1
+                  val stakingState_tmp = history(block._3/epochLength)._2
+                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,block._3/epochLength,stakingState,eta_Ep)
                   break
                 }
                 prefixIndex += 1
@@ -71,12 +73,13 @@ class Stakeholder extends Actor
             }
             if (!foundCommonPrefix) {
               if (holderIndex == 0 && printFlag) {
-                println("no prefix found, checking entire chain")
+                println("No prefix found, checking entire chain")
               }
               trueChain = verifyChain(chain, genBlockHash)
             }
           }
-          //if (!trueChain) println("error: invalid chain")
+          if (!trueChain) println("ERROR: invalid chain")
+          //assert(trueChain)
           if (trueChain) localChain = chain
         }
       }
@@ -87,44 +90,44 @@ class Stakeholder extends Actor
   def updateSlot = {
     time({
       if (holderIndex == 0 && printFlag) {
-        println("holder " + holderIndex.toString + " Update Slot")
+        println("Holder " + holderIndex.toString + " Update Slot")
       }
       currentSlot = time
-      currentEpoch = time / epochLength
-      if (holderIndex == 0) println("slot = " + currentSlot.toString)
+      if (holderIndex == 0) println("Slot = " + currentSlot.toString)
       if (holderIndex == 0 && printFlag) {
-        println("holder " + holderIndex.toString + " Update")
+        println("Holder " + holderIndex.toString + " Update")
       }
 
       /** checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
       if (holderIndex == 0 && printFlag) {
-        println("holder " + holderIndex.toString + " ForgeBlocks")
+        println("Holder " + holderIndex.toString + " ForgeBlocks")
       }
 
-      if (currentSlot/epochLength > currentEpoch || currentSlot%epochLength == 1) {
+      if (currentSlot/epochLength > currentEpoch) {
         currentEpoch = currentSlot / epochLength
         if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
         val txString = diffuse(holderData, holderId, sk_sig)
-        stakingParty = setParty(txString + "\n" + inbox)
-        alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
         if (holderIndex == 0 && printFlag) {
           println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
-          //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
           //val (stakingState0,memPool0) = revertLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength),memPool)
           //stakingState = stakingState0
           //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
           //assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
         }
+        stakingParty = setParty(txString + "\n" + inbox)
+        stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+        //alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
+        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
         Tr_Ep = phi(alpha_Ep, f_s)
-        eta_prev = eta_Ep
-        eta_Ep = eta(localChain,currentEpoch,eta_prev)
+        eta_Ep = eta(localChain,currentEpoch,eta_Ep)
+        history = history++List((eta_Ep,stakingState))
       }
       malkinKey = kes.updateKey(malkinKey, currentSlot)
       if (diffuseSent) {
         if (slotLeader) {
           roundBlock = forgeBlock
           if (holderIndex == 0 && printFlag) {
-            println("holder " + holderIndex.toString + " is slot a leader")
+            println("Holder " + holderIndex.toString + " is slot a leader")
           }
         }
         roundBlock match {
@@ -197,9 +200,9 @@ class Stakeholder extends Actor
     case value: SendChain => {
       if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
         if (holderIndex == 0 && printFlag) {
-          println("holder " + holderIndex.toString + " Received Chain")
+          println("Holder " + holderIndex.toString + " Received Chain")
         }
-        if (updating) println("error: received chain executing while updating")
+        if (updating) println("ERROR: received chain executing while updating")
         value.c match {
           case c: Chain => {
             foreignChains = foreignChains ++ List(c)

@@ -22,7 +22,7 @@ object Prosomo extends App {
   val dataFileDir = "/tmp/scorex/test-data/crypto"
   val dataPath = Path(dataFileDir)
   //Try(dataPath.deleteRecursively())
-  //Try(dataPath.createDirectory())
+  Try(dataPath.createDirectory())
 
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 

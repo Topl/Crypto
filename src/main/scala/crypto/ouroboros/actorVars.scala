@@ -32,12 +32,13 @@ trait stakeHolderVars
   var holderIndex = -1
   var localState:LocalState = Map()
   var stakingState:LocalState = Map()
+  var history:List[(Eta,LocalState)] = List()
   var memPool:MemPool = List()
   val publicKeys = (pk_sig,pk_vrf,pk_kes)
   var tMax = 0
   var t0:Long = 0
   var currentSlot = 0
-  var currentEpoch = 0
+  var currentEpoch = -1
   var updating = false
   var coordinatorRef:ActorRef = _
   //stakeholder public keys
