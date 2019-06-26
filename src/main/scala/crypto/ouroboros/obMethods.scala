@@ -114,30 +114,6 @@ trait obMethods
     net<t
   }
 
-  def setParty(s:String): Party = {
-    val members = s.split("\n")
-    var party:Party = List()
-    for (member<-members){
-      val values = member.split(";")
-      party = party++List((hex2bytes(values(0)),hex2bytes(values(1)),hex2bytes(values(2))))
-    }
-    party
-  }
-
-  def setParty(c:Chain): Party = {
-    var party:Party = List()
-    val t = c.head._3
-    val ep = t/epochLength
-    for (b <- subChain(c,ep*epochLength-2*epochLength,ep*epochLength-epochLength)){
-      val state:State = b._2
-      for (entry <- state){
-        val tx:Tx = entry._1
-
-      }
-    }
-    party
-  }
-
   /**
     * Verifiable string for communicating between stakeholders
     * @param str data to be diffused
@@ -228,10 +204,8 @@ trait obMethods
 
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
-    val (pk_vrf,_,_,pk_sig,party,_) = cert
-    (kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
-      && serialize(party.head).deep == serialize((pk_sig,pk_vrf,pk_kes)).deep
-      )
+    val (pk_vrf,_,_,pk_sig,_) = cert
+    kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
   }
 
   /**
@@ -246,7 +220,6 @@ trait obMethods
       var bool = true
       var i = c.length-1
       var ep = -1
-      var stakingParty:Party = List()
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
       var eta_Ep:Eta = eta(c,0)
@@ -258,16 +231,14 @@ trait obMethods
         i -= 1
         val block0 = c(i)
         val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
-        val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
+        val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
 
         if (slot/epochLength > ep) {
-          stakingParty = party
           ep = slot/epochLength
           eta_Ep = eta(c.drop(i), ep, eta_Ep)
           stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
         }
-        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
-        //alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
+        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
             FastCryptographicHash(serialize(block)).deep == hash.deep
@@ -302,7 +273,6 @@ trait obMethods
   /**
     * Verify chain using key evolving signature, VRF proofs, and hash rule
     * @param c chain to be verified
-    * @param ls local state for calculating stake distribution
     * @return true if chain is valid, false otherwise
     */
 
@@ -311,7 +281,6 @@ trait obMethods
       var bool = true
       var i = c.length-1
       var ep = ep0
-      var stakingParty:Party = List()
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
       var eta_Ep:Eta = eta0
@@ -321,7 +290,7 @@ trait obMethods
         i -= 1
         val block0 = c(i)
         val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
-        val (pk_vrf, y, pi_y, pk_sig, party, tr_c) = cert
+        val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
         if (slot/epochLength > ep0) {
           ep = slot/epochLength
           eta_Ep = eta1
@@ -331,9 +300,7 @@ trait obMethods
           eta_Ep = eta(c, ep, eta_Ep)
           stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
         }
-        stakingParty = party
-        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
-        //alpha_Ep = relativeStake(party, (pk_sig,pk_vrf,pk_kes), c, ep * epochLength + 1)
+        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
           FastCryptographicHash(serialize(block)).deep == hash.deep
@@ -366,42 +333,11 @@ trait obMethods
   }
 
 
-  /**
-    * Gets the relative stake, alpha, of the stakeholder
-    * @param party string containing all stakeholders participating in the round
-    * @param holderKey stakeholder public key
-    * @param chain chain containing stakeholders transactions
-    * @param t current time slot
-    * @return alpha, between 0.0 and 1.0
-    */
-
-  def relativeStake(party:Party,holderKey:PublicKeys,chain:Chain,t:Int): Double = {
-    var holderStake = BigInt(0)
-    var netStake = BigInt(0)
-    val ep = t/epochLength
-    val sc = subChain(chain,0,ep*epochLength-epochLength)
-    for (block<-sc) {
-      val state = block._2
-      for (entry <- state) {
-        val (tx,delta) = entry
-        if(verifyTx(tx)) {
-          val txPk:PublicKey = tx._4
-          if (txPk.deep == holderKey._1.deep || tx._1.drop(genesisBytes.length).deep == (holderKey._1++holderKey._2++holderKey._3).deep) {holderStake += delta}
-          for (member<-party) {
-            if(member._1.deep == txPk.deep || (member._1++member._2++member._3).deep == tx._1.drop(genesisBytes.length).deep){netStake += delta}
-          }
-        }
-      }
-    }
-    holderStake.toDouble/netStake.toDouble
-  }
-
-  def relativeStake(party:Party,holderKeys:PublicKeys,ls:LocalState): Double = {
-    var netStake = BigInt(0)
-    var holderStake = BigInt(0)
-    for (member <- party) {
-      val memberKey = bytes2hex(member._1++member._2++member._3)
-      if (ls.keySet.contains(memberKey)) netStake += ls(memberKey)
+  def relativeStake(holderKeys:PublicKeys,ls:LocalState): Double = {
+    var netStake:BigInt = 0
+    var holderStake:BigInt = 0
+    for (member <- ls.keySet) {
+      netStake += ls(member)
     }
     val holderKey = bytes2hex(holderKeys._1++holderKeys._2++holderKeys._3)
     if (ls.keySet.contains(holderKey)) holderStake = ls(holderKey)
@@ -416,7 +352,7 @@ trait obMethods
     var nls:LocalState = ls
     for (b <- c.reverse) {
       val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
-      val (pk_vrf,_,_,pk_sig,_,_) = cert
+      val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry
         if (verifyTx(tx)) {
@@ -452,10 +388,18 @@ trait obMethods
             val validSender = nls.keySet.contains(pk_s)
             val validRecip = nls.keySet.contains(pk_r)
             val forgerBalance = nls.keySet.contains(pk_f)
-            val validTransfer = pk_s != pk_r
             val validFunds = if(validSender) {nls(pk_s) >= delta} else { false }
-            if (validSender && validRecip && validFunds && validTransfer) {
-              if (pk_s == pk_f) {
+            if (validSender && validRecip && validFunds) {
+              if (pk_s == pk_r && pk_s != pk_f) {
+                val s_net:BigInt = nls(pk_s)
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_new: BigInt = s_net - fee
+                val f_new: BigInt = f_net + fee
+                nls -= pk_s
+                if (forgerBalance) nls -= pk_f
+                if (s_new > 0) nls += (pk_s -> s_new)
+                nls += (pk_f -> f_new)
+              } else if (pk_s == pk_f) {
                 val s_net:BigInt = nls(pk_s)
                 val r_net:BigInt = nls(pk_r)
                 val s_new: BigInt = s_net - delta + fee
@@ -487,7 +431,7 @@ trait obMethods
                 nls += (pk_r -> r_new)
                 nls += (pk_f -> f_new)
               }
-            } else if (validSender && validFunds && validTransfer) {
+            } else if (validSender && validFunds) {
               if (pk_s == pk_f) {
                 val s_net:BigInt = nls(pk_s)
                 val r_net:BigInt = 0
@@ -530,13 +474,14 @@ trait obMethods
     var nmem:MemPool = mem
     for (b <- c) {
       val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
-      val (pk_vrf,_,_,pk_sig,_,_) = cert
+      val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry
         if (verifyTx(tx)) {
           val (data:Array[Byte],txId:Sid,_,pk_tx:PublicKey) = tx
           val pk_f = bytes2hex(pk_sig++pk_vrf++pk_kes)
           val validForger:Boolean = pk_tx.deep == pk_sig.deep
+
           if (data.deep == forgeBytes.deep && validForger) {
             if (nls.keySet.contains(pk_f)) {
               val netStake:BigInt = nls(pk_f)
@@ -560,7 +505,16 @@ trait obMethods
             val validTransfer = pk_s != pk_r
             val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
             if (validSender && validRecip && validTransfer) {
-              if (pk_f == pk_s) {
+              if (pk_s == pk_r && pk_s != pk_f) {
+                val s_net:BigInt = nls(pk_s)
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_new: BigInt = s_net + fee
+                val f_new: BigInt = f_net - fee
+                nls -= pk_s
+                if (forgerBalance) nls -= pk_f
+                if (s_new > 0) nls += (pk_s -> s_new)
+                nls += (pk_f -> f_new)
+              } else if (pk_f == pk_s) {
                 val s_net: BigInt = nls(pk_s)
                 val r_net: BigInt = nls(pk_r)
                 val s_new: BigInt = s_net + delta - fee

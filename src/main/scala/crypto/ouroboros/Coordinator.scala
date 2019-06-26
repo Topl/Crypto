@@ -88,12 +88,7 @@ class Coordinator extends Actor
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
       serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStakeMax * r.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt}.toMap
-    var party: Party = List()
-    for (holder <- holders){
-      val values = genKeys(s"${holder.path}").split(";")
-      party ++= List((hex2bytes(values(0)),hex2bytes(values(1)),hex2bytes(values(2))))
-    }
-    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,party,1.0)
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
     val sig:MalkinSignature = kes.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi)
     (hash,state,slot,cert,rho,pi,sig,pk_kes)
   }

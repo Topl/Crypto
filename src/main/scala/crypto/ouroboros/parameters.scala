@@ -14,11 +14,11 @@ trait parameters {
   val confirmationDepth = 10
   val epochLength = 3*confirmationDepth
   val dataOutInterval = 10
-  val slotT:Long = 200
+  val slotT:Long = 250
   val waitTime = 60 seconds
   val updateTime = 1.millis
   val performanceFlag = false
-  val printFlag = true
+  val printFlag = false
   val timingFlag = false
   val dataOutFlag = false
 }

@@ -9,7 +9,6 @@ trait stakeHolderVars
     with obMethods
     with utils {
   var inbox:String = ""
-  var stakingParty:Party = List()
   var holderData: String = ""
   var holders: List[ActorRef] = List()
   var diffuseSent = false

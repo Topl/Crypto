@@ -35,7 +35,7 @@ class Stakeholder extends Actor
     val y: Rho = vrf.vrfProofToHash(pi_y)
     val hash: Hash = FastCryptographicHash(serialize(localChain.head))
     val state: State = Map(blockTx -> forgerReward)
-    val cert: Cert = (pk_vrf, y, pi_y, pk_sig, stakingParty, Tr_Ep)
+    val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
     val sig: MalkinSignature = kes.sign(malkinKey, hash ++ serialize(state) ++ serialize(slot) ++ serialize(cert) ++ rho ++ pi)
     (hash, state, slot, cert, rho, pi, sig, pk_kes)
   }
@@ -79,7 +79,7 @@ class Stakeholder extends Actor
             }
           }
           if (!trueChain) println("ERROR: invalid chain")
-          //assert(trueChain)
+          assert(trueChain)
           if (trueChain) localChain = chain
         }
       }
@@ -107,6 +107,13 @@ class Stakeholder extends Actor
         currentEpoch = currentSlot / epochLength
         if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
         val txString = diffuse(holderData, holderId, sk_sig)
+
+        stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
+        Tr_Ep = phi(alpha_Ep, f_s)
+        eta_Ep = eta(localChain,currentEpoch,eta_Ep)
+        history = history++List((eta_Ep,stakingState))
+
         if (holderIndex == 0 && printFlag) {
           println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
           //val (stakingState0,memPool0) = revertLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength),memPool)
@@ -114,13 +121,6 @@ class Stakeholder extends Actor
           //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
           //assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
         }
-        stakingParty = setParty(txString + "\n" + inbox)
-        stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-        //alpha_Ep = relativeStake(stakingParty, publicKeys, localChain, currentSlot)
-        alpha_Ep = relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState)
-        Tr_Ep = phi(alpha_Ep, f_s)
-        eta_Ep = eta(localChain,currentEpoch,eta_Ep)
-        history = history++List((eta_Ep,stakingState))
       }
       malkinKey = kes.updateKey(malkinKey, currentSlot)
       if (diffuseSent) {

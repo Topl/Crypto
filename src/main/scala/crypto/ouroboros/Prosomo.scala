@@ -32,9 +32,9 @@ object Prosomo extends App {
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
-  coordinator ! Populate(5)
+  coordinator ! Populate(8)
 
-  coordinator ! Run(200)
+  coordinator ! Run(500)
 
   println(">>> Press ENTER for Status <<<")
   StdIn.readLine()

@@ -12,7 +12,6 @@ trait obTypes {
   type PublicKey = Array[Byte]
   type Sid = Array[Byte]
   type PublicKeys = (PublicKey,PublicKey,PublicKey)
-  type Party = List[PublicKeys]
   type PrivateKey = Array[Byte]
   type Hash = Array[Byte]
   type Pi = Array[Byte]
@@ -22,7 +21,7 @@ trait obTypes {
   type LocalState = Map[String,BigInt]
   type MemPool = List[Transfer]
   type Tr = Double
-  type Cert = (PublicKey,Rho,Pi,PublicKey,Party,Tr)
+  type Cert = (PublicKey,Rho,Pi,PublicKey,Tr)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
   type Chain = List[Block]
 }

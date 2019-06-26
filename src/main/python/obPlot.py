@@ -8,7 +8,7 @@ import matplotlib.cm as cm
 list_of_files = glob.glob('/tmp/scorex/test-data/crypto/*.txt') # * means all if need specific format then *.csv
 latest_file = max(list_of_files, key=os.path.getctime)
 
-data_file = file(latest_file,'r')
+data_file = open(latest_file,'r')
 
 
 def getColumns(inFile, delim="\t", header=True):
@@ -88,7 +88,7 @@ plt.autoscale(enable=True, axis='x', tight=True)
 plt.autoscale(enable=True, axis='y', tight=True)
 plt.tight_layout()
 
-
+print("plotting")
 
 plt.show()
 
