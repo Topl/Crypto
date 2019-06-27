@@ -41,90 +41,77 @@ class Stakeholder extends Actor
   }
 
   def updateChain = {
-    time({
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Update Chain")
-      }
-      for (chain <- foreignChains) {
-        if (chain.length > localChain.length) {
-          var trueChain = false
-          if (localChain.length == 1) {
-            if (holderIndex == 0 && printFlag) {
-              println("Inheriting chain")
-            }
-            trueChain = verifyChain(chain, genBlockHash)
-          } else {
-            var prefixIndex = 0
-            var foundCommonPrefix = false
-            breakable {
-              for (block <- chain.drop(chain.length - localChain.length)) {
-                if (block._1.deep == localChain(prefixIndex)._1.deep) {
-                  if (holderIndex == 0 && printFlag) {
-                    println("Found ancestor at i = " + prefixIndex.toString)
-                  }
-                  foundCommonPrefix = true
-                  val eta_Ep_tmp = history(block._3/epochLength)._1
-                  val stakingState_tmp = history(block._3/epochLength)._2
-                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,block._3/epochLength,stakingState,eta_Ep)
-                  break
+    for (chain <- foreignChains) {
+      if (chain.length > localChain.length) {
+        var trueChain = false
+        if (localChain.length == 1) {
+          if (holderIndex == 0 && printFlag) {
+            println("Inheriting chain")
+          }
+          trueChain = verifyChain(chain, genBlockHash)
+        } else {
+          var prefixIndex = 0
+          var foundCommonPrefix = false
+          breakable {
+            for (block <- chain.drop(chain.length - localChain.length)) {
+              if (block._1.deep == localChain(prefixIndex)._1.deep) {
+                if (holderIndex == 0 && printFlag) {
+                  println("Found ancestor at i = " + prefixIndex.toString)
                 }
-                prefixIndex += 1
+                foundCommonPrefix = true
+                val prefixEp = block._3/epochLength
+                val eta_Ep_tmp:Eta = history(prefixEp)._1
+                val stakingState_tmp:LocalState = history(prefixEp)._2
+                if (prefixEp == currentEpoch) {
+                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,prefixEp,stakingState,eta_Ep)
+                } else {
+                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,prefixEp,history(prefixEp+1)._2,history(prefixEp+1)._1)
+                }
+                break
               }
-            }
-            if (!foundCommonPrefix) {
-              if (holderIndex == 0 && printFlag) {
-                println("No prefix found, checking entire chain")
-              }
-              trueChain = verifyChain(chain, genBlockHash)
+              prefixIndex += 1
             }
           }
-          if (!trueChain) println("ERROR: invalid chain")
-          assert(trueChain)
-          if (trueChain) localChain = chain
+          if (!foundCommonPrefix) {
+            if (holderIndex == 0 && printFlag) {
+              println("No prefix found, checking entire chain")
+            }
+            trueChain = verifyChain(chain, genBlockHash)
+          }
         }
+        if (!trueChain) println("ERROR: invalid chain")
+        if (trueChain) localChain = chain
+        while (localChain.head._3 > currentSlot) {localChain = localChain.tail}
       }
-      foreignChains = List()
-    }, holderIndex, timingFlag)
+    }
+    foreignChains = List()
   }
 
   def updateSlot = {
+
+    currentSlot = time
+
+    if (holderIndex == 0) println("Slot = " + currentSlot.toString)
+
     time({
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Update Slot")
-      }
-      currentSlot = time
-      if (holderIndex == 0) println("Slot = " + currentSlot.toString)
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Update")
-      }
+      updateEpoch
+    }, holderIndex, timingFlag)
 
-      /** checks eligibility to forge blocks and sends chain to other holders if a new block is forged */
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " ForgeBlocks")
-      }
 
-      if (currentSlot/epochLength > currentEpoch) {
-        currentEpoch = currentSlot / epochLength
-        if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
-        val txString = diffuse(holderData, holderId, sk_sig)
-
-        stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
-        Tr_Ep = phi(alpha_Ep, f_s)
-        eta_Ep = eta(localChain,currentEpoch,eta_Ep)
-        history = history++List((eta_Ep,stakingState))
-
-        if (holderIndex == 0 && printFlag) {
-          println("holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
-          //val (stakingState0,memPool0) = revertLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength),memPool)
-          //stakingState = stakingState0
-          //stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-          //assert(alpha_Ep == relativeStake(stakingParty,(pk_sig,pk_vrf,pk_kes),stakingState))
-        }
-      }
+    if (holderIndex == 0 && printFlag) {
+      println("Holder " + holderIndex.toString + " Update KES")
+    }
+    time({
       malkinKey = kes.updateKey(malkinKey, currentSlot)
+    }, holderIndex, timingFlag)
+
+    if (holderIndex == 0 && printFlag) {
+      println("Holder " + holderIndex.toString + " ForgeBlocks")
+    }
+    time({
       if (diffuseSent) {
         if (slotLeader) {
+          while (localChain.head._3 >= currentSlot) {localChain = localChain.tail}
           roundBlock = forgeBlock
           if (holderIndex == 0 && printFlag) {
             println("Holder " + holderIndex.toString + " is slot a leader")
@@ -132,18 +119,37 @@ class Stakeholder extends Actor
         }
         roundBlock match {
           case b: Block => {
-            localChain = List(b) ++ localChain
-            send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
-            blocksForged += 1
+          localChain = List(b) ++ localChain
+          send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
+          blocksForged += 1
           }
           case _ =>
         }
       }
-      roundBlock = 0
-      if (dataOutFlag && currentSlot % dataOutInterval == 0) {
-        coordinatorRef ! WriteFile
-      }
     }, holderIndex, timingFlag)
+    roundBlock = 0
+    if (dataOutFlag && currentSlot % dataOutInterval == 0) {
+      coordinatorRef ! WriteFile
+    }
+  }
+
+  def updateEpoch = {
+    if (currentSlot / epochLength > currentEpoch) {
+      currentEpoch = currentSlot / epochLength
+      if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
+      val txString = diffuse(holderData, holderId, sk_sig)
+
+      stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+      stakingState = activeStake(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 10 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+      alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
+      Tr_Ep = phi(alpha_Ep, f_s)
+      eta_Ep = eta(localChain, currentEpoch, eta_Ep)
+      history = history ++ List((eta_Ep, stakingState))
+
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
+      }
+    }
   }
 
   private case object timerKey
@@ -175,6 +181,7 @@ class Stakeholder extends Actor
 
     /** updates time, the kes key, and resets variables */
     case Update => {
+
       if (!updating) {
         updating = true
         if (time > tMax) {
@@ -184,16 +191,21 @@ class Stakeholder extends Actor
             send(holderId, holders, diffuse(holderData, holderId, sk_sig))
             diffuseSent = true
           }
-
           coordinatorRef ! GetTime
           if (time > currentSlot) {
             updateSlot
           } else if (foreignChains.nonEmpty) {
-            updateChain
+            if (holderIndex == 0 && printFlag) {
+              println("Holder " + holderIndex.toString + " Update Chain")
+            }
+            time({
+              updateChain
+            }, holderIndex, timingFlag)
           }
         }
         updating = false
       }
+
     }
 
     /** receives chains from other holders and stores them */

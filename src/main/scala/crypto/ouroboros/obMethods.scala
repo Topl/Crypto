@@ -8,6 +8,7 @@ import akka.util.Timeout
 import scala.concurrent.Await
 import scala.language.postfixOps
 import bifrost.crypto.hash.FastCryptographicHash
+import util.control.Breaks._
 
 import scala.math.BigInt
 import scala.util.Random
@@ -237,6 +238,7 @@ trait obMethods
           ep = slot/epochLength
           eta_Ep = eta(c.drop(i), ep, eta_Ep)
           stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
+          if (ep>0) stakingState = activeStake(stakingState, subChain(c, (slot / epochLength) * epochLength - 10 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
         }
         alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
@@ -337,15 +339,51 @@ trait obMethods
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
     for (member <- ls.keySet) {
-      netStake += ls(member)
+      val (balance,activityIndex) = ls(member)
+      if (activityIndex) netStake += balance
     }
     val holderKey = bytes2hex(holderKeys._1++holderKeys._2++holderKeys._3)
-    if (ls.keySet.contains(holderKey)) holderStake = ls(holderKey)
+    if (ls.keySet.contains(holderKey)){
+      val (balance,activityIndex) = ls(holderKey)
+      if (activityIndex) holderStake += balance
+    }
     if (netStake > 0) {
       holderStake.toDouble / netStake.toDouble
     } else {
       0.0
     }
+  }
+
+  def activeStake(ls:LocalState,c:Chain): LocalState = {
+    var nls:LocalState = ls
+    for (member <- ls.keySet) {
+      breakable {
+        val (balance, _) = ls(member)
+        for (b <- c) {
+          val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey) = b
+          val (pk_vrf, _, _, pk_sig, _) = cert
+          val pk_f = bytes2hex(pk_sig ++ pk_vrf ++ pk_kes)
+          if (pk_f == member && slot>0) {nls -= member; nls += (member -> (balance, true)); break}
+          for (entry <- state) {
+            val (tx: Tx, delta: BigInt) = entry
+            val (data: Array[Byte], _, _, _) = tx
+            if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
+              val pk_g = bytes2hex(data.drop(genesisBytes.length))
+              if (pk_g == member) {nls -= member; nls += (member -> (balance, true)); break}
+            }
+            if (data.take(transferBytes.length).deep == transferBytes.deep) {
+              val pk_s = bytes2hex(data.slice(transferBytes.length, transferBytes.length + keyLength))
+              if (pk_s == member) {nls -= member; nls += (member -> (balance, true)); break}
+              val pk_r = bytes2hex(data.slice(transferBytes.length + keyLength, transferBytes.length + 2 * keyLength))
+              if (pk_r == member) {nls -= member; nls += (member -> (balance, true)); break}
+            }
+          }
+          nls -= member
+          nls += (member -> (balance, false))
+        }
+      }
+    }
+    nls
   }
 
   def updateLocalState(ls:LocalState,c:Chain): LocalState = {
@@ -362,14 +400,14 @@ trait obMethods
 
           if (data.deep == forgeBytes.deep && validForger) {
             if (nls.keySet.contains(pk_f)) {
-              val netStake: BigInt = nls(pk_f)
+              val netStake: BigInt = nls(pk_f)._1
               val newStake: BigInt = netStake + delta
               nls -= pk_f
-              nls += (pk_f -> newStake)
+              nls += (pk_f -> (newStake,true))
             } else {
               val netStake: BigInt = 0
               val newStake: BigInt = netStake + delta
-              nls += (pk_f -> newStake)
+              nls += (pk_f -> (newStake,true))
             }
           }
 
@@ -378,7 +416,7 @@ trait obMethods
             val newStake:BigInt = netStake + delta
             val pk_g = bytes2hex(data.drop(genesisBytes.length))
             if(nls.keySet.contains(pk_g)) nls -= pk_g
-            nls += (pk_g -> newStake)
+            nls += (pk_g -> (newStake,true))
           }
 
           if (data.take(transferBytes.length).deep == transferBytes.deep && validForger) {
@@ -388,78 +426,78 @@ trait obMethods
             val validSender = nls.keySet.contains(pk_s)
             val validRecip = nls.keySet.contains(pk_r)
             val forgerBalance = nls.keySet.contains(pk_f)
-            val validFunds = if(validSender) {nls(pk_s) >= delta} else { false }
+            val validFunds = if(validSender) {nls(pk_s)._1 >= delta} else { false }
             if (validSender && validRecip && validFunds) {
               if (pk_s == pk_r && pk_s != pk_f) {
-                val s_net:BigInt = nls(pk_s)
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_net:BigInt = nls(pk_s)._1
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new: BigInt = s_net - fee
                 val f_new: BigInt = f_net + fee
                 nls -= pk_s
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_f -> (f_new,true))
               } else if (pk_s == pk_f) {
-                val s_net:BigInt = nls(pk_s)
-                val r_net:BigInt = nls(pk_r)
+                val s_net:BigInt = nls(pk_s)._1
+                val r_net:BigInt = nls(pk_r)._1
                 val s_new: BigInt = s_net - delta + fee
                 val r_new: BigInt = r_net + delta - fee
                 nls -= pk_s
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
               } else if (pk_r == pk_f) {
-                val s_net:BigInt = nls(pk_s)
-                val r_net:BigInt = nls(pk_r)
+                val s_net:BigInt = nls(pk_s)._1
+                val r_net:BigInt = nls(pk_r)._1
                 val s_new: BigInt = s_net - delta
                 val r_new: BigInt = r_net + delta
                 nls -= pk_s
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
               } else {
-                val s_net:BigInt = nls(pk_s)
-                val r_net:BigInt = nls(pk_r)
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_net:BigInt = nls(pk_s)._1
+                val r_net:BigInt = nls(pk_r)._1
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new: BigInt = s_net - delta
                 val r_new: BigInt = r_net + delta - fee
                 val f_new: BigInt = f_net + fee
                 nls -= pk_s
                 nls -= pk_r
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
-                nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
+                nls += (pk_f -> (f_new,true))
               }
             } else if (validSender && validFunds) {
               if (pk_s == pk_f) {
-                val s_net:BigInt = nls(pk_s)
+                val s_net:BigInt = nls(pk_s)._1
                 val r_net:BigInt = 0
                 val s_new: BigInt = s_net - delta + fee
                 val r_new: BigInt = r_net + delta - fee
                 nls -= pk_s
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
               } else if (pk_r == pk_f) {
-                val s_net:BigInt = nls(pk_s)
+                val s_net:BigInt = nls(pk_s)._1
                 val r_net:BigInt = 0
                 val s_new: BigInt = s_net - delta
                 val r_new: BigInt = r_net + delta
                 nls -= pk_s
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
               } else {
-                val s_net:BigInt = nls(pk_s)
+                val s_net:BigInt = nls(pk_s)._1
                 val r_net:BigInt = 0
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new: BigInt = s_net - delta
                 val r_new: BigInt = r_net + delta - fee
                 val f_new: BigInt = f_net + fee
                 nls -= pk_s
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_r -> r_new)
-                nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_r -> (r_new,true))
+                nls += (pk_f -> (f_new,true))
               }
             }
           }
@@ -484,10 +522,10 @@ trait obMethods
 
           if (data.deep == forgeBytes.deep && validForger) {
             if (nls.keySet.contains(pk_f)) {
-              val netStake:BigInt = nls(pk_f)
+              val netStake:BigInt = nls(pk_f)._1
               val newStake:BigInt = netStake - delta
               nls -= pk_f
-              if (newStake > 0) nls += (pk_f -> newStake)
+              if (newStake > 0) nls += (pk_f -> (newStake,true))
             }
           }
 
@@ -506,85 +544,85 @@ trait obMethods
             val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
             if (validSender && validRecip && validTransfer) {
               if (pk_s == pk_r && pk_s != pk_f) {
-                val s_net:BigInt = nls(pk_s)
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_net:BigInt = nls(pk_s)._1
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new: BigInt = s_net + fee
                 val f_new: BigInt = f_net - fee
                 nls -= pk_s
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                nls += (pk_f -> (f_new,true))
               } else if (pk_f == pk_s) {
-                val s_net: BigInt = nls(pk_s)
-                val r_net: BigInt = nls(pk_r)
+                val s_net: BigInt = nls(pk_s)._1
+                val r_net: BigInt = nls(pk_r)._1
                 val s_new: BigInt = s_net + delta - fee
                 val r_new: BigInt = r_net - delta + fee
                 nls -= pk_s
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
                 val transfer: Transfer = (hex2bytes(pk_s), hex2bytes(pk_r), delta, txId)
                 nmem ++= List(transfer)
               } else if (pk_f == pk_r) {
-                val s_net:BigInt = nls(pk_s)
-                val r_net:BigInt = nls(pk_r)
+                val s_net:BigInt = nls(pk_s)._1
+                val r_net:BigInt = nls(pk_r)._1
                 val s_new:BigInt = s_net + delta
                 val r_new:BigInt = r_net - delta
                 nls -= pk_s
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
                 val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
                 nmem ++= List(transfer)
               } else {
-                val s_net:BigInt = nls(pk_s)
-                val r_net:BigInt = nls(pk_r)
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val s_net:BigInt = nls(pk_s)._1
+                val r_net:BigInt = nls(pk_r)._1
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new:BigInt = s_net + delta
                 val r_new:BigInt = r_net - delta + fee
                 val f_new:BigInt = f_net - fee
                 nls -= pk_s
                 nls -= pk_r
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
-                if (f_new > 0) nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
+                if (f_new > 0) nls += (pk_f -> (f_new,true))
                 val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
                 nmem ++= List(transfer)
               }
             } else if (validRecip && validTransfer) {
               if (pk_f == pk_s) {
                 val s_net: BigInt = 0
-                val r_net: BigInt = nls(pk_r)
+                val r_net: BigInt = nls(pk_r)._1
                 val s_new: BigInt = s_net + delta - fee
                 val r_new: BigInt = r_net - delta + fee
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
                 val transfer: Transfer = (hex2bytes(pk_s), hex2bytes(pk_r), delta, txId)
                 nmem ++= List(transfer)
               } else if (pk_f == pk_r) {
                 val s_net:BigInt = 0
-                val r_net:BigInt = nls(pk_r)
+                val r_net:BigInt = nls(pk_r)._1
                 val s_new:BigInt = s_net + delta
                 val r_new:BigInt = r_net - delta
                 nls -= pk_r
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
                 val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
                 nmem ++= List(transfer)
               } else {
                 val s_net:BigInt = 0
-                val r_net:BigInt = nls(pk_r)
-                val f_net:BigInt = {if (forgerBalance) nls(pk_f) else 0}
+                val r_net:BigInt = nls(pk_r)._1
+                val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
                 val s_new:BigInt = s_net + delta
                 val r_new:BigInt = r_net - delta + fee
                 val f_new:BigInt = f_net - fee
                 nls -= pk_r
                 if (forgerBalance) nls -= pk_f
-                if (s_new > 0) nls += (pk_s -> s_new)
-                if (r_new > 0) nls += (pk_r -> r_new)
-                if (f_new > 0) nls += (pk_f -> f_new)
+                if (s_new > 0) nls += (pk_s -> (s_new,true))
+                if (r_new > 0) nls += (pk_r -> (r_new,true))
+                if (f_new > 0) nls += (pk_f -> (f_new,true))
                 val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
                 nmem ++= List(transfer)
               }

@@ -18,7 +18,7 @@ trait obTypes {
   type Tx = (Array[Byte],Sid,Sig,PublicKey)
   type Transfer = (PublicKey,PublicKey,BigInt,Sid)
   type State = Map[Tx,BigInt]
-  type LocalState = Map[String,BigInt]
+  type LocalState = Map[String,(BigInt,Boolean)]
   type MemPool = List[Transfer]
   type Tr = Double
   type Cert = (PublicKey,Rho,Pi,PublicKey,Tr)

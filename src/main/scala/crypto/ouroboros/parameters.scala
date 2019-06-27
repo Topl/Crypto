@@ -11,14 +11,14 @@ trait parameters {
   val initStakeMax = 1.0e9
   val transferFee = 0.01
   val f_s = 0.9
-  val confirmationDepth = 10
+  val confirmationDepth = 30
   val epochLength = 3*confirmationDepth
-  val dataOutInterval = 10
-  val slotT:Long = 250
+  val dataOutInterval = 100
+  val slotT:Long = 200
   val waitTime = 60 seconds
   val updateTime = 1.millis
   val performanceFlag = false
-  val printFlag = false
-  val timingFlag = false
+  val printFlag = true
+  val timingFlag = true
   val dataOutFlag = false
 }
