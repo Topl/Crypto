@@ -20,8 +20,9 @@ trait stakeHolderVars
   var malkinKey:MalkinKey = kes.generateKey(seed)
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val pk_kes:PublicKey = kes.publicKey(malkinKey)
-  var localChain:Chain = List()
+  var localChain:Chain = Array()
   var foreignChains:List[Chain] = List()
+  var localChainData:ChainData = Array()
   var genBlock: Any = 0
   var genBlockHash: Array[Byte] = Array()
   var roundBlock: Any = 0

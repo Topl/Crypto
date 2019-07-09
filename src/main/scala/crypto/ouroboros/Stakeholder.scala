@@ -28,6 +28,7 @@ class Stakeholder extends Actor
   /** Calculates a block with epoch variables */
   def forgeBlock: Block = {
     val bn:Int = localChain.head._9 + 1
+    val ps:Slot = localChain.head._3
     val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
     val slot: Slot = currentSlot
     val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
@@ -37,8 +38,8 @@ class Stakeholder extends Actor
     val hash: Hash = FastCryptographicHash(serialize(localChain.head))
     val state: State = Map(blockTx -> forgerReward)
     val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
-    val sig: MalkinSignature = kes.sign(malkinKey, hash ++ serialize(state) ++ serialize(slot) ++ serialize(cert) ++ rho ++ pi ++ serialize(bn))
-    (hash, state, slot, cert, rho, pi, sig, pk_kes,bn)
+    val sig: MalkinSignature = kes.sign(malkinKey,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (hash, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
   }
 
   def updateChain = {
@@ -120,9 +121,11 @@ class Stakeholder extends Actor
         }
         roundBlock match {
           case b: Block => {
-          localChain = List(b) ++ localChain
-          send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
-          blocksForged += 1
+            localChain = Array(b) ++ localChain
+            localChainData.update(currentSlot,b::localChainData(currentSlot))
+            send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
+            send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
+            blocksForged += 1
           }
           case _ =>
         }
@@ -172,6 +175,8 @@ class Stakeholder extends Actor
 
     case value: Run => {
       tMax = value.max
+      localChainData = localChainData++Array.fill(tMax){List()}
+      assert(genBlockHash.deep == FastCryptographicHash(serialize(localChainData(0).head)).deep)
       timers.startPeriodicTimer(timerKey, Update, updateTime)
       sender() ! "done"
     }
@@ -225,6 +230,47 @@ class Stakeholder extends Actor
       }
     }
 
+    case value: SendBlock => if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " Received Block")
+      }
+      if (updating) println("ERROR: executing while updating")
+      value.b match {
+        case b: Block => {
+          if (verifyBlock(b)) {
+            var foundBlock = false
+            for (block<-localChainData(b._3)) {
+              if (FastCryptographicHash(serialize(b)).deep == FastCryptographicHash(serialize(block)).deep) {
+                foundBlock = true
+              }
+            }
+            if (!foundBlock) localChainData.update(b._3, b::localChainData(b._3))
+            foundBlock = false
+            for (block<-localChainData(b._10)) {
+              if (b._1.deep == FastCryptographicHash(serialize(block)).deep) {
+                foundBlock = true
+              }
+            }
+            if (!foundBlock) sender() ! RequestBlock(b._1,b._10,diffuse(holderData, holderId, sk_sig))
+          }
+        }
+        case _ => println("error")
+      }
+    }
+
+
+    case value: RequestBlock =>  if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " Requested Block")
+      }
+      if (updating) println("ERROR: executing while updating")
+
+      for (block<-localChainData(value.slot)) {
+        if (FastCryptographicHash(serialize(block)).deep == value.hash.deep) sender() ! SendBlock(block,diffuse(holderData, holderId, sk_sig))
+      }
+
+    }
+
     /** validates diffused string from other holders and stores in inbox */
     case value: String => {
       if (verifyTxStamp(value)) inbox = inbox + value + "\n"
@@ -246,7 +292,9 @@ class Stakeholder extends Actor
       genBlock = gb.b
       genBlock match {
         case b: Block => {
-          localChain = List(b) ++ localChain
+          localChain = Array(b) ++ localChain
+          println("updating local chain with genblock")
+          localChainData = Array(List(b))
           genBlockHash = FastCryptographicHash(serialize(genBlock))
         }
         case _ => println("error")

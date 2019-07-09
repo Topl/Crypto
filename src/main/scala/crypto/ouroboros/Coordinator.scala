@@ -16,14 +16,20 @@ class Coordinator extends Actor
     /**populates the holder list with stakeholder actor refs
       * This is the F_init functionality */
     case value: Populate => {
+      println("Populating")
       holders = List.fill(value.n){
         context.actorOf(Stakeholder.props, "holder:" + uuid)
       }
+      println("Sending holders list")
       send(holders,holders)
+      println("Sending holders coordinator ref")
       send(holders,CoordRef(self))
+      println("Getting holder keys")
       genKeys = send(holders,GetGenKeys,genKeys)
       assert(!containsDuplicates(genKeys))
+      println("Forge Genesis Block")
       val genBlock:Block = forgeGenBlock
+      println("Send GenBlock")
       send(holders,GenBlock(genBlock))
     }
     /**tells actors to print their inbox */
@@ -75,6 +81,7 @@ class Coordinator extends Actor
   /**creates genesis block to be sent to all stakeholders */
   def forgeGenBlock: Block = {
     val bn:Int = 0
+    val ps:Slot = -1
     val slot:Slot = t
     val pi:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("NONCE"))
     val rho:Rho = vrf.vrfProofToHash(pi)
@@ -90,8 +97,8 @@ class Coordinator extends Actor
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
       serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStakeMax * r.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt}.toMap
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
-    val sig:MalkinSignature = kes.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn))
-    (hash,state,slot,cert,rho,pi,sig,pk_kes,bn)
+    val sig:MalkinSignature = kes.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (hash,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
   }
 }
 
