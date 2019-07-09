@@ -27,6 +27,7 @@ class Stakeholder extends Actor
 
   /** Calculates a block with epoch variables */
   def forgeBlock: Block = {
+    val bn:Int = localChain.head._9 + 1
     val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
     val slot: Slot = currentSlot
     val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
@@ -36,8 +37,8 @@ class Stakeholder extends Actor
     val hash: Hash = FastCryptographicHash(serialize(localChain.head))
     val state: State = Map(blockTx -> forgerReward)
     val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
-    val sig: MalkinSignature = kes.sign(malkinKey, hash ++ serialize(state) ++ serialize(slot) ++ serialize(cert) ++ rho ++ pi)
-    (hash, state, slot, cert, rho, pi, sig, pk_kes)
+    val sig: MalkinSignature = kes.sign(malkinKey, hash ++ serialize(state) ++ serialize(slot) ++ serialize(cert) ++ rho ++ pi ++ serialize(bn))
+    (hash, state, slot, cert, rho, pi, sig, pk_kes,bn)
   }
 
   def updateChain = {

@@ -22,6 +22,6 @@ trait obTypes {
   type MemPool = List[Transfer]
   type Tr = Double
   type Cert = (PublicKey,Rho,Pi,PublicKey,Tr)
-  type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey)
+  type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey,Int)
   type Chain = List[Block]
 }

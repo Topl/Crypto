@@ -79,8 +79,13 @@ trait obMethods
     var t_upper:Int = 0
     if (t1>0) t_lower = t1
     if (t2>0) t_upper = t2
-    for (b <- c) {
-      if(b._3 <= t_upper && b._3 >= t_lower) {out = out++List(b)}
+    breakable {
+      for (b <- c) {
+        if (b._3 <= t_upper && b._3 >= t_lower) {
+          out = out ++ List(b)
+          if (b._3 < t_lower) break
+        }
+      }
     }
     out
   }
@@ -204,9 +209,8 @@ trait obMethods
     */
 
   def verifyBlock(b:Block): Boolean = {
-    val (hash, state, slot, cert, rho, pi, sig, pk_kes) = b
-    val (pk_vrf,_,_,pk_sig,_) = cert
-    kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi,sig,slot)
+    val (hash, state, slot, cert, rho, pi, sig, pk_kes, bn) = b
+    kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn),sig,slot)
   }
 
   /**
@@ -231,7 +235,7 @@ trait obMethods
       for (block <- c.tail.reverse) {
         i -= 1
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
+        val (hash, _, slot, cert, rho, pi, _, pk_kes,bn) = block0
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
 
         if (slot/epochLength > ep) {
@@ -245,7 +249,8 @@ trait obMethods
         bool &&= (
             FastCryptographicHash(serialize(block)).deep == hash.deep
         && verifyBlock(block0)
-        && block._3 < block0._3
+        && block._3 < slot
+        && block._9+1 == bn
         && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
         && vrf.vrfProofToHash(pi).deep == rho.deep
         && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
@@ -258,13 +263,14 @@ trait obMethods
           println(Seq(
               FastCryptographicHash(serialize(block)).deep == hash.deep //1
             , verifyBlock(block0) //2
-            , block._3<block0._3 //3
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //4
-            , vrf.vrfProofToHash(pi).deep == rho.deep //5
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //6
-            , vrf.vrfProofToHash(pi_y).deep == y.deep //7
-            , tr_Ep == tr_c //8
-            , compare(y,tr_Ep) //9
+            , block._3<slot //3
+            , block._9+1 == bn //4
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
+            , vrf.vrfProofToHash(pi).deep == rho.deep //6
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
+            , vrf.vrfProofToHash(pi_y).deep == y.deep //8
+            , tr_Ep == tr_c //9
+            , compare(y,tr_Ep) //10
           ))
         }
       }
@@ -291,7 +297,7 @@ trait obMethods
       for (block <- c.tail.reverse) {
         i -= 1
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, pk_kes) = block0
+        val (hash, _, slot, cert, rho, pi, _, pk_kes,bn) = block0
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
         if (slot/epochLength > ep0) {
           ep = slot/epochLength
@@ -307,7 +313,8 @@ trait obMethods
         bool &&= (
           FastCryptographicHash(serialize(block)).deep == hash.deep
             && verifyBlock(block0)
-            && block._3 < block0._3
+            && block._3 < slot
+            && block._9+1 == bn
             && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
             && vrf.vrfProofToHash(pi).deep == rho.deep
             && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
@@ -320,13 +327,14 @@ trait obMethods
           println(Seq(
             FastCryptographicHash(serialize(block)).deep == hash.deep //1
             , verifyBlock(block0) //2
-            , block._3<block0._3 //3
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //4
-            , vrf.vrfProofToHash(pi).deep == rho.deep //5
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //6
-            , vrf.vrfProofToHash(pi_y).deep == y.deep //7
-            , tr_Ep == tr_c //8
-            , compare(y,tr_Ep) //9
+            , block._3< slot //3
+            , block._9+1 == bn //4
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
+            , vrf.vrfProofToHash(pi).deep == rho.deep //6
+            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
+            , vrf.vrfProofToHash(pi_y).deep == y.deep //8
+            , tr_Ep == tr_c //9
+            , compare(y,tr_Ep) //10
           ))
         }
       }
@@ -360,7 +368,7 @@ trait obMethods
       breakable {
         val (balance, _) = ls(member)
         for (b <- c) {
-          val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey) = b
+          val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey,_) = b
           val (pk_vrf, _, _, pk_sig, _) = cert
           val pk_f = bytes2hex(pk_sig ++ pk_vrf ++ pk_kes)
           if (pk_f == member && slot>0) {nls -= member; nls += (member -> (balance, true)); break}
@@ -389,7 +397,7 @@ trait obMethods
   def updateLocalState(ls:LocalState,c:Chain): LocalState = {
     var nls:LocalState = ls
     for (b <- c.reverse) {
-      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_) = b
       val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry
@@ -511,7 +519,7 @@ trait obMethods
     var nls:LocalState = ls
     var nmem:MemPool = mem
     for (b <- c) {
-      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey) = b
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_) = b
       val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry
