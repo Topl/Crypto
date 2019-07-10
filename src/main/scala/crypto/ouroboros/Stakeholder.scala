@@ -2,8 +2,11 @@ package crypto.ouroboros
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
+
 import util.control.Breaks._
 import java.io.BufferedWriter
+
+import io.iohk.iodb.ByteArrayWrapper
 
 /**
   * Stakeholder actor that executes the staking protocol and communicates with other stakeholders,
@@ -35,11 +38,11 @@ class Stakeholder extends Actor
     val rho: Rho = vrf.vrfProofToHash(pi)
     val pi_y: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
-    val hash: Hash = FastCryptographicHash(serialize(localChain.head))
+    val h: Hash = hash(localChain.head)
     val state: State = Map(blockTx -> forgerReward)
     val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
-    val sig: MalkinSignature = kes.sign(malkinKey,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
-    (hash, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
+    val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
   }
 
   def updateChain = {
@@ -56,7 +59,7 @@ class Stakeholder extends Actor
           var foundCommonPrefix = false
           breakable {
             for (block <- chain.drop(chain.length - localChain.length)) {
-              if (block._1.deep == localChain(prefixIndex)._1.deep) {
+              if (block._1 == localChain(prefixIndex)._1) {
                 if (holderIndex == 0 && printFlag) {
                   println("Found ancestor at i = " + prefixIndex.toString)
                 }
@@ -90,16 +93,11 @@ class Stakeholder extends Actor
   }
 
   def updateSlot = {
-
     currentSlot = time
-
     if (holderIndex == 0) println("Slot = " + currentSlot.toString)
-
     time({
       updateEpoch
     }, holderIndex, timingFlag)
-
-
     if (holderIndex == 0 && printFlag) {
       println("Holder " + holderIndex.toString + " Update KES")
     }
@@ -122,7 +120,7 @@ class Stakeholder extends Actor
         roundBlock match {
           case b: Block => {
             localChain = Array(b) ++ localChain
-            localChainData.update(currentSlot,b::localChainData(currentSlot))
+            localChainData.update(currentSlot,localChainData(currentSlot)+(hash(b)->b))
             send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
             send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
             blocksForged += 1
@@ -141,15 +139,12 @@ class Stakeholder extends Actor
     if (currentSlot / epochLength > currentEpoch) {
       currentEpoch = currentSlot / epochLength
       if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
-      val txString = diffuse(holderData, holderId, sk_sig)
-
       stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
       stakingState = activeStake(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 10 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
       alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
       Tr_Ep = phi(alpha_Ep, f_s)
       eta_Ep = eta(localChain, currentEpoch, eta_Ep)
       history = history ++ List((eta_Ep, stakingState))
-
       if (holderIndex == 0 && printFlag) {
         println("Holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
       }
@@ -174,9 +169,10 @@ class Stakeholder extends Actor
     }
 
     case value: Run => {
+      println("Holder "+holderIndex.toString+" starting...")
       tMax = value.max
-      localChainData = localChainData++Array.fill(tMax){List()}
-      assert(genBlockHash.deep == FastCryptographicHash(serialize(localChainData(0).head)).deep)
+      localChainData = localChainData++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
+      assert(genBlockHash == hash(localChainData(0)(genBlockHash)))
       timers.startPeriodicTimer(timerKey, Update, updateTime)
       sender() ! "done"
     }
@@ -238,20 +234,14 @@ class Stakeholder extends Actor
       value.b match {
         case b: Block => {
           if (verifyBlock(b)) {
-            var foundBlock = false
-            for (block<-localChainData(b._3)) {
-              if (FastCryptographicHash(serialize(b)).deep == FastCryptographicHash(serialize(block)).deep) {
-                foundBlock = true
-              }
-            }
-            if (!foundBlock) localChainData.update(b._3, b::localChainData(b._3))
-            foundBlock = false
-            for (block<-localChainData(b._10)) {
-              if (b._1.deep == FastCryptographicHash(serialize(block)).deep) {
-                foundBlock = true
-              }
-            }
-            if (!foundBlock) sender() ! RequestBlock(b._1,b._10,diffuse(holderData, holderId, sk_sig))
+            val bHash = hash(b)
+            val bSlot = b._3
+            val pSlot = b._10
+            val pHash = b._1
+            val foundBlock = localChainData(bSlot).contains(bHash)
+            if (!foundBlock) localChainData.update(bSlot, localChainData(bSlot) + (bHash->b))
+            val foundParent = localChainData(pSlot).contains(pHash)
+            if (!foundParent) sender() ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
           }
         }
         case _ => println("error")
@@ -264,10 +254,10 @@ class Stakeholder extends Actor
         println("Holder " + holderIndex.toString + " Requested Block")
       }
       if (updating) println("ERROR: executing while updating")
-
-      for (block<-localChainData(value.slot)) {
-        if (FastCryptographicHash(serialize(block)).deep == value.hash.deep) sender() ! SendBlock(block,diffuse(holderData, holderId, sk_sig))
+      if (localChainData(value.slot).contains(value.h)) {
+        sender() ! SendBlock(localChainData(value.slot)(value.h),diffuse(holderData, holderId, sk_sig))
       }
+
 
     }
 
@@ -293,9 +283,8 @@ class Stakeholder extends Actor
       genBlock match {
         case b: Block => {
           localChain = Array(b) ++ localChain
-          println("updating local chain with genblock")
-          localChainData = Array(List(b))
-          genBlockHash = FastCryptographicHash(serialize(genBlock))
+          genBlockHash = hash(genBlock)
+          localChainData = Array(Map(genBlockHash->b))
         }
         case _ => println("error")
       }

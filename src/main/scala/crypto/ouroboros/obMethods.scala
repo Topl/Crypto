@@ -8,8 +8,9 @@ import akka.util.Timeout
 import scala.concurrent.Await
 import scala.language.postfixOps
 import bifrost.crypto.hash.FastCryptographicHash
-import util.control.Breaks._
+import io.iohk.iodb.ByteArrayWrapper
 
+import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
 
@@ -18,9 +19,14 @@ trait obMethods
     with parameters
     with utils {
 
+  var localChainData:ChainData = Array()
   val vrf = new obVrf
   val kes = new obKes
   val sig = new obSig
+
+  def hash(input:Any): ByteArrayWrapper = {
+    ByteArrayWrapper(FastCryptographicHash(serialize(input)))
+  }
 
   /**
     * calculates epoch nonce recursively
@@ -31,7 +37,7 @@ trait obMethods
 
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
-      c.last._1
+      c.last._1.data
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
@@ -53,7 +59,7 @@ trait obMethods
 
   def eta(c:Chain,ep:Int,etaP:Eta): Eta = {
     if(ep == 0) {
-      c.last._1
+      c.last._1.data
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
@@ -210,7 +216,7 @@ trait obMethods
 
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes, bn,ps) = b
-    kes.verify(pk_kes,hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps),sig,slot)
+    kes.verify(pk_kes,hash.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps),sig,slot)
   }
 
   /**
@@ -230,12 +236,12 @@ trait obMethods
       var eta_Ep:Eta = eta(c,0)
       var stakingState:LocalState = Map()
 
-      bool &&= FastCryptographicHash(serialize(c.last)).deep == gh.deep
+      bool &&= hash(c.last) == gh
 
       for (block <- c.tail.reverse) {
         i -= 1
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
+        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
 
         if (slot/epochLength > ep) {
@@ -247,7 +253,7 @@ trait obMethods
         alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
-            FastCryptographicHash(serialize(block)).deep == hash.deep
+           hash(block) == h0
         && verifyBlock(block0)
         && block._3 == ps
         && block._9+1 == bn
@@ -261,7 +267,7 @@ trait obMethods
         if(!bool){
           print(slot);print(" ")
           println(Seq(
-              FastCryptographicHash(serialize(block)).deep == hash.deep //1
+              hash(block) == h0 //1
             , verifyBlock(block0) //2
             , block._3 == ps //3
             , block._9+1 == bn //4
@@ -297,7 +303,7 @@ trait obMethods
       for (block <- c.tail.reverse) {
         i -= 1
         val block0 = c(i)
-        val (hash, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
+        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
         if (slot/epochLength > ep0) {
           ep = slot/epochLength
@@ -311,7 +317,7 @@ trait obMethods
         alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
-          FastCryptographicHash(serialize(block)).deep == hash.deep
+               hash(block) == h0
             && verifyBlock(block0)
             && block._3 == ps
             && block._9+1 == bn
@@ -325,7 +331,7 @@ trait obMethods
         if(!bool){
           print(slot);print(" ")
           println(Seq(
-            FastCryptographicHash(serialize(block)).deep == hash.deep //1
+              hash(block) == h0 //1
             , verifyBlock(block0) //2
             , block._3 == ps //3
             , block._9+1 == bn //4
@@ -342,7 +348,6 @@ trait obMethods
     } else { true }
   }
 
-
   def relativeStake(holderKeys:PublicKeys,ls:LocalState): Double = {
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
@@ -350,7 +355,7 @@ trait obMethods
       val (balance,activityIndex) = ls(member)
       if (activityIndex) netStake += balance
     }
-    val holderKey = bytes2hex(holderKeys._1++holderKeys._2++holderKeys._3)
+    val holderKey = ByteArrayWrapper(holderKeys._1++holderKeys._2++holderKeys._3)
     if (ls.keySet.contains(holderKey)){
       val (balance,activityIndex) = ls(holderKey)
       if (activityIndex) holderStake += balance
@@ -370,19 +375,19 @@ trait obMethods
         for (b <- c) {
           val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey,_,_) = b
           val (pk_vrf, _, _, pk_sig, _) = cert
-          val pk_f = bytes2hex(pk_sig ++ pk_vrf ++ pk_kes)
+          val pk_f = ByteArrayWrapper(pk_sig ++ pk_vrf ++ pk_kes)
           if (pk_f == member && slot>0) {nls -= member; nls += (member -> (balance, true)); break}
           for (entry <- state) {
             val (tx: Tx, _) = entry
             val (data: Array[Byte], _, _, _) = tx
             if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
-              val pk_g = bytes2hex(data.drop(genesisBytes.length))
+              val pk_g = ByteArrayWrapper(data.drop(genesisBytes.length))
               if (pk_g == member) {nls -= member; nls += (member -> (balance, true)); break}
             }
             if (data.take(transferBytes.length).deep == transferBytes.deep) {
-              val pk_s = bytes2hex(data.slice(transferBytes.length, transferBytes.length + keyLength))
+              val pk_s = ByteArrayWrapper(data.slice(transferBytes.length, transferBytes.length + keyLength))
               if (pk_s == member) {nls -= member; nls += (member -> (balance, true)); break}
-              val pk_r = bytes2hex(data.slice(transferBytes.length + keyLength, transferBytes.length + 2 * keyLength))
+              val pk_r = ByteArrayWrapper(data.slice(transferBytes.length + keyLength, transferBytes.length + 2 * keyLength))
               if (pk_r == member) {nls -= member; nls += (member -> (balance, true)); break}
             }
           }
@@ -403,7 +408,7 @@ trait obMethods
         val (tx:Tx,delta:BigInt) = entry
         if (verifyTx(tx)) {
           val (data:Array[Byte],_,_,pk_tx:PublicKey) = tx
-          val pk_f = bytes2hex(pk_sig++pk_vrf++pk_kes)
+          val pk_f = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
           val validForger:Boolean =  pk_tx.deep == pk_sig.deep
 
           if (data.deep == forgeBytes.deep && validForger) {
@@ -422,14 +427,14 @@ trait obMethods
           if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
             val netStake:BigInt = 0
             val newStake:BigInt = netStake + delta
-            val pk_g = bytes2hex(data.drop(genesisBytes.length))
+            val pk_g = ByteArrayWrapper(data.drop(genesisBytes.length))
             if(nls.keySet.contains(pk_g)) nls -= pk_g
             nls += (pk_g -> (newStake,true))
           }
 
           if (data.take(transferBytes.length).deep == transferBytes.deep && validForger) {
-            val pk_s = bytes2hex(data.slice(transferBytes.length,transferBytes.length+keyLength))
-            val pk_r = bytes2hex(data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength))
+            val pk_s = ByteArrayWrapper(data.slice(transferBytes.length,transferBytes.length+keyLength))
+            val pk_r = ByteArrayWrapper(data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength))
             val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
             val validSender = nls.keySet.contains(pk_s)
             val validRecip = nls.keySet.contains(pk_r)
@@ -525,7 +530,7 @@ trait obMethods
         val (tx:Tx,delta:BigInt) = entry
         if (verifyTx(tx)) {
           val (data:Array[Byte],txId:Sid,_,pk_tx:PublicKey) = tx
-          val pk_f = bytes2hex(pk_sig++pk_vrf++pk_kes)
+          val pk_f = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
           val validForger:Boolean = pk_tx.deep == pk_sig.deep
 
           if (data.deep == forgeBytes.deep && validForger) {
@@ -538,13 +543,13 @@ trait obMethods
           }
 
           if (data.take(genesisBytes.length).deep == genesisBytes.deep && slot == 0) {
-            val pk_g = bytes2hex(data.drop(genesisBytes.length))
+            val pk_g = ByteArrayWrapper(data.drop(genesisBytes.length))
             nls -= pk_g
           }
 
           if (data.take(transferBytes.length).deep == transferBytes.deep && validForger) {
-            val pk_s = bytes2hex(data.slice(transferBytes.length,transferBytes.length+keyLength))
-            val pk_r = bytes2hex(data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength))
+            val pk_s = ByteArrayWrapper(data.slice(transferBytes.length,transferBytes.length+keyLength))
+            val pk_r = ByteArrayWrapper(data.slice(transferBytes.length+keyLength,transferBytes.length+2*keyLength))
             val validSender = nls.keySet.contains(pk_s)
             val validRecip = nls.keySet.contains(pk_r)
             val forgerBalance = nls.keySet.contains(pk_f)
@@ -569,7 +574,7 @@ trait obMethods
                 nls -= pk_r
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
-                val transfer: Transfer = (hex2bytes(pk_s), hex2bytes(pk_r), delta, txId)
+                val transfer: Transfer = (pk_s.data, pk_r.data, delta, txId)
                 nmem ++= List(transfer)
               } else if (pk_f == pk_r) {
                 val s_net:BigInt = nls(pk_s)._1
@@ -580,7 +585,7 @@ trait obMethods
                 nls -= pk_r
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
-                val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
+                val transfer:Transfer = (pk_s.data,pk_r.data,delta,txId)
                 nmem ++= List(transfer)
               } else {
                 val s_net:BigInt = nls(pk_s)._1
@@ -595,7 +600,7 @@ trait obMethods
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
                 if (f_new > 0) nls += (pk_f -> (f_new,true))
-                val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
+                val transfer:Transfer = (pk_s.data,pk_r.data,delta,txId)
                 nmem ++= List(transfer)
               }
             } else if (validRecip && validTransfer) {
@@ -607,7 +612,7 @@ trait obMethods
                 nls -= pk_r
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
-                val transfer: Transfer = (hex2bytes(pk_s), hex2bytes(pk_r), delta, txId)
+                val transfer: Transfer = (pk_s.data, pk_r.data, delta, txId)
                 nmem ++= List(transfer)
               } else if (pk_f == pk_r) {
                 val s_net:BigInt = 0
@@ -617,7 +622,7 @@ trait obMethods
                 nls -= pk_r
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
-                val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
+                val transfer:Transfer = (pk_s.data,pk_r.data,delta,txId)
                 nmem ++= List(transfer)
               } else {
                 val s_net:BigInt = 0
@@ -631,7 +636,7 @@ trait obMethods
                 if (s_new > 0) nls += (pk_s -> (s_new,true))
                 if (r_new > 0) nls += (pk_r -> (r_new,true))
                 if (f_new > 0) nls += (pk_f -> (f_new,true))
-                val transfer:Transfer = (hex2bytes(pk_s),hex2bytes(pk_r),delta,txId)
+                val transfer:Transfer = (pk_s.data,pk_r.data,delta,txId)
                 nmem ++= List(transfer)
               }
             }

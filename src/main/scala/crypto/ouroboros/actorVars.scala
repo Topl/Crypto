@@ -2,6 +2,7 @@ package crypto.ouroboros
 
 import akka.actor.ActorRef
 import bifrost.crypto.hash.FastCryptographicHash
+import io.iohk.iodb.ByteArrayWrapper
 
 
 trait stakeHolderVars
@@ -22,9 +23,8 @@ trait stakeHolderVars
   val pk_kes:PublicKey = kes.publicKey(malkinKey)
   var localChain:Chain = Array()
   var foreignChains:List[Chain] = List()
-  var localChainData:ChainData = Array()
   var genBlock: Any = 0
-  var genBlockHash: Array[Byte] = Array()
+  var genBlockHash: Hash = ByteArrayWrapper(Array())
   var roundBlock: Any = 0
   var eta_Ep:Eta = Array()
   var eta_prev:Eta = Array()

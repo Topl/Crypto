@@ -1,7 +1,9 @@
 package crypto.ouroboros
 
 import java.io.{BufferedWriter, FileWriter}
+
 import akka.actor.{Actor, ActorRef, Props, Timers}
+import io.iohk.iodb.ByteArrayWrapper
 
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
@@ -87,7 +89,7 @@ class Coordinator extends Actor
     val rho:Rho = vrf.vrfProofToHash(pi)
     val pi_y:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))
     val y:Rho = vrf.vrfProofToHash(pi_y)
-    val hash:Hash = eta0
+    val h:Hash = ByteArrayWrapper(eta0)
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
     val state: State = holders.map{ case ref:ActorRef => signTx(
@@ -97,8 +99,8 @@ class Coordinator extends Actor
         ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
       serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStakeMax * r.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt}.toMap
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
-    val sig:MalkinSignature = kes.sign(malkinKey, hash++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
-    (hash,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
+    val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (h,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
   }
 }
 

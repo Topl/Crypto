@@ -1,5 +1,7 @@
 package crypto.ouroboros
 
+import io.iohk.iodb.ByteArrayWrapper
+
 // case objects and classes for pattern matching messages between actors
 case object Diffuse
 case object Inbox
@@ -18,7 +20,7 @@ case class StartTime(t0:Long)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(b: Any,s:String)
-case class RequestBlock(hash:Array[Byte],slot:Int,s:String)
+case class RequestBlock(h:ByteArrayWrapper, slot:Int, s:String)
 case class SendChain(c: Any,s:String)
 case class WriteFile(fw: Any)
 case class NewDataFile(name:String)
