@@ -19,10 +19,57 @@ trait obMethods
     with parameters
     with utils {
 
-  var localChainData:ChainData = Array()
+  var blocks:ChainData = Array()
   val vrf = new obVrf
   val kes = new obKes
   val sig = new obSig
+
+  def getBlock(bid:BlockId): Block = {
+    if (bid._1 >= 0 && !bid._2.data.isEmpty) {
+      if (blocks(bid._1).contains(bid._2)) {
+        blocks(bid._1)(bid._2)
+      } else {
+        _
+      }
+    } else {
+      _
+    }
+  }
+
+  def getParentBlock(b:Block): Block = {
+    if (blocks(b._10).contains(b._1)) {
+      blocks(b._10)(b._1)
+    } else {
+      _
+    }
+  }
+
+  def getParentId(bid:BlockId): BlockId = {
+    val b = getBlock(bid)
+    if (blocks(b._10).contains(b._1)) {
+      (b._10,b._1)
+    } else {
+      _
+    }
+  }
+
+  def lastActiveSlot(c:Chain,s:Slot): Slot = {
+    var i = s
+    while (c(i)._2.data.isEmpty) {
+      i-=1
+    }
+    i
+  }
+
+  def getActiveSlots(c:Chain): Int = {
+    var i = 0
+    for (sh<-c) {
+      if (!sh._2.data.isEmpty) {
+        i+=1
+      }
+    }
+    i
+  }
 
   def hash(input:Any): ByteArrayWrapper = {
     ByteArrayWrapper(FastCryptographicHash(serialize(input)))
@@ -37,13 +84,16 @@ trait obMethods
 
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
-      c.last._1.data
+      getBlock(c(0))._1.data
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
       val cnext = subChain(c,0,ep*epochLength-epochLength)
-      for(block <- epcv) {
-        v = v++block._5
+      for(sh <- epcv) {
+        getBlock(sh) match {
+          case b:Block => v = v++b._5
+          case _ =>
+        }
       }
       FastCryptographicHash(eta(cnext,ep-1)++serialize(ep)++v)
     }
@@ -59,12 +109,15 @@ trait obMethods
 
   def eta(c:Chain,ep:Int,etaP:Eta): Eta = {
     if(ep == 0) {
-      c.last._1.data
+      getBlock(c(0))._1.data
     } else {
       var v: Array[Byte] = Array()
       val epcv = subChain(c,ep*epochLength-epochLength,ep*epochLength-epochLength/3)
-      for(block <- epcv) {
-        v = v++block._5
+      for(sh <- epcv) {
+        getBlock(sh) match {
+          case b:Block => v = v++b._5
+          case _ =>
+        }
       }
       val eta_ep = FastCryptographicHash(etaP++serialize(ep)++v)
       eta_ep
@@ -80,20 +133,11 @@ trait obMethods
     */
 
   def subChain(c:Chain,t1:Int,t2:Int): Chain = {
-    var out: Chain = Array()
     var t_lower:Int = 0
     var t_upper:Int = 0
     if (t1>0) t_lower = t1
     if (t2>0) t_upper = t2
-    breakable {
-      for (b <- c) {
-        if (b._3 <= t_upper && b._3 >= t_lower) {
-          out = out ++ Array(b)
-          if (b._3 < t_lower) break
-        }
-      }
-    }
-    out
+    c.slice(t1,t2+1)
   }
 
   /**
@@ -229,54 +273,64 @@ trait obMethods
   def verifyChain(c:Chain, gh:Hash): Boolean = {
     if (!performanceFlag) {
       var bool = true
-      var i = c.length-1
       var ep = -1
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
-      var eta_Ep:Eta = eta(c,0)
-      var stakingState:LocalState = Map()
+      var eta_Ep: Eta = eta(c, 0)
+      var stakingState: LocalState = Map()
 
-      bool &&= hash(c.last) == gh
+      bool &&= hash(getBlock(c(0))) == gh
 
-      for (block <- c.tail.reverse) {
-        i -= 1
-        val block0 = c(i)
-        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
+      for (sh <- c.tail) {
+        getBlock(sh) match {
+          case b:Block => {
+            getParentBlock(b) match {
+              case pb:Block => compareBlocks(pb,b)
+              case _ => bool &&= false
+            }
+          }
+          case _ =>
+        }
+      }
+
+      def compareBlocks(parent: Block, block: Block) = {
+        val (h0, _, slot, cert, rho, pi, _, pk_kes, bn, ps) = block
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
 
-        if (slot/epochLength > ep) {
-          ep = slot/epochLength
-          eta_Ep = eta(c.drop(i), ep, eta_Ep)
+        if (slot / epochLength > ep) {
+          ep = slot / epochLength
+          eta_Ep = eta(c, ep, eta_Ep)
           stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
-          if (ep>0) stakingState = activeStake(stakingState, subChain(c, (slot / epochLength) * epochLength - 10 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
+          if (ep > 0) stakingState = activeStake(stakingState, subChain(c, (slot / epochLength) * epochLength - 10 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
         }
-        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
+        alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
-           hash(block) == h0
-        && verifyBlock(block0)
-        && block._3 == ps
-        && block._9+1 == bn
-        && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
-        && vrf.vrfProofToHash(pi).deep == rho.deep
-        && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
-        && vrf.vrfProofToHash(pi_y).deep == y.deep
-        && tr_Ep == tr_c
-        && compare(y, tr_Ep)
-        )
-        if(!bool){
-          print(slot);print(" ")
+          hash(parent) == h0
+            && verifyBlock(block)
+            && parent._3 == ps
+            && parent._9 + 1 == bn
+            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+            && vrf.vrfProofToHash(pi).deep == rho.deep
+            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+            && vrf.vrfProofToHash(pi_y).deep == y.deep
+            && tr_Ep == tr_c
+            && compare(y, tr_Ep)
+          )
+        if (!bool) {
+          print(slot)
+          print(" ")
           println(Seq(
-              hash(block) == h0 //1
-            , verifyBlock(block0) //2
-            , block._3 == ps //3
-            , block._9+1 == bn //4
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
+            hash(parent) == h0 //1
+            , verifyBlock(block) //2
+            , parent._3 == ps //3
+            , parent._9 + 1 == bn //4
+            , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi) //5
             , vrf.vrfProofToHash(pi).deep == rho.deep //6
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
+            , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y) //7
             , vrf.vrfProofToHash(pi_y).deep == y.deep //8
             , tr_Ep == tr_c //9
-            , compare(y,tr_Ep) //10
+            , compare(y, tr_Ep) //10
           ))
         }
       }
@@ -293,17 +347,26 @@ trait obMethods
   def verifyChain(c:Chain,ls0:LocalState,eta0:Eta,ep0:Int,ls1:LocalState,eta1:Eta): Boolean = {
     if (!performanceFlag) {
       var bool = true
-      var i = c.length-1
       var ep = ep0
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
       var eta_Ep:Eta = eta0
       var stakingState:LocalState = ls0
 
-      for (block <- c.tail.reverse) {
-        i -= 1
-        val block0 = c(i)
-        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block0
+      for (sh <- c) {
+        getBlock(sh) match {
+          case b:Block => {
+            getParentBlock(b) match {
+              case pb:Block => compareBlocks(pb,b)
+              case _ => bool &&= false
+            }
+          }
+          case _ =>
+        }
+      }
+
+      def compareBlocks(parent:Block,block:Block) = {
+        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
         if (slot/epochLength > ep0) {
           ep = slot/epochLength
@@ -317,10 +380,10 @@ trait obMethods
         alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
         bool &&= (
-               hash(block) == h0
-            && verifyBlock(block0)
-            && block._3 == ps
-            && block._9+1 == bn
+               hash(parent) == h0
+            && verifyBlock(block)
+            && parent._3 == ps
+            && parent._9+1 == bn
             && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
             && vrf.vrfProofToHash(pi).deep == rho.deep
             && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
@@ -331,10 +394,10 @@ trait obMethods
         if(!bool){
           print(slot);print(" ")
           println(Seq(
-              hash(block) == h0 //1
-            , verifyBlock(block0) //2
-            , block._3 == ps //3
-            , block._9+1 == bn //4
+              hash(parent) == h0 //1
+            , verifyBlock(block) //2
+            , parent._3 == ps //3
+            , parent._9+1 == bn //4
             , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
             , vrf.vrfProofToHash(pi).deep == rho.deep //6
             , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
@@ -372,8 +435,8 @@ trait obMethods
     for (member <- ls.keySet) {
       breakable {
         val (balance, _) = ls(member)
-        for (b <- c) {
-          val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey,_,_) = b
+        for (sh <- c) {
+          val (_, state: State, slot: Slot, cert: Cert, _, _, _, pk_kes: PublicKey,_,_) = getBlock(sh)
           val (pk_vrf, _, _, pk_sig, _) = cert
           val pk_f = ByteArrayWrapper(pk_sig ++ pk_vrf ++ pk_kes)
           if (pk_f == member && slot>0) {nls -= member; nls += (member -> (balance, true)); break}
@@ -401,8 +464,8 @@ trait obMethods
 
   def updateLocalState(ls:LocalState,c:Chain): LocalState = {
     var nls:LocalState = ls
-    for (b <- c.reverse) {
-      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
+    for (sh <- c) {
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = getBlock(sh)
       val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry
@@ -523,8 +586,8 @@ trait obMethods
   def revertLocalState(ls: LocalState,c:Chain,mem:MemPool): (LocalState,MemPool) = {
     var nls:LocalState = ls
     var nmem:MemPool = mem
-    for (b <- c) {
-      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
+    for (sh <- c.reverse) {
+      val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = getBlock(sh)
       val (pk_vrf,_,_,pk_sig,_) = cert
       for (entry <- state) {
         val (tx:Tx,delta:BigInt) = entry

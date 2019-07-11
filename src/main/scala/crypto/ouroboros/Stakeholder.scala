@@ -30,66 +30,54 @@ class Stakeholder extends Actor
 
   /** Calculates a block with epoch variables */
   def forgeBlock: Block = {
-    val bn:Int = localChain.head._9 + 1
-    val ps:Slot = localChain.head._3
+    val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1)))
+    val bn:Int = pb._9 + 1
+    val ps:Slot = pb._3
     val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
     val slot: Slot = currentSlot
     val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
     val rho: Rho = vrf.vrfProofToHash(pi)
     val pi_y: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
-    val h: Hash = hash(localChain.head)
+    val h: Hash = hash(pb)
     val state: State = Map(blockTx -> forgerReward)
     val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
     val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
   }
-
+  
   def updateChain = {
-    for (chain <- foreignChains) {
-      if (chain.length > localChain.length) {
-        var trueChain = false
-        if (localChain.length == 1) {
-          if (holderIndex == 0 && printFlag) {
-            println("Inheriting chain")
+    val ci = foreignChains.last
+    var bool = true
+    var tine:Chain = ci
+    breakable{
+      while(bool) {
+        getParentId(tine.head) match {
+          case pb:BlockId => {
+            tine = Array(pb) ++ tine
           }
-          trueChain = verifyChain(chain, genBlockHash)
-        } else {
-          var prefixIndex = 0
-          var foundCommonPrefix = false
-          breakable {
-            for (block <- chain.drop(chain.length - localChain.length)) {
-              if (block._1 == localChain(prefixIndex)._1) {
-                if (holderIndex == 0 && printFlag) {
-                  println("Found ancestor at i = " + prefixIndex.toString)
-                }
-                foundCommonPrefix = true
-                val prefixEp = block._3/epochLength
-                val eta_Ep_tmp:Eta = history(prefixEp)._1
-                val stakingState_tmp:LocalState = history(prefixEp)._2
-                if (prefixEp == currentEpoch) {
-                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,prefixEp,stakingState,eta_Ep)
-                } else {
-                  trueChain = verifyChain(chain.take(prefixIndex+chain.length - localChain.length), stakingState_tmp, eta_Ep_tmp,prefixEp,history(prefixEp+1)._2,history(prefixEp+1)._1)
-                }
-                break
-              }
-              prefixIndex += 1
-            }
-          }
-          if (!foundCommonPrefix) {
-            if (holderIndex == 0 && printFlag) {
-              println("No prefix found, checking entire chain")
-            }
-            trueChain = verifyChain(chain, genBlockHash)
-          }
+          case _ => bool = false
         }
-        if (!trueChain) println("ERROR: invalid chain")
-        if (trueChain) localChain = chain
-        while (localChain.head._3 > currentSlot) {localChain = localChain.tail}
+        if (tine.head._2 == localChain(tine.head._1)._2 && tine.head._1 == localChain(tine.head._1)._1) { break }
       }
     }
-    foreignChains = List()
+    if (bool) {
+      var trueChain = false
+      if(tine.last._1 - tine.head._1 < confirmationDepth) {
+        val prefixEp = tine.head._1/epochLength
+        val eta_Ep_tmp:Eta = history(prefixEp)._1
+        val stakingState_tmp:LocalState = history(prefixEp)._2
+        if (prefixEp == currentEpoch) {
+          trueChain = verifyChain(tine, stakingState_tmp, eta_Ep_tmp,prefixEp,stakingState,eta_Ep)
+        } else {
+          trueChain = verifyChain(tine, stakingState_tmp, eta_Ep_tmp,prefixEp,history(prefixEp+1)._2,history(prefixEp+1)._1)
+        }
+      } else {
+
+      }
+    } else {
+      send(holderId, holders, RequestBlock(tine.head._2,tine.head._1,diffuse(holderData, holderId, sk_sig)))
+    }
   }
 
   def updateSlot = {
@@ -111,7 +99,6 @@ class Stakeholder extends Actor
     time({
       if (diffuseSent) {
         if (slotLeader) {
-          while (localChain.head._3 >= currentSlot) {localChain = localChain.tail}
           roundBlock = forgeBlock
           if (holderIndex == 0 && printFlag) {
             println("Holder " + holderIndex.toString + " is slot a leader")
@@ -119,9 +106,9 @@ class Stakeholder extends Actor
         }
         roundBlock match {
           case b: Block => {
-            localChain = Array(b) ++ localChain
-            localChainData.update(currentSlot,localChainData(currentSlot)+(hash(b)->b))
-            send(holderId, holders, SendChain(localChain, diffuse(holderData, holderId, sk_sig)))
+            val hb = hash(b)
+            blocks.update(currentSlot,blocks(currentSlot)+(hb->b))
+            localChain.update(currentSlot,(currentSlot,hb))
             send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
             blocksForged += 1
           }
@@ -171,8 +158,9 @@ class Stakeholder extends Actor
     case value: Run => {
       println("Holder "+holderIndex.toString+" starting...")
       tMax = value.max
-      localChainData = localChainData++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
-      assert(genBlockHash == hash(localChainData(0)(genBlockHash)))
+      blocks = blocks++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
+      localChain = Array((0,genBlockHash))++Array.fill(tMax){(-1,ByteArrayWrapper(Array()))}
+      assert(genBlockHash == hash(blocks(0)(genBlockHash)))
       timers.startPeriodicTimer(timerKey, Update, updateTime)
       sender() ! "done"
     }
@@ -207,7 +195,6 @@ class Stakeholder extends Actor
         }
         updating = false
       }
-
     }
 
     /** receives chains from other holders and stores them */
@@ -238,9 +225,10 @@ class Stakeholder extends Actor
             val bSlot = b._3
             val pSlot = b._10
             val pHash = b._1
-            val foundBlock = localChainData(bSlot).contains(bHash)
-            if (!foundBlock) localChainData.update(bSlot, localChainData(bSlot) + (bHash->b))
-            val foundParent = localChainData(pSlot).contains(pHash)
+            val foundBlock = blocks(bSlot).contains(bHash)
+            if (!foundBlock && bSlot <= currentSlot) blocks.update(bSlot, blocks(bSlot) + (bHash->b))
+            if (bSlot <= currentSlot && bSlot > lastActiveSlot(localChain,currentSlot)) foreignChains ::= (bSlot,bHash)
+            val foundParent = blocks(pSlot).contains(pHash)
             if (!foundParent) sender() ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
           }
         }
@@ -248,17 +236,14 @@ class Stakeholder extends Actor
       }
     }
 
-
     case value: RequestBlock =>  if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
       if (holderIndex == 0 && printFlag) {
         println("Holder " + holderIndex.toString + " Requested Block")
       }
       if (updating) println("ERROR: executing while updating")
-      if (localChainData(value.slot).contains(value.h)) {
-        sender() ! SendBlock(localChainData(value.slot)(value.h),diffuse(holderData, holderId, sk_sig))
+      if (blocks(value.slot).contains(value.h)) {
+        sender() ! SendBlock(blocks(value.slot)(value.h),diffuse(holderData, holderId, sk_sig))
       }
-
-
     }
 
     /** validates diffused string from other holders and stores in inbox */
@@ -282,9 +267,8 @@ class Stakeholder extends Actor
       genBlock = gb.b
       genBlock match {
         case b: Block => {
-          localChain = Array(b) ++ localChain
-          genBlockHash = hash(genBlock)
-          localChainData = Array(Map(genBlockHash->b))
+          genBlockHash = hash(b)
+          blocks = Array(Map(genBlockHash->b))
         }
         case _ => println("error")
       }
@@ -302,7 +286,14 @@ class Stakeholder extends Actor
       println(holderId + "\nt = " + currentSlot.toString + " alpha = " + alpha_Ep.toString + " blocks forged = "
         + blocksForged.toString + "\n chain length = " + localChain.length.toString + " valid chain = "
         + trueChain.toString)
-      println("confirmed chain hash: \n" + bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth)))))
+      var chainBytes:Array[Byte] = Array()
+      for (sh <- subChain(localChain,0,currentSlot-confirmationDepth)) {
+        getBlock(sh) match {
+          case b:Block => chainBytes ++= serialize(b)
+          case _ =>
+        }
+      }
+      println("confirmed chain hash: \n" + bytes2hex(FastCryptographicHash(chainBytes)))
       sender() ! "done"
     }
 

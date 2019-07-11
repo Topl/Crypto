@@ -24,6 +24,7 @@ trait obTypes {
   type Tr = Double
   type Cert = (PublicKey,Rho,Pi,PublicKey,Tr)
   type Block = (Hash,State,Slot,Cert,Rho,Pi,MalkinSignature,PublicKey,Int,Slot)
-  type Chain = Array[Block]
+  type BlockId = (Slot,ByteArrayWrapper)
+  type Chain = Array[BlockId]
   type ChainData = Array[Map[ByteArrayWrapper,Block]]
 }
