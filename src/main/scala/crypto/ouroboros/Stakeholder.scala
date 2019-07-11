@@ -50,24 +50,34 @@ class Stakeholder extends Actor
     val ci = foreignChains.last
     var bool = true
     var tine:Chain = Array(ci)
+    var prefix:Slot = 0
     breakable{
       while(bool) {
         getParentId(tine.head) match {
           case pb:BlockId => {
             tine = Array(pb) ++ tine
+            if (tine.head == localChain(tine.head._1)) {
+              prefix = tine.head._1
+              tine = tine.tail
+              break
+            }
+            if (tine.head._1 == 0) {
+              prefix = 0
+              tine = tine.tail
+              break
+            }
           }
           case _ => bool = false
         }
-        if (tine.head == localChain(tine.head._1)) { break }
       }
     }
     if (bool) {
       var trueChain = false
       val s0 = tine.head._1
       val s1 = tine.last._1
-      if(s1 - s0 < confirmationDepth) {
+      if(s1 - prefix < confirmationDepth) {
         trueChain = true
-      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,s0 ,s1))) {
+      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,currentSlot))) {
         trueChain = true
       }
       if (trueChain) {
@@ -81,7 +91,7 @@ class Stakeholder extends Actor
         }
       }
       if(trueChain) {
-        for (i <- s0 to s1) {
+        for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
         for (id <- tine) {
@@ -124,7 +134,7 @@ class Stakeholder extends Actor
             val hb = hash(b)
             blocks.update(currentSlot,blocks(currentSlot)+(hb->b))
             localChain.update(currentSlot,(currentSlot,hb))
-            //send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
+            send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
             blocksForged += 1
           }
           case _ =>
@@ -146,6 +156,17 @@ class Stakeholder extends Actor
       alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
       Tr_Ep = phi(alpha_Ep, f_s)
       eta_Ep = eta(localChain, currentEpoch, eta_Ep)
+      //println("Holder "+holderIndex.toString+" eta A: "+bytes2hex(eta_Ep))
+      //println("Holder "+holderIndex.toString+" eta B: "+bytes2hex(eta(localChain,currentEpoch)))
+//      var chainBytes:Array[Byte] = Array()
+//      for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
+//        getBlock(id) match {
+//          case b:Block => chainBytes ++= serialize(b)
+//          case _ =>
+//        }
+//      }
+//      println("Holder "+holderIndex.toString+" confirmed chain hash: " + bytes2hex(FastCryptographicHash(chainBytes)))
+//      println("Holder "+holderIndex.toString+" verify chain: "+verifyChain(localChain,genBlockHash))
       history = history ++ List((eta_Ep, stakingState))
       if (holderIndex == 0 && printFlag) {
         println("Holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
@@ -231,7 +252,19 @@ class Stakeholder extends Actor
               foreignChains ::= newId
             }
             val foundParent = blocks(pSlot).contains(pHash)
-            if (!foundBlock && !foundParent) sender() ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
+            if (!foundBlock && !foundParent) {
+              val requesterId = idPath(value.s)
+              var requesterRef:Any = 0
+              for (holder <- holders) {
+                if (requesterId == s"${holder.path}") requesterRef = holder
+              }
+              requesterRef match {
+                case ref:ActorRef => {
+                  ref ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
+                }
+                case _ =>
+              }
+            }
           }
         }
         case _ => println("error")
@@ -243,8 +276,18 @@ class Stakeholder extends Actor
         println("Holder " + holderIndex.toString + " Requested Block")
       }
       if (updating) println("ERROR: executing while updating")
-      if (blocks(value.slot).contains(value.h)) {
-        sender() ! SendBlock(blocks(value.slot)(value.h),diffuse(holderData, holderId, sk_sig))
+      val requesterId = idPath(value.s)
+      var requesterRef:Any = 0
+      for (holder <- holders) {
+        if (requesterId == s"${holder.path}") requesterRef = holder
+      }
+      requesterRef match {
+        case ref:ActorRef => {
+          if (blocks(value.slot).contains(value.h)) {
+            ref ! SendBlock(blocks(value.slot)(value.h),diffuse(holderData, holderId, sk_sig))
+          }
+        }
+        case _ =>
       }
     }
 

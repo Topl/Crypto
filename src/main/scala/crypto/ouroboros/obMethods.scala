@@ -38,17 +38,21 @@ trait obMethods
   }
 
   def getParentBlock(b:Block): Any = {
-    if (blocks(b._10).contains(b._1)) {
-      blocks(b._10)(b._1)
+    if (b._10 >= 0 && !b._1.data.isEmpty) {
+      if (blocks(b._10).contains(b._1)) {
+        blocks(b._10)(b._1)
+      } else {
+        0
+      }
     } else {
       0
     }
   }
 
-  def getParentId(bid:BlockId): BlockId = {
+  def getParentId(bid:BlockId): Any = {
     getBlock(bid) match {
       case b:Block => (b._10,b._1)
-      case _ => (-1,ByteArrayWrapper(Array()))
+      case _ => 0
     }
   }
 
@@ -300,6 +304,7 @@ trait obMethods
             getParentBlock(b) match {
               case pb:Block => {
                 bool &&= getParentId(b) == pid
+                if (getParentId(b) != pid) println("Holder "+holderIndex.toString+" pid mismatch")
                 compareBlocks(pb,b)
                 pid = id
               }
@@ -374,7 +379,7 @@ trait obMethods
       breakable{
         for (id<-c) {
           if (!id._2.data.isEmpty) {
-            pid = getParentId(id)
+            pid = getParentId(id) match {case value:BlockId => value}
             break()
           }
         }
@@ -424,7 +429,7 @@ trait obMethods
             && compare(y, tr_Ep)
           )
         if(!bool){
-          print(slot);print(" ")
+          print("Error: Holder "+holderIndex.toString+" ");print(slot);print(" ")
           println(Seq(
               hash(parent) == h0 //1
             , verifyBlock(block) //2
@@ -439,6 +444,7 @@ trait obMethods
           ))
         }
       }
+      assert(bool)
       bool
     } else { true }
   }
@@ -782,6 +788,11 @@ trait obMethods
   def idInfo(value: String): String = {
     val values: Array[String] = value.split(";")
     values(0)+";"+values(1)+";"+values(2)+";"+values(3)
+  }
+
+  def idPath(value: String): String = {
+    val values: Array[String] = value.split(";")
+    values(3)
   }
 
 }
