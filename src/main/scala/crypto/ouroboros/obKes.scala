@@ -647,7 +647,6 @@ class obKes {
     * Signature in the MMM composition
     * @param key signing secret key
     * @param m message to be signed
-    * @param step current time step
     * @return signature of m
     */
   def sign(key: MalkinKey,m: Array[Byte]): MalkinSignature = {

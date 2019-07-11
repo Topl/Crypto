@@ -30,7 +30,7 @@ class Stakeholder extends Actor
 
   /** Calculates a block with epoch variables */
   def forgeBlock: Block = {
-    val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1)))
+    val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1))) match {case b:Block => b}
     val bn:Int = pb._9 + 1
     val ps:Slot = pb._3
     val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
@@ -45,11 +45,11 @@ class Stakeholder extends Actor
     val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
   }
-  
+
   def updateChain = {
     val ci = foreignChains.last
     var bool = true
-    var tine:Chain = ci
+    var tine:Chain = Array(ci)
     breakable{
       while(bool) {
         getParentId(tine.head) match {
@@ -58,23 +58,37 @@ class Stakeholder extends Actor
           }
           case _ => bool = false
         }
-        if (tine.head._2 == localChain(tine.head._1)._2 && tine.head._1 == localChain(tine.head._1)._1) { break }
+        if (tine.head == localChain(tine.head._1)) { break }
       }
     }
     if (bool) {
       var trueChain = false
-      if(tine.last._1 - tine.head._1 < confirmationDepth) {
-        val prefixEp = tine.head._1/epochLength
-        val eta_Ep_tmp:Eta = history(prefixEp)._1
-        val stakingState_tmp:LocalState = history(prefixEp)._2
-        if (prefixEp == currentEpoch) {
-          trueChain = verifyChain(tine, stakingState_tmp, eta_Ep_tmp,prefixEp,stakingState,eta_Ep)
-        } else {
-          trueChain = verifyChain(tine, stakingState_tmp, eta_Ep_tmp,prefixEp,history(prefixEp+1)._2,history(prefixEp+1)._1)
-        }
-      } else {
-
+      val s0 = tine.head._1
+      val s1 = tine.last._1
+      if(s1 - s0 < confirmationDepth) {
+        trueChain = true
+      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,s0 ,s1))) {
+        trueChain = true
       }
+      if (trueChain) {
+        val ep0 = s0 / epochLength
+        val eta0: Eta = history(ep0)._1
+        val stakingState_tmp: LocalState = history(ep0)._2
+        if (ep0 == currentEpoch) {
+          trueChain &&= verifyChain(tine, stakingState_tmp, eta0, ep0, stakingState, eta_Ep)
+        } else {
+          trueChain &&= verifyChain(tine, stakingState_tmp, eta0, ep0, history(ep0 + 1)._2, history(ep0 + 1)._1)
+        }
+      }
+      if(trueChain) {
+        for (i <- s0 to s1) {
+          localChain.update(i,(-1,ByteArrayWrapper(Array())))
+        }
+        for (id <- tine) {
+          localChain.update(id._1,id)
+        }
+      }
+      foreignChains = foreignChains.dropRight(1)
     } else {
       send(holderId, holders, RequestBlock(tine.head._2,tine.head._1,diffuse(holderData, holderId, sk_sig)))
     }
@@ -82,6 +96,7 @@ class Stakeholder extends Actor
 
   def updateSlot = {
     currentSlot = time
+    foreignChains = List()
     if (holderIndex == 0) println("Slot = " + currentSlot.toString)
     time({
       updateEpoch
@@ -109,7 +124,7 @@ class Stakeholder extends Actor
             val hb = hash(b)
             blocks.update(currentSlot,blocks(currentSlot)+(hb->b))
             localChain.update(currentSlot,(currentSlot,hb))
-            send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
+            //send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
             blocksForged += 1
           }
           case _ =>
@@ -197,22 +212,6 @@ class Stakeholder extends Actor
       }
     }
 
-    /** receives chains from other holders and stores them */
-    case value: SendChain => {
-      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
-        if (holderIndex == 0 && printFlag) {
-          println("Holder " + holderIndex.toString + " Received Chain")
-        }
-        if (updating) println("ERROR: received chain executing while updating")
-        value.c match {
-          case c: Chain => {
-            foreignChains = foreignChains ++ List(c)
-          }
-          case _ => println("error")
-        }
-      }
-    }
-
     case value: SendBlock => if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
       if (holderIndex == 0 && printFlag) {
         println("Holder " + holderIndex.toString + " Received Block")
@@ -227,9 +226,12 @@ class Stakeholder extends Actor
             val pHash = b._1
             val foundBlock = blocks(bSlot).contains(bHash)
             if (!foundBlock && bSlot <= currentSlot) blocks.update(bSlot, blocks(bSlot) + (bHash->b))
-            if (bSlot <= currentSlot && bSlot > lastActiveSlot(localChain,currentSlot)) foreignChains ::= (bSlot,bHash)
+            if (!foundBlock && bSlot <= currentSlot && bSlot > lastActiveSlot(localChain,currentSlot)) {
+              val newId = (bSlot,bHash)
+              foreignChains ::= newId
+            }
             val foundParent = blocks(pSlot).contains(pHash)
-            if (!foundParent) sender() ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
+            if (!foundBlock && !foundParent) sender() ! RequestBlock(pHash,pSlot,diffuse(holderData, holderId, sk_sig))
           }
         }
         case _ => println("error")
@@ -284,11 +286,11 @@ class Stakeholder extends Actor
     case Status => {
       val trueChain = verifyChain(localChain, genBlockHash)
       println(holderId + "\nt = " + currentSlot.toString + " alpha = " + alpha_Ep.toString + " blocks forged = "
-        + blocksForged.toString + "\n chain length = " + localChain.length.toString + " valid chain = "
+        + blocksForged.toString + "\n chain length = " + getActiveSlots(localChain).toString + " valid chain = "
         + trueChain.toString)
       var chainBytes:Array[Byte] = Array()
-      for (sh <- subChain(localChain,0,currentSlot-confirmationDepth)) {
-        getBlock(sh) match {
+      for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
+        getBlock(id) match {
           case b:Block => chainBytes ++= serialize(b)
           case _ =>
         }

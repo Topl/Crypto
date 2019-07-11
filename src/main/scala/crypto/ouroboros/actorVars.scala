@@ -22,14 +22,13 @@ trait stakeHolderVars
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val pk_kes:PublicKey = kes.publicKey(malkinKey)
   var localChain:Chain = Array()
-  var foreignChains:List[Chain] = List()
+  var foreignChains:List[BlockId] = List()
   var genBlock: Any = 0
   var genBlockHash: Hash = ByteArrayWrapper(Array())
   var roundBlock: Any = 0
   var eta_Ep:Eta = Array()
   var eta_prev:Eta = Array()
   var Tr_Ep: Double = 0.0
-  var holderIndex = -1
   var localState:LocalState = Map()
   var stakingState:LocalState = Map()
   var history:List[(Eta,LocalState)] = List()
