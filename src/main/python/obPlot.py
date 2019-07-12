@@ -42,12 +42,12 @@ def getColumns(inFile, delim="\t", header=True):
                 i += 1
         else:
             cells = line.split(delim)
-            i = 0
-            for cell in cells:
-                cell = cell.strip()
-                cols[indexToName[i]] += [cell]
-                i += 1
-                
+            if len(cells) == len(headings):
+                i = 0
+                for cell in cells:
+                    cell = cell.strip()
+                    cols[indexToName[i]] += [cell]
+                    i += 1
     return cols, indexToName
 
 cols, indexToName = getColumns(data_file," ",True)

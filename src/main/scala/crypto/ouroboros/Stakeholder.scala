@@ -75,7 +75,9 @@ class Stakeholder extends Actor
       var trueChain = false
       val s0 = tine.head._1
       val s1 = tine.last._1
-      if(s1 - prefix < confirmationDepth) {
+      val bnt = {getBlock(tine.last) match {case b:Block => b._9}}
+      val bnl = {getBlock(localChain(lastActiveSlot(localChain,currentSlot))) match {case b:Block => b._9}}
+      if(s1 - prefix < confirmationDepth && bnl < bnt) {
         trueChain = true
       } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,currentSlot))) {
         trueChain = true
@@ -106,22 +108,21 @@ class Stakeholder extends Actor
 
   def updateSlot = {
     currentSlot = time
-    foreignChains = List()
     if (holderIndex == 0) println("Slot = " + currentSlot.toString)
-    time({
+    time(
       updateEpoch
-    }, holderIndex, timingFlag)
+    )
     if (holderIndex == 0 && printFlag) {
       println("Holder " + holderIndex.toString + " Update KES")
     }
-    time({
+    time(
       malkinKey = kes.updateKey(malkinKey, currentSlot)
-    }, holderIndex, timingFlag)
+    )
 
     if (holderIndex == 0 && printFlag) {
       println("Holder " + holderIndex.toString + " ForgeBlocks")
     }
-    time({
+    time(
       if (diffuseSent) {
         if (slotLeader) {
           roundBlock = forgeBlock
@@ -140,7 +141,7 @@ class Stakeholder extends Actor
           case _ =>
         }
       }
-    }, holderIndex, timingFlag)
+    )
     roundBlock = 0
     if (dataOutFlag && currentSlot % dataOutInterval == 0) {
       coordinatorRef ! WriteFile
@@ -224,9 +225,9 @@ class Stakeholder extends Actor
             if (holderIndex == 0 && printFlag) {
               println("Holder " + holderIndex.toString + " Update Chain")
             }
-            time({
+            time(
               updateChain
-            }, holderIndex, timingFlag)
+            )
           }
         }
         updating = false
@@ -246,8 +247,8 @@ class Stakeholder extends Actor
             val pSlot = b._10
             val pHash = b._1
             val foundBlock = blocks(bSlot).contains(bHash)
-            if (!foundBlock && bSlot <= currentSlot) blocks.update(bSlot, blocks(bSlot) + (bHash->b))
-            if (!foundBlock && bSlot <= currentSlot && bSlot > lastActiveSlot(localChain,currentSlot)) {
+            if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash->b))
+            if (!foundBlock && bSlot <= currentSlot) {
               val newId = (bSlot,bHash)
               foreignChains ::= newId
             }
@@ -328,17 +329,17 @@ class Stakeholder extends Actor
     /** prints stats */
     case Status => {
       val trueChain = verifyChain(localChain, genBlockHash)
-      println(holderId + "\nt = " + currentSlot.toString + " alpha = " + alpha_Ep.toString + " blocks forged = "
-        + blocksForged.toString + "\n chain length = " + getActiveSlots(localChain).toString + " valid chain = "
+      println("Holder "+holderIndex.toString + ": t = " + currentSlot.toString + ", alpha = " + alpha_Ep.toString + ", blocks forged = "
+        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString + ", Valid chain = "
         + trueChain.toString)
       var chainBytes:Array[Byte] = Array()
       for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
         getBlock(id) match {
-          case b:Block => chainBytes ++= serialize(b)
+          case b:Block => chainBytes ++= FastCryptographicHash(serialize(b))
           case _ =>
         }
       }
-      println("confirmed chain hash: \n" + bytes2hex(FastCryptographicHash(chainBytes)))
+      println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
       sender() ! "done"
     }
 
@@ -355,8 +356,7 @@ class Stakeholder extends Actor
               + currentSlot.toString + " "
               + alpha_Ep.toString + " "
               + blocksForged.toString + " "
-              + localChain.length.toString + " "
-              + bytes2hex(FastCryptographicHash(serialize(localChain.drop(confirmationDepth))))
+              + getActiveSlots(localChain).toString + " "
               + "\n"
             )
           fileWriter.write(fileString)

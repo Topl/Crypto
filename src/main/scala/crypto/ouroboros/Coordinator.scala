@@ -60,8 +60,7 @@ class Coordinator extends Actor
             + " alpha"
             + " blocks_forged"
             + " chain_length"
-            + " chain_hash"
-            +"\n"
+            +" \n"
           )
         fileWriter match {
           case fw: BufferedWriter => {fw.write(fileString)}

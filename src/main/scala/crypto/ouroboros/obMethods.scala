@@ -339,7 +339,7 @@ trait obMethods
             && tr_Ep == tr_c
             && compare(y, tr_Ep)
           )
-        if (!bool) {
+        if (false) {
           print(slot)
           print(" ")
           println(Seq(
@@ -428,7 +428,7 @@ trait obMethods
             && tr_Ep == tr_c
             && compare(y, tr_Ep)
           )
-        if(!bool){
+        if(false){
           print("Error: Holder "+holderIndex.toString+" ");print(slot);print(" ")
           println(Seq(
               hash(parent) == h0 //1
@@ -444,7 +444,6 @@ trait obMethods
           ))
         }
       }
-      assert(bool)
       bool
     } else { true }
   }
@@ -793,6 +792,22 @@ trait obMethods
   def idPath(value: String): String = {
     val values: Array[String] = value.split(";")
     values(3)
+  }
+
+  def time[R](block: => R): R = {
+    if (timingFlag && holderIndex == 0) {
+      val t0 = System.nanoTime()
+      val result = block // call-by-name
+      val t1 = System.nanoTime()
+      val outTime = (t1 - t0)*1.0e-9
+      if (outTime>slotT*1.0e-3) {
+        val tString = "%6.6f".format(outTime)
+        println("Elapsed time: " + tString + " s")
+      }
+      result
+    } else {
+      block
+    }
   }
 
 }
