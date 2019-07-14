@@ -1,9 +1,11 @@
 package crypto.ouroboros
 
 import java.io.{BufferedWriter, FileWriter}
+import java.io.{File, FileNotFoundException}
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
 import io.iohk.iodb.ByteArrayWrapper
+import scala.sys.process._
 
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
@@ -14,6 +16,8 @@ class Coordinator extends Actor
   with obMethods
   with coordinatorVars {
   val coordId = s"${self.path}"
+  private case object timerKey
+
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
       * This is the F_init functionality */
@@ -42,15 +46,19 @@ class Coordinator extends Actor
       val t0 = System.currentTimeMillis()
       send(holders,StartTime(t0))
       send(holders,Run(value.max))
+      timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
+
     case GetTime => {
       val t1 = System.currentTimeMillis()
       sender() ! GetTime(t1)
     }
+
     //tells actors to print status */
     case Status => {
       send(holders,Status)
     }
+
     case value:NewDataFile => {
       if(dataOutFlag) {
         fileWriter = new BufferedWriter(new FileWriter(value.name))
@@ -68,17 +76,40 @@ class Coordinator extends Actor
         }
       }
     }
+
     case WriteFile => {
       sender() ! WriteFile(fileWriter)
     }
+
     case CloseDataFile => if(dataOutFlag) {
       fileWriter match {
         case fw:BufferedWriter => fw.close()
         case _ => println("error: file writer close on non writer object")
       }
     }
+
+    case ReadCommand => {
+      if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
+        val f = new File("/tmp/scorex/test-data/crypto/cmd")
+        val cmd: String = ("cat" #< f).!!
+        f.delete
+        command(cmd)
+      }
+    }
+
     case _ => println("received unknown message")
   }
+
+  def command(s:String): Unit = {
+    s.trim match {
+      case "status" => self ! Status
+      case "pause" => send(holders,StallActor)
+      case "inbox" => send(holders,Inbox)
+      case "stall0" => send(holders(0),StallActor)
+      case _ =>
+    }
+  }
+
   /**creates genesis block to be sent to all stakeholders */
   def forgeGenBlock: Block = {
     val bn:Int = 0

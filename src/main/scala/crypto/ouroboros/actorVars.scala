@@ -21,7 +21,6 @@ trait stakeHolderVars
   var malkinKey:MalkinKey = kes.generateKey(seed)
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val pk_kes:PublicKey = kes.publicKey(malkinKey)
-  var localChain:Chain = Array()
   var foreignChains:List[BlockId] = List()
   var genBlock: Any = 0
   var genBlockHash: Hash = ByteArrayWrapper(Array())
@@ -29,16 +28,13 @@ trait stakeHolderVars
   var eta_Ep:Eta = Array()
   var eta_prev:Eta = Array()
   var Tr_Ep: Double = 0.0
-  var localState:LocalState = Map()
-  var stakingState:LocalState = Map()
-  var history:List[(Eta,LocalState)] = List()
-  var memPool:MemPool = List()
   val publicKeys = (pk_sig,pk_vrf,pk_kes)
   var tMax = 0
   var t0:Long = 0
   var currentSlot = 0
   var currentEpoch = -1
   var updating = false
+  var actorStalled = false
   var coordinatorRef:ActorRef = _
   //stakeholder public keys
   holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)

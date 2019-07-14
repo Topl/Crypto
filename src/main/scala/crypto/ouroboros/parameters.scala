@@ -18,14 +18,14 @@ trait parameters {
   val f_s = 0.9
 
   //epoch length
-  val confirmationDepth:Int = 30
+  val confirmationDepth:Int = 10
   val epochLength:Int = 3*confirmationDepth
 
   // data write interval in slots
   val dataOutInterval = 100
 
   // duration of slot in milliseconds
-  val slotT:Long = 200
+  val slotT:Long = 100
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds
@@ -33,14 +33,16 @@ trait parameters {
   // duration between update tics that actors send to themselves
   val updateTime = 1.millis
 
+  val commandUpdateTime = 200.millis
+
   // skips some verification for faster performance if true
   val performanceFlag = false
 
   // print holder 0 status per slot if true
-  val printFlag = false
+  val printFlag = true
 
   // print holder 0 execution time per slot if true
-  val timingFlag = false
+  val timingFlag = true
 
   // record data if true
   val dataOutFlag = false
