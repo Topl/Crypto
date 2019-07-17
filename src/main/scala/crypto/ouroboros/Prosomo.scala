@@ -34,12 +34,13 @@ object Prosomo extends App {
 
   coordinator ! Populate(16)
 
-  coordinator ! Run(10000)
+  coordinator ! Run(20000)
 
-  coordinator ! CloseDataFile
-
-  println(">>> Press ENTER to exit <<<")
+  println("-->Press ENTER to exit<--")
   try StdIn.readLine()
-  finally system.terminate()
+  finally {
+    coordinator ! CloseDataFile
+    system.terminate()
+  }
 
 }

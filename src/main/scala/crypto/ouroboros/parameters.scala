@@ -35,14 +35,18 @@ trait parameters {
 
   val commandUpdateTime = 200.millis
 
+  //uses randomness for public key seed and initial stake, set to false for deterministic run
+  //still depends on number of actors
+  val randomFlag = true
+
   // skips some verification for faster performance if true
   val performanceFlag = false
 
   // print holder 0 status per slot if true
-  val printFlag = true
+  val printFlag = false
 
   // print holder 0 execution time per slot if true
-  val timingFlag = true
+  val timingFlag = false
 
   // record data if true
   val dataOutFlag = false

@@ -23,9 +23,10 @@ trait obMethods
   var blocks:ChainData = Array()
   var localState:LocalState = Map()
   var stakingState:LocalState = Map()
-  var history:Array[(Eta,LocalState)] = Array()
+  var history_state:Array[LocalState] = Array()
+  var history_eta:Array[Eta] = Array()
   var memPool:MemPool = List()
-  var holderIndex = -1
+  var holderIndex:Int = -1
   val vrf = new obVrf
   val kes = new obKes
   val sig = new obSig
@@ -138,6 +139,7 @@ trait obMethods
         }
       }
       val eta_ep = FastCryptographicHash(etaP++serialize(ep)++v)
+      //println("H:"+holderIndex.toString+" in:"+bytes2hex(etaP)+"\nNonce Bytes:\n"+bytes2hex(v)+"\n"+"ot:"+bytes2hex(eta_ep))
       eta_ep
     }
   }
@@ -156,6 +158,14 @@ trait obMethods
     if (t1>0) t_lower = t1
     if (t2>0) t_upper = t2
     c.slice(t_lower,t_upper+1)
+  }
+
+  def expand(c:Chain,p:Slot): Chain ={
+    val out = Array.fill(c.last._1-p){(-1,ByteArrayWrapper(Array()))}
+    for (id <- c) {
+      out.update(id._1-p-1,id)
+    }
+    out
   }
 
   /**
@@ -297,6 +307,7 @@ trait obMethods
       var eta_Ep: Eta = eta(c, 0)
       var stakingState: LocalState = Map()
       var pid:BlockId = (0,gh)
+      var i = 0
 
       getBlock(c(0)) match {
         case b:Block => bool &&= hash(b) == gh
@@ -323,12 +334,13 @@ trait obMethods
       def compareBlocks(parent: Block, block: Block) = {
         val (h0, _, slot, cert, rho, pi, _, pk_kes, bn, ps) = block
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
-
-        if (slot / epochLength > ep) {
-          ep = slot / epochLength
-          eta_Ep = eta(c, ep, eta_Ep)
-          stakingState = updateLocalState(stakingState, subChain(c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
-          if (ep > 0) stakingState = activeStake(stakingState, subChain(c, (slot / epochLength) * epochLength - 10 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
+        while(i<=slot) {
+          if (i/epochLength > ep) {
+            ep = i/epochLength
+            eta_Ep = eta(c, ep, eta_Ep)
+            stakingState = updateLocalState(stakingState,subChain(c,(i/epochLength)*epochLength-2*epochLength+1,(i/epochLength)*epochLength-epochLength))
+          }
+          i+=1
         }
         alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
@@ -367,29 +379,26 @@ trait obMethods
 
   /**
     * Verify chain using key evolving signature, VRF proofs, and hash rule
-    * @param c chain to be verified
+    * @param tine chain to be verified
     * @return true if chain is valid, false otherwise
     */
 
-  def verifySubChain(c:Chain,prefix:Slot): Boolean = {
+  def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
     if (!performanceFlag) {
       val ep0 = prefix/epochLength
-      var eta_Ep:Eta = history(ep0)._1
-      var stakingState: LocalState = history(ep0)._2
+      var eta_Ep:Eta = history_eta(ep0)
+      var stakingState: LocalState = {
+        if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
+      }
       var ep = ep0
       var bool = true
       var alpha_Ep = 0.0
       var tr_Ep = 0.0
       var pid:BlockId = (0,ByteArrayWrapper(Array()))
-      var tmp_history:List[(Int,Eta,LocalState)] = List()
-//
-//      if (holderIndex == 0) {
-//        println(bytes2hex(eta_Ep))
-//        println(bytes2hex(eta(subChain(localChain,0,prefix),ep0)))
-//      }
+      var i = prefix+1
 
       breakable{
-        for (id<-c) {
+        for (id<-tine) {
           if (!id._2.data.isEmpty) {
             pid = getParentId(id) match {case value:BlockId => value}
             break()
@@ -398,7 +407,7 @@ trait obMethods
         bool &&= false
       }
 
-      for (id <- c) {
+      for (id <- tine) {
         getBlock(id) match {
           case b:Block => {
             getParentBlock(b) match {
@@ -417,16 +426,22 @@ trait obMethods
       def compareBlocks(parent:Block,block:Block) = {
         val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block
         val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
-        if (slot/epochLength>ep) {
-          ep = slot/epochLength
-          if (ep0+1 == ep) {
-            eta_Ep = history(ep)._1
-            stakingState = history(ep)._2
-          } else {
-            eta_Ep = eta(subChain(localChain,0,prefix)++c, ep, eta_Ep)
-            stakingState = updateLocalState(stakingState, subChain(subChain(localChain,0,prefix)++c, (slot / epochLength) * epochLength - 2 * epochLength + 1, (slot / epochLength) * epochLength - epochLength))
-            tmp_history = (ep,eta_Ep,stakingState)::tmp_history
+        while(i<=slot) {
+          if (i/epochLength > ep) {
+            ep = i/epochLength
+            if (ep0 + 1 == ep) {
+              //println("C Holder " + holderIndex.toString + " Epoch: " + (ep - 1).toString + "\nEta:" + bytes2hex(eta_Ep))
+              eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
+              //println("C Holder " + holderIndex.toString + " Epoch: " + ep.toString + "\nEta:" + bytes2hex(eta_Ep))
+              stakingState = history_state((ep - 1) * epochLength)
+            } else {
+              //println("C' Holder " + holderIndex.toString + " Epoch: " + (ep - 1).toString + "\nEta:" + bytes2hex(eta_Ep))
+              eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
+              //println("C' Holder " + holderIndex.toString + " Epoch: " + ep.toString + "\nEta:" + bytes2hex(eta_Ep))
+              stakingState = updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength))
+            }
           }
+          i+=1
         }
         alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
         tr_Ep = phi(alpha_Ep, f_s)
@@ -456,11 +471,14 @@ trait obMethods
             , tr_Ep == tr_c //9
             , compare(y,tr_Ep) //10
           ))
+          println("Holder "+holderIndex.toString+" Epoch:"+(slot/epochLength).toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
         }
       }
-      if (bool) {
-        for (entry<-tmp_history) {
-          history.update(entry._1,(entry._2,entry._3))
+
+      if(!bool) sharedFlags.throwError
+      if (sharedFlags.error) {
+        for (id<-subChain(localChain,0,prefix)++tine) {
+          if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+bytes2hex(id._2.data))
         }
       }
       bool

@@ -2,6 +2,20 @@ package crypto.ouroboros
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
+object sharedFlags {
+  var counter = 0
+  var errorFlag = false
+  var killFlag = false
+  def count:Int = {
+    val out = counter
+    counter += 1
+    println(counter)
+    out
+  }
+  def throwError = {errorFlag=true}
+  def error:Boolean = {errorFlag}
+}
+
 trait utils {
 
   def uuid: String = java.util.UUID.randomUUID.toString

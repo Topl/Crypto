@@ -572,8 +572,6 @@ class obKes {
           println("Error: max time steps reached")
         }
       }
-    } else {
-      println("Error: t less than given keyTime")
     }
     (L,Si,sig,pki,seed)
   }

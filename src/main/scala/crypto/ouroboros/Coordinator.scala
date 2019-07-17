@@ -3,8 +3,10 @@ package crypto.ouroboros
 import java.io.{BufferedWriter, FileWriter}
 import java.io.{File, FileNotFoundException}
 
-import akka.actor.{Actor, ActorRef, Props, Timers}
+import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
+import bifrost.crypto.hash.FastCryptographicHash
 import io.iohk.iodb.ByteArrayWrapper
+
 import scala.sys.process._
 
 /**
@@ -23,8 +25,14 @@ class Coordinator extends Actor
       * This is the F_init functionality */
     case value: Populate => {
       println("Populating")
+      var i = -1
       holders = List.fill(value.n){
-        context.actorOf(Stakeholder.props, "holder:" + uuid)
+        i+=1
+        if (randomFlag) {
+          context.actorOf(Stakeholder.props(FastCryptographicHash(Array(i.toByte))), "Holder:" + i.toString)
+        } else {
+          context.actorOf(Stakeholder.props(FastCryptographicHash(uuid)), "Holder:" + i.toString)
+        }
       }
       println("Sending holders list")
       send(holders,holders)
@@ -106,6 +114,13 @@ class Coordinator extends Actor
       case "pause" => send(holders,StallActor)
       case "inbox" => send(holders,Inbox)
       case "stall0" => send(holders(0),StallActor)
+      case "kill" => {
+        send(holders,StallActor)
+        for (holder<-holders){ holder ! PoisonPill}
+        sharedFlags.killFlag = true
+        self ! CloseDataFile
+        context.system.terminate
+      }
       case _ =>
     }
   }
@@ -122,12 +137,21 @@ class Coordinator extends Actor
     val h:Hash = ByteArrayWrapper(eta0)
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
-    val state: State = holders.map{ case ref:ActorRef => signTx(
-      genesisBytes
-        ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
-        ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
-        ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
-      serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStakeMax * r.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt}.toMap
+    val state: State = holders.map{ case ref:ActorRef => {
+      val initStake = {
+        if (randomFlag) {
+          initStakeMax*r.nextDouble
+        } else {
+          initStakeMax
+        }
+      }
+      signTx(
+        genesisBytes
+          ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
+          ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
+          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
+        serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+    }}.toMap
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
     val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)

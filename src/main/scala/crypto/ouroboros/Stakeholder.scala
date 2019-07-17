@@ -13,37 +13,55 @@ import io.iohk.iodb.ByteArrayWrapper
   * sends the coordinator the public key upon instantiation and gets the genesis block from coordinator
   */
 
-class Stakeholder extends Actor
+class Stakeholder(seed:Array[Byte]) extends Actor
   with Timers
   with obMethods
   with stakeHolderVars {
-
+  val (sk_vrf,pk_vrf) = vrf.vrfKeypair(seed)
+  var malkinKey:MalkinKey = kes.generateKey(seed)
+  val (sk_sig,pk_sig) = sig.createKeyPair(seed)
+  val pk_kes:PublicKey = kes.publicKey(malkinKey)
   val holderId = s"${self.path}"
+  val publicKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
+  //stakeholder public keys
+  val holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   /** Determines eligibility for a stakeholder to be a slot leader */
-  def slotLeader: Boolean = {
+  /** Calculates a block with epoch variables */
+  def forgeBlock = {
+    //println("F Holder "+holderIndex.toString+" Epoch:"+currentEpoch.toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
     val slot = currentSlot
     val pi_y: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
-    compare(y, Tr_Ep)
-  }
-
-  /** Calculates a block with epoch variables */
-  def forgeBlock: Block = {
-    val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1))) match {case b:Block => b}
-    val bn:Int = pb._9 + 1
-    val ps:Slot = pb._3
-    val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
-    val slot: Slot = currentSlot
-    val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
-    val rho: Rho = vrf.vrfProofToHash(pi)
-    val pi_y: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"))
-    val y: Rho = vrf.vrfProofToHash(pi_y)
-    val h: Hash = hash(pb)
-    val state: State = Map(blockTx -> forgerReward)
-    val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
-    val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
-    (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
+    if (compare(y, Tr_Ep)) {
+      roundBlock = {
+        val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1))) match {case b:Block => b}
+        val bn:Int = pb._9 + 1
+        val ps:Slot = pb._3
+        val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
+        val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
+        val rho: Rho = vrf.vrfProofToHash(pi)
+        val h: Hash = hash(pb)
+        val state: State = Map(blockTx -> forgerReward)
+        val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
+        val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+        (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
+      }
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " is slot a leader")
+      }
+    }
+    roundBlock match {
+      case b: Block => {
+        val hb = hash(b)
+        blocks.update(currentSlot, blocks(currentSlot) + (hb -> b))
+        localChain.update(currentSlot, (currentSlot, hb))
+        send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
+        blocksForged += 1
+      }
+      case _ =>
+    }
+    roundBlock = 0
   }
 
   def updateChain = {
@@ -71,7 +89,9 @@ class Stakeholder extends Actor
         }
       }
     }
+
     if (bool) {
+      tine = expand(tine,prefix)
       var trueChain = false
       val s1 = tine.last._1
       val bnt = {getBlock(tine.last) match {case b:Block => b._9}}
@@ -85,19 +105,23 @@ class Stakeholder extends Actor
         trueChain &&= verifySubChain(tine,prefix)
       }
       if(trueChain) {
-        if (holderIndex == 0) println("Holder " + holderIndex.toString + " Adopting Chain")
+        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Chain")
         val (rLocalState,rMemPool) = revertLocalState(localState,subChain(localChain,prefix+1,currentSlot),memPool)
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
         for (id <- tine) {
-          localChain.update(id._1,id)
+          if (id._1 > -1) localChain.update(id._1,id)
         }
-        localState = updateLocalState(rLocalState,subChain(localChain,prefix+1,currentSlot))
+        localState = history_state(prefix)
+        eta_Ep = history_eta(prefix/epochLength)
         memPool = rMemPool
+        currentSlot = prefix
+        currentEpoch = currentSlot/epochLength
       }
       foreignChains = foreignChains.dropRight(1)
     } else {
+      if (holderIndex == 0) println("Holder " + holderIndex.toString + " Looking for Parent Block")
       send(holderId, holders, RequestBlock(tine.head._2,tine.head._1,diffuse(holderData, holderId, sk_sig)))
     }
   }
@@ -120,28 +144,11 @@ class Stakeholder extends Actor
       }
       time(
         if (diffuseSent && foreignChains.isEmpty) {
-          if (slotLeader) {
-            roundBlock = forgeBlock
-            if (holderIndex == 0 && printFlag) {
-              println("Holder " + holderIndex.toString + " is slot a leader")
-            }
-          }
-          roundBlock match {
-            case b: Block => {
-              val hb = hash(b)
-              blocks.update(currentSlot, blocks(currentSlot) + (hb -> b))
-              localChain.update(currentSlot, (currentSlot, hb))
-              localState = updateLocalState(localState, Array(localChain(currentSlot)))
-              send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
-              blocksForged += 1
-            }
-            case _ =>
-          }
-          roundBlock = 0
+          forgeBlock
         }
       )
     }
-
+    localState = updateLocalState(localState, Array(localChain(currentSlot)))
     if (dataOutFlag && currentSlot % dataOutInterval == 0) {
       coordinatorRef ! WriteFile
     }
@@ -151,14 +158,18 @@ class Stakeholder extends Actor
     if (currentSlot / epochLength > currentEpoch) {
       currentEpoch = currentSlot / epochLength
       if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
-      stakingState = updateLocalState(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 2 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
-      stakingState = activeStake(stakingState, subChain(localChain, (currentSlot / epochLength) * epochLength - 10 * epochLength + 1, (currentSlot / epochLength) * epochLength - epochLength))
+      stakingState = {
+        if (currentEpoch > 1) {history_state((currentEpoch-1)*epochLength)} else {history_state(0)}
+      }
       alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
       Tr_Ep = phi(alpha_Ep, f_s)
-      eta_Ep = eta(localChain, currentEpoch, eta_Ep)
-      history.update(currentEpoch,(eta_Ep, stakingState))
+      if (currentEpoch > 0) {
+        eta_Ep = eta(localChain, currentEpoch, history_eta(currentEpoch-1))
+        history_eta.update(currentEpoch,eta_Ep)
+      }
+
       if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString)
+        println("Holder " + holderIndex.toString + " alpha = " + alpha_Ep.toString+"\nEta:"+bytes2hex(eta_Ep))
       }
     }
   }
@@ -185,8 +196,13 @@ class Stakeholder extends Actor
       tMax = value.max
       blocks = blocks++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
       localChain = Array((0,genBlockHash))++Array.fill(tMax){(-1,ByteArrayWrapper(Array()))}
-      history = Array.fill(tMax/epochLength+1){(Array(),Map())}
+      history_eta = Array.fill(tMax/epochLength+1){Array()}
+      history_state = Array.fill(tMax+1){Map()}
       assert(genBlockHash == hash(blocks(0)(genBlockHash)))
+      localState = updateLocalState(localState, Array(localChain(0)))
+      eta_Ep = eta(localChain, 0, Array())
+      history_state.update(0,localState)
+      history_eta.update(0,eta_Ep)
       timers.startPeriodicTimer(timerKey, Update, updateTime)
       sender() ! "done"
     }
@@ -196,32 +212,35 @@ class Stakeholder extends Actor
     }
 
     /** updates time, the kes key, and resets variables */
-    case Update => if (!actorStalled) {
-      if (!updating) {
-        updating = true
-        if (time > tMax) {
-          timers.cancelAll
-        } else {
-          if (!diffuseSent) {
-            send(holderId, holders, diffuse(holderData, holderId, sk_sig))
-            diffuseSent = true
-          }
-          coordinatorRef ! GetTime
-          if (time > currentSlot) {
-            while (time > currentSlot) {
-              currentSlot += 1
-              updateSlot
+    case Update => { if (sharedFlags.error) {actorStalled = true}
+      if (!actorStalled) {
+        if (!updating) {
+          updating = true
+          if (time > tMax) {
+            timers.cancelAll
+          } else {
+            if (!diffuseSent) {
+              send(holderId, holders, diffuse(holderData, holderId, sk_sig))
+              diffuseSent = true
             }
-          } else if (foreignChains.nonEmpty) {
-            if (holderIndex == 0 && printFlag) {
-              println("Holder " + holderIndex.toString + " Update Chain")
+            coordinatorRef ! GetTime
+            if (time > currentSlot) {
+              while (time > currentSlot) {
+                history_state.update(currentSlot,localState)
+                currentSlot += 1
+                updateSlot
+              }
+            } else if (foreignChains.nonEmpty) {
+              if (holderIndex == 0 && printFlag) {
+                println("Holder " + holderIndex.toString + " Update Chain")
+              }
+              time(
+                updateChain
+              )
             }
-            time(
-              updateChain
-            )
           }
+          updating = false
         }
-        updating = false
       }
     }
 
@@ -230,7 +249,6 @@ class Stakeholder extends Actor
         if (holderIndex == 0 && printFlag) {
           println("Holder " + holderIndex.toString + " Received Block")
         }
-        if (updating) println("ERROR: executing while updating")
         value.b match {
           case b: Block => {
             if (verifyBlock(b)) {
@@ -267,7 +285,6 @@ class Stakeholder extends Actor
 
     case value: ReturnBlock => if (!actorStalled) {
       if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
-        if (updating) println("ERROR: executing while updating")
         value.b match {
           case b: Block => {
             if (verifyBlock(b)) {
@@ -303,7 +320,6 @@ class Stakeholder extends Actor
         if (holderIndex == 0 && printFlag) {
           println("Holder " + holderIndex.toString + " Requested Block")
         }
-        if (updating) println("ERROR: executing while updating")
         val requesterId = idPath(value.s)
         var requesterRef: Any = 0
         for (holder <- holders) {
@@ -367,7 +383,17 @@ class Stakeholder extends Actor
           case _ =>
         }
       }
+      //println("Public Key: "+bytes2hex(pk_sig++pk_vrf++pk_kes))
       println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
+      if (sharedFlags.error){
+        for (id <- localChain) {
+          if (id._1 > -1) println("H:" + holderIndex.toString + "S:" + id._1.toString + "ID:" + bytes2hex(id._2.data))
+        }
+        for (e <- history_eta) {
+          if (!e.isEmpty) println("H:" + holderIndex.toString + "E:" + bytes2hex(e))
+        }
+        println("e:" + bytes2hex(eta(localChain, currentEpoch)) + "\n")
+      }
       sender() ! "done"
     }
 
@@ -406,6 +432,6 @@ class Stakeholder extends Actor
 }
 
 object Stakeholder {
-  def props: Props = Props(new Stakeholder)
+  def props(seed:Array[Byte]): Props = Props(new Stakeholder(seed))
 }
 
