@@ -6,6 +6,7 @@ import java.io.{File, FileNotFoundException}
 import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
 import io.iohk.iodb.ByteArrayWrapper
+import scala.util.Random
 
 import scala.sys.process._
 
@@ -114,12 +115,26 @@ class Coordinator extends Actor
       case "pause" => send(holders,StallActor)
       case "inbox" => send(holders,Inbox)
       case "stall0" => send(holders(0),StallActor)
+      case "write" => fileWriter match {
+        case fw:BufferedWriter => fw.flush
+        case _ => println("File writer not initialized")
+      }
       case "kill" => {
         send(holders,StallActor)
         for (holder<-holders){ holder ! PoisonPill}
         sharedFlags.killFlag = true
         self ! CloseDataFile
         context.system.terminate
+      }
+      case "split" => {
+        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length))
+        println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
+        send(holders1,Party(holders1))
+        send(holders2,Party(holders2))
+      }
+      case "join" => {
+        println("Joining Parties")
+        send(holders,Party(holders))
       }
       case _ =>
     }

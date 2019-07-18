@@ -352,6 +352,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
+    case value:Party => {
+      value.list match {
+        case l: List[ActorRef] => {
+          holders = l
+          inbox = ""
+          diffuseSent = false
+        }
+      }
+      sender() ! "done"
+    }
+
     /** accepts genesis block from coordinator */
     case gb: GenBlock => {
       genBlock = gb.b

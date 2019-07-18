@@ -9,7 +9,10 @@ do
     echo "Enter command (q to exit) :"
     read -e CMD
     history -s "$CMD"
-	if [ "$CMD" != "q" ]
+	if [ "$CMD" == "plot" ]
+	then
+	    python ./src/main/python/obPlot.py
+	elif [ "$CMD" != "q" ]
 	then
         mkdir -p "$pth"
         rm -f "$pth$nam"

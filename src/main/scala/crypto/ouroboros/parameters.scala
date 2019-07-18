@@ -22,7 +22,7 @@ trait parameters {
   val epochLength:Int = 3*confirmationDepth
 
   // data write interval in slots
-  val dataOutInterval = 100
+  val dataOutInterval = epochLength
 
   // duration of slot in milliseconds
   val slotT:Long = 100
@@ -49,5 +49,5 @@ trait parameters {
   val timingFlag = false
 
   // record data if true
-  val dataOutFlag = false
+  val dataOutFlag = true
 }
