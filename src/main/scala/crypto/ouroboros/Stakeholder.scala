@@ -1,6 +1,6 @@
 package crypto.ouroboros
 
-import akka.actor.{Actor, ActorRef, Props, Timers}
+import akka.actor.{Actor, ActorPath, ActorRef, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
 
 import util.control.Breaks._
@@ -21,10 +21,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   var malkinKey:MalkinKey = kes.generateKey(seed)
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val pk_kes:PublicKey = kes.publicKey(malkinKey)
-  val holderId = s"${self.path}"
+  val holderId:ActorPath = self.path
+  val sessionId:Sid = ByteArrayWrapper(FastCryptographicHash(holderId.toString))
   val publicKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
-  //stakeholder public keys
-  val holderData = bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes)
 
   /** Determines eligibility for a stakeholder to be a slot leader */
   /** Calculates a block with epoch variables */
@@ -37,7 +36,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1))) match {case b:Block => b}
         val bn:Int = pb._9 + 1
         val ps:Slot = pb._3
-        val blockTx: Tx = signTx(forgeBytes, serialize(holderId), sk_sig, pk_sig)
+        val blockTx: Tx = signTx(forgeBytes, sessionId, sk_sig, pk_sig)
         val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
@@ -55,7 +54,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val hb = hash(b)
         blocks.update(currentSlot, blocks(currentSlot) + (hb -> b))
         localChain.update(currentSlot, (currentSlot, hb))
-        send(holderId, holders, SendBlock(b, diffuse(holderData, holderId, sk_sig)))
+        send(holderId, holders, SendBlock(signTx(b, sessionId, sk_sig, pk_sig)))
         blocksForged += 1
       }
       case _ =>
@@ -97,7 +96,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       val bnl = {getBlock(localChain(lastActiveSlot(localChain,currentSlot))) match {case b:Block => b._9}}
       if(s1 - prefix < confirmationDepth && bnl < bnt) {
         trueChain = true
-      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,currentSlot))) {
+      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,time))) {
         trueChain = true
       }
       if (trueChain) {
@@ -121,7 +120,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       foreignChains = foreignChains.dropRight(1)
     } else {
       if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block")
-      send(holderId, holders, RequestBlock(tine.head._2,tine.head._1,diffuse(holderData, holderId, sk_sig)))
+      send(holderId, holders, RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
+      foreignChains = foreignChains.dropRight(1)
     }
   }
 
@@ -240,100 +240,104 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case value: SendBlock => if (!actorStalled) {
-      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
-        if (holderIndex == 0 && printFlag) {
-          println("Holder " + holderIndex.toString + " Received Block")
-        }
-        value.b match {
-          case b: Block => {
-            if (verifyBlock(b)) {
-              val bHash = hash(b)
-              val bSlot = b._3
-              val pSlot = b._10
-              val pHash = b._1
-              val foundBlock = blocks(bSlot).contains(bHash)
-              if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-              if (!foundBlock && bSlot <= currentSlot && foreignChains.isEmpty) {
-                val newId = (bSlot, bHash)
-                foreignChains ::= newId
-              }
-              val foundParent = blocks(pSlot).contains(pHash)
-              if (!foundBlock && !foundParent) {
-                val requesterId = idPath(value.s)
-                var requesterRef: Any = 0
-                for (holder <- holders) {
-                  if (requesterId == s"${holder.path}") requesterRef = holder
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " Received Block")
+      }
+      value.s match {
+        case s:Tx => if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+          s._1 match {
+            case b: Block => {
+              if (verifyBlock(b)) {
+                val bHash = hash(b)
+                val bSlot = b._3
+                val pSlot = b._10
+                val pHash = b._1
+                val foundBlock = blocks(bSlot).contains(bHash)
+                if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                if (!foundBlock && bSlot <= time) {
+                  val newId = (bSlot, bHash)
+                  foreignChains ::= newId
                 }
-                requesterRef match {
-                  case ref: ActorRef => {
-                    ref ! RequestBlock(pHash, pSlot, diffuse(holderData, holderId, sk_sig))
-                  }
-                  case _ =>
+                val foundParent = blocks(pSlot).contains(pHash)
+                if (!foundBlock && !foundParent) {
+                  val ref:ActorRef = inbox(s._2)._1
+                  val pid:BlockId = (pSlot,pHash)
+                  ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
                 }
               }
             }
+            case _ =>
           }
-          case _ => println("error")
         }
+        case _ =>
       }
     }
 
     case value: ReturnBlock => if (!actorStalled) {
-      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
-        value.b match {
-          case b: Block => {
-            if (verifyBlock(b)) {
-              val bHash = hash(b)
-              val bSlot = b._3
-              val pSlot = b._10
-              val pHash = b._1
-              val foundBlock = blocks(bSlot).contains(bHash)
-              if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-              val foundParent = blocks(pSlot).contains(pHash)
-              if (!foundBlock && !foundParent) {
-                val requesterId = idPath(value.s)
-                var requesterRef: Any = 0
-                for (holder <- holders) {
-                  if (requesterId == s"${holder.path}") requesterRef = holder
+      value.s match {
+        case s:Tx => if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+          s._1 match {
+            case b: Block => {
+              if (verifyBlock(b)) {
+                if (holderIndex == 0 && printFlag) {
+                  println("Holder " + holderIndex.toString + " Got Block Back")
                 }
-                requesterRef match {
-                  case ref: ActorRef => {
-                    ref ! RequestBlock(pHash, pSlot, diffuse(holderData, holderId, sk_sig))
-                  }
-                  case _ =>
+                val bHash = hash(b)
+                val bSlot = b._3
+                val pSlot = b._10
+                val pHash = b._1
+                val foundBlock = blocks(bSlot).contains(bHash)
+                if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                val foundParent = blocks(pSlot).contains(pHash)
+                if (!foundBlock && !foundParent) {
+                  val ref:ActorRef = inbox(s._2)._1
+                  val pid:BlockId = (pSlot,pHash)
+                  ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
                 }
               }
             }
+            case _ =>
           }
-          case _ => println("error")
         }
+        case _ =>
       }
     }
 
     case value: RequestBlock => if (!actorStalled) {
-      if (verifyTxStamp(value.s) && inbox.contains(idInfo(value.s))) {
-        if (holderIndex == 0 && printFlag) {
-          println("Holder " + holderIndex.toString + " Requested Block")
-        }
-        val requesterId = idPath(value.s)
-        var requesterRef: Any = 0
-        for (holder <- holders) {
-          if (requesterId == s"${holder.path}") requesterRef = holder
-        }
-        requesterRef match {
-          case ref: ActorRef => {
-            if (blocks(value.slot).contains(value.h)) {
-              ref ! ReturnBlock(blocks(value.slot)(value.h), diffuse(holderData, holderId, sk_sig))
+      value.s match {
+        case s:Tx => {
+          if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+            if (holderIndex == 0 && printFlag||true) {
+              println("Holder " + holderIndex.toString + " Was Requested Block")
+            }
+            val ref = inbox(s._2)._1
+            s._1 match {
+              case id:BlockId => {
+                if (blocks(id._1).contains(id._2)) {
+                  val returnedBlock = blocks(id._1)(id._2)
+                  ref ! ReturnBlock(returnedBlock,signTx(serialize(returnedBlock),sessionId,sk_sig,pk_sig))
+                  if (holderIndex == 0 && printFlag||true) {
+                    println("Holder " + holderIndex.toString + " Returned Block")
+                  }
+                }
+              }
+              case _ =>
             }
           }
-          case _ =>
         }
+        case _ =>
       }
     }
 
     /** validates diffused string from other holders and stores in inbox */
-    case value: String => if (!actorStalled) {
-      if (verifyTxStamp(value)) inbox = inbox + value + "\n"
+    case value: Tx => if (!actorStalled) {
+      if (verifyTx(value) && !inbox.keySet.contains(value._2)) {
+        val sid = value._2
+        value._1 match {
+          case d:(ActorRef,PublicKeys) => inbox += (sid->d)
+          case _ =>
+        }
+      }
       sender() ! "done"
     }
 
@@ -342,7 +346,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       holders = list
       var i = 0
       for (holder <- holders) {
-        if (holderId == s"${holder.path}") holderIndex = i
+        if (self == holder) holderIndex = i
         i += 1
       }
       sender() ! "done"
@@ -352,7 +356,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.list match {
         case list: List[ActorRef] => {
           holders = list
-          inbox = ""
+          inbox = Map()
           diffuseSent = false
         }
         case _ =>
@@ -361,7 +365,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case Diffuse => {
-      sendAndWait(holderId, holders, diffuse(holderData, holderId, sk_sig))
+      sendAndWait(holderId, holders, signTx((self,publicKeys), sessionId, sk_sig, pk_sig))
       sender() ! "done"
     }
 
@@ -380,7 +384,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     /** prints inbox */
     case Inbox => {
-      println(inbox); sender() ! "done"
+      var i = 0
+      for (entry <- inbox) {
+        println(i.toString+" "+bytes2hex(entry._1.data))
+        i+=1
+      }
+      println("")
+      sender() ! "done"
     }
 
     /** prints stats */
@@ -412,7 +422,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     /** sends coordinator keys */
     case GetGenKeys => {
-      sender() ! diffuse(holderData, holderId, sk_sig)
+      sender() ! diffuse(bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes), s"{$holderId}", sk_sig)
     }
 
     case value: WriteFile => if (!actorStalled) {

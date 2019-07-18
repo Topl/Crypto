@@ -40,7 +40,7 @@ class Coordinator extends Actor
       println("Sending holders coordinator ref")
       send(holders,CoordRef(self))
       println("Getting holder keys")
-      genKeys = send(holders,GetGenKeys,genKeys)
+      genKeys = sendGenKeys(holders,GetGenKeys,genKeys)
       assert(!containsDuplicates(genKeys))
       println("Forge Genesis Block")
       val genBlock:Block = forgeGenBlock
@@ -55,7 +55,9 @@ class Coordinator extends Actor
       println("Starting")
       val t0 = System.currentTimeMillis()
       send(holders,StartTime(t0))
+      println("Diffuse Holder Info")
       send(holders,Diffuse)
+      println("Run")
       send(holders,Run(value.max))
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
@@ -170,7 +172,7 @@ class Coordinator extends Actor
           ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
           ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
           ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
-        serialize(coordId),sk_sig,pk_sig) -> BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+        ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig) -> BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
     }}.toMap
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
     val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))

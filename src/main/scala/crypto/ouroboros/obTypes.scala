@@ -11,12 +11,12 @@ trait obTypes {
   type Slot = Int
   type Rho = Array[Byte]
   type PublicKey = Array[Byte]
-  type Sid = Array[Byte]
+  type Sid = ByteArrayWrapper
   type PublicKeys = (PublicKey,PublicKey,PublicKey)
   type PrivateKey = Array[Byte]
   type Hash = ByteArrayWrapper
   type Pi = Array[Byte]
-  type Tx = (Array[Byte],Sid,Sig,PublicKey)
+  type Tx = (Any,Sid,Sig,PublicKey)
   type Transfer = (PublicKey,PublicKey,BigInt,Sid)
   type State = Map[Tx,BigInt]
   type LocalState = Map[ByteArrayWrapper,(BigInt,Boolean)]

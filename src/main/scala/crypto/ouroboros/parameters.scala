@@ -28,7 +28,7 @@ trait parameters {
   val slotT:Long = 100
 
   // time out for dropped messages from coordinator
-  val waitTime = 600 seconds
+  val waitTime = 2 seconds
 
   // duration between update tics that actors send to themselves
   val updateTime = 1.millis
@@ -43,7 +43,7 @@ trait parameters {
   val performanceFlag = false
 
   // print holder 0 status per slot if true
-  val printFlag = false
+  val printFlag = true
 
   // print holder 0 execution time per slot if true
   val timingFlag = false

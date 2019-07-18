@@ -9,8 +9,8 @@ trait stakeHolderVars
   extends obTypes
     with obMethods
     with utils {
-  var inbox:String = ""
   var holders: List[ActorRef] = List()
+  var inbox:Map[Sid,(ActorRef,PublicKeys)] = Map()
   var alpha_Ep = 0.0
   var blocksForged = 0
   var time = 0

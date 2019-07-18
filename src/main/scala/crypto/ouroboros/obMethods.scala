@@ -211,12 +211,12 @@ trait obMethods
     str+";"+id+";"+bytes2hex(sig.sign(sk_sig,serialize(str+";"+id)))
   }
 
-  def signTx(data: Array[Byte],id:Sid,sk_sig: Sig,pk_sig: PublicKey): Tx = {
-    (data,id,sig.sign(sk_sig,data++id),pk_sig)
+  def signTx(data: Any,id:Sid,sk_sig: PrivateKey,pk_sig: PublicKey): Tx = {
+    (data,id,sig.sign(sk_sig,serialize(data)++id.data),pk_sig)
   }
 
   def verifyTx(tx:Tx): Boolean = {
-    sig.verify(tx._3,tx._1++tx._2,tx._4)
+    sig.verify(tx._3,serialize(tx._1)++tx._2.data,tx._4)
   }
 
   /**
@@ -251,7 +251,7 @@ trait obMethods
     * @return map of holder data
     */
 
-  def send(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
+  def sendGenKeys(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
       implicit val timeout = Timeout(waitTime)
@@ -273,18 +273,18 @@ trait obMethods
     * @param command object to be sent
     */
 
-  def send(holderId:String, holders:List[ActorRef],command: Any) = {
+  def send(holderId:ActorPath, holders:List[ActorRef],command: Any) = {
     for (holder <- Random.shuffle(holders)){
-      if (s"${holder.path}" != holderId) {
+      if (holder.path != holderId) {
         holder ! command
       }
     }
   }
 
-  def sendAndWait(holderId:String,holders:List[ActorRef],command: String) = {
+  def sendAndWait(holderId:ActorPath,holders:List[ActorRef],command: Tx) = {
     for (holder <- holders){
       implicit val timeout = Timeout(waitTime)
-      if (s"${holder.path}" != holderId) {
+      if (holder.path != holderId) {
         val future = holder ? command
         val result = Await.result(future, timeout.duration)
         assert(result == "done")

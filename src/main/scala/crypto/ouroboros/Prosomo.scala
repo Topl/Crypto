@@ -26,9 +26,9 @@ object Prosomo extends App {
 
   val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
 
-  val system = ActorSystem("stakeholders")
+  val system = ActorSystem("Stakeholders")
 
-  val coordinator = system.actorOf(Coordinator.props, "coordinator")
+  val coordinator = system.actorOf(Coordinator.props, "Coordinator")
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
