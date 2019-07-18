@@ -219,6 +219,16 @@ trait obMethods
     sig.verify(tx._3,serialize(tx._1)++tx._2.data,tx._4)
   }
 
+  def gossipSet(id:ActorPath,h:List[ActorRef]):List[ActorRef] = {
+    var out:List[ActorRef] = List()
+    for (holder <- Random.shuffle(h)) {
+      if (holder.path != id && out.length < numGossipers) {
+        out = holder::out
+      }
+    }
+    out
+  }
+
   /**
     * Sends commands one by one to list of stakeholders
     * @param holder actor list

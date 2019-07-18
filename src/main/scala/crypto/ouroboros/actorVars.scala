@@ -10,6 +10,7 @@ trait stakeHolderVars
     with obMethods
     with utils {
   var holders: List[ActorRef] = List()
+  var gossipers: List[ActorRef] = List()
   var inbox:Map[Sid,(ActorRef,PublicKeys)] = Map()
   var alpha_Ep = 0.0
   var blocksForged = 0

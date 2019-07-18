@@ -18,14 +18,16 @@ trait parameters {
   val f_s = 0.9
 
   //epoch length
-  val confirmationDepth:Int = 10
+  val confirmationDepth:Int = 30
   val epochLength:Int = 3*confirmationDepth
+
+  val numGossipers = 6
 
   // data write interval in slots
   val dataOutInterval = epochLength
 
   // duration of slot in milliseconds
-  val slotT:Long = 200
+  val slotT:Long = 400
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds

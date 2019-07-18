@@ -133,14 +133,26 @@ class Coordinator extends Actor
       case "split" => {
         val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-2)+1)
         println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
-        send(holders1,Party(holders1))
+        send(holders1,Party(holders1,true))
         send(holders1,Diffuse)
-        send(holders2,Party(holders2))
+        send(holders2,Party(holders2,true))
+        send(holders2,Diffuse)
+      }
+      case "bridge" => {
+        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-3)+2)
+        println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
+        val commonRef = holders1.head
+        send(holders,Party(List(),true))
+        send(List(commonRef),Party(holders,false))
+        send(List(commonRef),Diffuse)
+        send(holders1.tail,Party(holders1,false))
+        send(holders1.tail,Diffuse)
+        send(holders2,Party(commonRef::holders2,false))
         send(holders2,Diffuse)
       }
       case "join" => {
         println("Joining Parties")
-        send(holders,Party(holders))
+        send(holders,Party(holders,true))
         send(holders,Diffuse)
       }
       case _ =>

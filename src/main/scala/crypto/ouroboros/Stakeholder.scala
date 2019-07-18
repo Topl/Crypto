@@ -55,7 +55,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val hb = hash(b)
         blocks.update(currentSlot, blocks(currentSlot) + (hb -> b))
         localChain.update(currentSlot, (currentSlot, hb))
-        send(holderId, holders, SendBlock(signTx(b, sessionId, sk_sig, pk_sig)))
+        send(holderId, gossipers, SendBlock(signTx((b,(currentSlot, hb)), sessionId, sk_sig, pk_sig)))
         blocksForged += 1
       }
       case _ =>
@@ -121,8 +121,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       foreignChains = foreignChains.dropRight(1)
     } else {
       if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block")
-      send(holderId, List(Random.shuffle(holders).head), RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
-      foreignChains = foreignChains.dropRight(1)
+      send(holderId,gossipers, RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
     }
   }
 
@@ -241,29 +240,34 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case value: SendBlock => if (!actorStalled) {
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Received Block")
-      }
       value.s match {
-        case s:Tx => if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+        case s:Tx => if (inbox.keySet.contains(s._2)) {
           s._1 match {
-            case b: Block => {
-              if (verifyBlock(b)) {
+            case bInfo: (Block,BlockId) => {
+              val bid:BlockId = bInfo._2
+              val foundBlock = blocks(bid._1).contains(bid._2)
+              if (!foundBlock) {
+                val b:Block = bInfo._1
                 val bHash = hash(b)
                 val bSlot = b._3
-                val pSlot = b._10
-                val pHash = b._1
-                val foundBlock = blocks(bSlot).contains(bHash)
-                if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-                if (!foundBlock && bSlot <= time) {
-                  val newId = (bSlot, bHash)
-                  foreignChains ::= newId
-                }
-                val foundParent = blocks(pSlot).contains(pHash)
-                if (!foundBlock && !foundParent) {
-                  val ref:ActorRef = inbox(s._2)._1
-                  val pid:BlockId = (pSlot,pHash)
-                  ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
+                if (verifyTx(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
+                  val pSlot = b._10
+                  val pHash = b._1
+                  if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                  if (!foundBlock && bSlot <= time) {
+                    if (holderIndex == 0 && printFlag) {
+                      println("Holder " + holderIndex.toString + " Received Block")
+                    }
+                    val newId = (bSlot, bHash)
+                    send(holderId, gossipers, SendBlock(signTx((b,newId), sessionId, sk_sig, pk_sig)))
+                    foreignChains ::= newId
+                  }
+                  val foundParent = blocks(pSlot).contains(pHash)
+                  if (!foundBlock && !foundParent) {
+                    val ref:ActorRef = inbox(s._2)._1
+                    val pid:BlockId = (pSlot,pHash)
+                    ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
+                  }
                 }
               }
             }
@@ -345,6 +349,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** accepts list of other holders from coordinator */
     case list: List[ActorRef] => {
       holders = list
+      gossipers = gossipSet(holderId,holders)
       var i = 0
       for (holder <- holders) {
         if (self == holder) holderIndex = i
@@ -357,7 +362,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.list match {
         case list: List[ActorRef] => {
           holders = list
-          inbox = Map()
+          gossipers = gossipSet(holderId,holders)
+          if (value.clear) inbox = Map()
           diffuseSent = false
         }
         case _ =>
@@ -386,6 +392,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** prints inbox */
     case Inbox => {
       var i = 0
+      println("Holder "+holderIndex.toString+":"+bytes2hex(sessionId.data))
       for (entry <- inbox) {
         println(i.toString+" "+bytes2hex(entry._1.data))
         i+=1
