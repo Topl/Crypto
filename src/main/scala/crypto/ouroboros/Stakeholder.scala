@@ -5,6 +5,7 @@ import bifrost.crypto.hash.FastCryptographicHash
 
 import util.control.Breaks._
 import java.io.BufferedWriter
+import scala.util.Random
 
 import io.iohk.iodb.ByteArrayWrapper
 
@@ -120,7 +121,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       foreignChains = foreignChains.dropRight(1)
     } else {
       if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block")
-      send(holderId, holders, RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
+      send(holderId, List(Random.shuffle(holders).head), RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
       foreignChains = foreignChains.dropRight(1)
     }
   }
@@ -274,14 +275,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case value: ReturnBlock => if (!actorStalled) {
+      if (holderIndex == 0 && printFlag) {
+        println("Holder " + holderIndex.toString + " Got Block Back")
+      }
       value.s match {
         case s:Tx => if (verifyTx(s) && inbox.keySet.contains(s._2)) {
           s._1 match {
             case b: Block => {
               if (verifyBlock(b)) {
-                if (holderIndex == 0 && printFlag) {
-                  println("Holder " + holderIndex.toString + " Got Block Back")
-                }
                 val bHash = hash(b)
                 val bSlot = b._3
                 val pSlot = b._10
@@ -307,7 +308,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case s:Tx => {
           if (verifyTx(s) && inbox.keySet.contains(s._2)) {
-            if (holderIndex == 0 && printFlag||true) {
+            if (holderIndex == 0 && printFlag) {
               println("Holder " + holderIndex.toString + " Was Requested Block")
             }
             val ref = inbox(s._2)._1
@@ -315,8 +316,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case id:BlockId => {
                 if (blocks(id._1).contains(id._2)) {
                   val returnedBlock = blocks(id._1)(id._2)
-                  ref ! ReturnBlock(returnedBlock,signTx(serialize(returnedBlock),sessionId,sk_sig,pk_sig))
-                  if (holderIndex == 0 && printFlag||true) {
+                  ref ! ReturnBlock(signTx(returnedBlock,sessionId,sk_sig,pk_sig))
+                  if (holderIndex == 0 && printFlag) {
                     println("Holder " + holderIndex.toString + " Returned Block")
                   }
                 }
