@@ -64,9 +64,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   }
 
   def updateChain = {
-    val ci = foreignChains.last
     var bool = true
-    var tine:Chain = Array(ci)
+    var tine:Chain = foreignChains.last._1
+    var counter:Int = foreignChains.last._2
+    var previousLen:Int = foreignChains.last._3
     var prefix:Slot = 0
     breakable{
       while(bool) {
@@ -84,7 +85,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               break
             }
           }
-          case _ => bool = false
+          case _ => {
+            if (tine.length == previousLen) {counter+=1} else {counter=0}
+            bool = false
+          }
         }
       }
     }
@@ -104,7 +108,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         trueChain &&= verifySubChain(tine,prefix)
       }
       if(trueChain) {
-        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Chain")
+        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
         val (rLocalState,rMemPool) = revertLocalState(localState,subChain(localChain,prefix+1,currentSlot),memPool)
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
@@ -120,8 +124,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       foreignChains = foreignChains.dropRight(1)
     } else {
-      if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block")
-      send(holderId,gossipers, RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
+      if (counter>tineMaxTries) {
+        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Dropping Tine")
+        foreignChains = foreignChains.dropRight(1)
+      } else {
+        foreignChains.update(foreignChains.length-1,(tine,counter,tine.length))
+        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block C:"+counter.toString+"L:"+tine.length)
+        send(holderId,gossipers, RequestBlock(signTx(tine.head,sessionId,sk_sig,pk_sig)))
+      }
     }
   }
 
@@ -131,24 +141,20 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       updateEpoch
     )
     if (currentSlot == time) {
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Update KES")
-      }
-      time(
-        malkinKey = kes.updateKey(malkinKey, currentSlot)
-      )
-
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " ForgeBlocks")
-      }
-      time(
-        if (foreignChains.isEmpty) {
-          forgeBlock
+      time(if (kes.getKeyTimeStep(malkinKey) < currentSlot) {
+        if (holderIndex == 0 && printFlag) {
+          println("Holder " + holderIndex.toString + " Update KES")
         }
-      )
+        malkinKey = kes.updateKey(malkinKey, currentSlot)
+      })
+
+      time(if (foreignChains.isEmpty) {
+        if (holderIndex == 0 && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
+        forgeBlock
+      })
     }
     localState = updateLocalState(localState, Array(localChain(currentSlot)))
-    if (dataOutFlag && currentSlot % dataOutInterval == 0) {
+    if (dataOutFlag && time % dataOutInterval == 0) {
       coordinatorRef ! WriteFile
     }
   }
@@ -260,7 +266,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                     }
                     val newId = (bSlot, bHash)
                     send(holderId, gossipers, SendBlock(signTx((b,newId), sessionId, sk_sig, pk_sig)))
-                    foreignChains ::= newId
+                    foreignChains = Array((Array(newId),0,0))++foreignChains
                   }
                   val foundParent = blocks(pSlot).contains(pHash)
                   if (!foundBlock && !foundParent) {
@@ -459,7 +465,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         case fileWriter: BufferedWriter => {
           val fileString = (
             holderIndex.toString + " "
-              + currentSlot.toString + " "
+              + time.toString + " "
               + alpha_Ep.toString + " "
               + blocksForged.toString + " "
               + getActiveSlots(localChain).toString + " "
