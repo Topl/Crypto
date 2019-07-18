@@ -279,25 +279,31 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case value: ReturnBlock => if (!actorStalled) {
-      if (holderIndex == 0 && printFlag) {
-        println("Holder " + holderIndex.toString + " Got Block Back")
-      }
       value.s match {
-        case s:Tx => if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+        case s:Tx => if (inbox.keySet.contains(s._2)) {
           s._1 match {
-            case b: Block => {
-              if (verifyBlock(b)) {
+            case bInfo: (Block,BlockId) => {
+              val bid:BlockId = bInfo._2
+              val foundBlock = blocks(bid._1).contains(bid._2)
+              if (!foundBlock) {
+                val b:Block = bInfo._1
                 val bHash = hash(b)
                 val bSlot = b._3
-                val pSlot = b._10
-                val pHash = b._1
-                val foundBlock = blocks(bSlot).contains(bHash)
-                if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-                val foundParent = blocks(pSlot).contains(pHash)
-                if (!foundBlock && !foundParent) {
-                  val ref:ActorRef = inbox(s._2)._1
-                  val pid:BlockId = (pSlot,pHash)
-                  ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
+                if (verifyTx(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
+                  val pSlot = b._10
+                  val pHash = b._1
+                  if (!foundBlock) {
+                    blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                    if (holderIndex == 0 && printFlag) {
+                      println("Holder " + holderIndex.toString + " Got Block Back")
+                    }
+                  }
+                  val foundParent = blocks(pSlot).contains(pHash)
+                  if (!foundBlock && !foundParent) {
+                    val ref:ActorRef = inbox(s._2)._1
+                    val pid:BlockId = (pSlot,pHash)
+                    ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
+                  }
                 }
               }
             }
@@ -320,7 +326,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case id:BlockId => {
                 if (blocks(id._1).contains(id._2)) {
                   val returnedBlock = blocks(id._1)(id._2)
-                  ref ! ReturnBlock(signTx(returnedBlock,sessionId,sk_sig,pk_sig))
+                  ref ! ReturnBlock(signTx((returnedBlock,id),sessionId,sk_sig,pk_sig))
                   if (holderIndex == 0 && printFlag) {
                     println("Holder " + holderIndex.toString + " Returned Block")
                   }
@@ -335,7 +341,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     /** validates diffused string from other holders and stores in inbox */
-    case value: Tx => if (!actorStalled) {
+    case value: Tx => {
       if (verifyTx(value) && !inbox.keySet.contains(value._2)) {
         val sid = value._2
         value._1 match {
@@ -402,7 +408,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     /** prints stats */
-    case Status => {
+    case Verify => {
       val trueChain = verifyChain(localChain, genBlockHash)
       println("Holder "+holderIndex.toString + ": t = " + currentSlot.toString + ", alpha = " + alpha_Ep.toString + ", blocks forged = "
         + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString + ", Valid chain = "
@@ -425,6 +431,21 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
         println("e:" + bytes2hex(eta(localChain, currentEpoch)) + "\n")
       }
+      sender() ! "done"
+    }
+
+    /** prints stats */
+    case Status => {
+      println("Holder "+holderIndex.toString + ": t = " + currentSlot.toString + ", alpha = " + alpha_Ep.toString + ", blocks forged = "
+        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString)
+      var chainBytes:Array[Byte] = Array()
+      for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
+        getBlock(id) match {
+          case b:Block => chainBytes ++= FastCryptographicHash(serialize(b))
+          case _ =>
+        }
+      }
+      println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
       sender() ! "done"
     }
 

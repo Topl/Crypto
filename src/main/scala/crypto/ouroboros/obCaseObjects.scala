@@ -13,6 +13,7 @@ case object Update
 case object WriteFile
 case object StallActor
 case object ReadCommand
+case object Verify
 case class CoordRef(ref: Any)
 case class GetTime(t1:Long)
 case class Run(max:Int)

@@ -72,6 +72,10 @@ class Coordinator extends Actor
       send(holders,Status)
     }
 
+    case Verify => {
+      send(holders,Verify)
+    }
+
     case value:NewDataFile => {
       if(dataOutFlag) {
         fileWriter = new BufferedWriter(new FileWriter(value.name))
@@ -116,6 +120,7 @@ class Coordinator extends Actor
   def command(s:String): Unit = {
     s.trim match {
       case "status" => self ! Status
+      case "verify" => self ! Verify
       case "pause" => send(holders,StallActor)
       case "inbox" => send(holders,Inbox)
       case "stall0" => send(holders(0),StallActor)
