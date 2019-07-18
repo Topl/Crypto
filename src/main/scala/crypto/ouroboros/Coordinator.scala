@@ -30,9 +30,9 @@ class Coordinator extends Actor
       holders = List.fill(value.n){
         i+=1
         if (randomFlag) {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(Array(i.toByte))), "Holder:" + i.toString)
+          context.actorOf(Stakeholder.props(FastCryptographicHash(Array(i.toByte))), "Holder:" + bytes2hex(FastCryptographicHash(i.toString)))
         } else {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(uuid)), "Holder:" + i.toString)
+          context.actorOf(Stakeholder.props(FastCryptographicHash(uuid)), "Holder:" + bytes2hex(FastCryptographicHash(uuid)))
         }
       }
       println("Sending holders list")
@@ -46,14 +46,16 @@ class Coordinator extends Actor
       val genBlock:Block = forgeGenBlock
       println("Send GenBlock")
       send(holders,GenBlock(genBlock))
+
     }
     /**tells actors to print their inbox */
     case Inbox => send(holders,Inbox)
 
     case value:Run => {
-      println("starting")
+      println("Starting")
       val t0 = System.currentTimeMillis()
       send(holders,StartTime(t0))
+      send(holders,Diffuse)
       send(holders,Run(value.max))
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
@@ -127,14 +129,17 @@ class Coordinator extends Actor
         context.system.terminate
       }
       case "split" => {
-        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length))
+        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-2)+1)
         println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         send(holders1,Party(holders1))
+        send(holders1,Diffuse)
         send(holders2,Party(holders2))
+        send(holders2,Diffuse)
       }
       case "join" => {
         println("Joining Parties")
         send(holders,Party(holders))
+        send(holders,Diffuse)
       }
       case _ =>
     }

@@ -29,7 +29,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   /** Determines eligibility for a stakeholder to be a slot leader */
   /** Calculates a block with epoch variables */
   def forgeBlock = {
-    //println("F Holder "+holderIndex.toString+" Epoch:"+currentEpoch.toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
     val slot = currentSlot
     val pi_y: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
@@ -121,13 +120,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       foreignChains = foreignChains.dropRight(1)
     } else {
-      if (holderIndex == 0) println("Holder " + holderIndex.toString + " Looking for Parent Block")
+      if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block")
       send(holderId, holders, RequestBlock(tine.head._2,tine.head._1,diffuse(holderData, holderId, sk_sig)))
     }
   }
 
   def updateSlot = {
-    if (holderIndex == 0) println("Slot = " + currentSlot.toString)
+    if (holderIndex == 0 && currentSlot == time) println("Slot = " + currentSlot.toString)
     time(
       updateEpoch
     )
@@ -143,7 +142,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         println("Holder " + holderIndex.toString + " ForgeBlocks")
       }
       time(
-        if (diffuseSent && foreignChains.isEmpty) {
+        if (foreignChains.isEmpty) {
           forgeBlock
         }
       )
@@ -218,11 +217,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           updating = true
           if (time > tMax) {
             timers.cancelAll
-          } else {
-            if (!diffuseSent) {
-              send(holderId, holders, diffuse(holderData, holderId, sk_sig))
-              diffuseSent = true
-            }
+          } else if (diffuseSent) {
             coordinatorRef ! GetTime
             if (time > currentSlot) {
               while (time > currentSlot) {
@@ -258,7 +253,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               val pHash = b._1
               val foundBlock = blocks(bSlot).contains(bHash)
               if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-              if (!foundBlock && bSlot <= currentSlot) {
+              if (!foundBlock && bSlot <= currentSlot && foreignChains.isEmpty) {
                 val newId = (bSlot, bHash)
                 foreignChains ::= newId
               }
@@ -339,6 +334,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** validates diffused string from other holders and stores in inbox */
     case value: String => if (!actorStalled) {
       if (verifyTxStamp(value)) inbox = inbox + value + "\n"
+      sender() ! "done"
     }
 
     /** accepts list of other holders from coordinator */
@@ -354,12 +350,18 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case value:Party => {
       value.list match {
-        case l: List[ActorRef] => {
-          holders = l
+        case list: List[ActorRef] => {
+          holders = list
           inbox = ""
           diffuseSent = false
         }
+        case _ =>
       }
+      sender() ! "done"
+    }
+
+    case Diffuse => {
+      sendAndWait(holderId, holders, diffuse(holderData, holderId, sk_sig))
       sender() ! "done"
     }
 

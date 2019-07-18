@@ -27,6 +27,7 @@ trait obMethods
   var history_eta:Array[Eta] = Array()
   var memPool:MemPool = List()
   var holderIndex:Int = -1
+  var diffuseSent = false
   val vrf = new obVrf
   val kes = new obKes
   val sig = new obSig
@@ -278,6 +279,18 @@ trait obMethods
         holder ! command
       }
     }
+  }
+
+  def sendAndWait(holderId:String,holders:List[ActorRef],command: String) = {
+    for (holder <- holders){
+      implicit val timeout = Timeout(waitTime)
+      if (s"${holder.path}" != holderId) {
+        val future = holder ? command
+        val result = Await.result(future, timeout.duration)
+        assert(result == "done")
+      }
+    }
+    diffuseSent = true
   }
 
   /**
