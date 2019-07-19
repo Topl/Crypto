@@ -53,7 +53,7 @@ class Coordinator extends Actor
 
     case value:Run => {
       println("Starting")
-      val t0 = System.currentTimeMillis()
+      t0 = System.currentTimeMillis()
       send(holders,StartTime(t0))
       println("Diffuse Holder Info")
       send(holders,Diffuse)
@@ -106,11 +106,32 @@ class Coordinator extends Actor
     }
 
     case ReadCommand => {
+      val t1 = System.currentTimeMillis()
+      t = ((t1 - t0) / slotT).toInt
       if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
         val f = new File("/tmp/scorex/test-data/crypto/cmd")
         val cmd: String = ("cat" #< f).!!
         f.delete
-        command(cmd)
+        val cmdList = cmd.split("\n")
+        for (line<-cmdList) {
+          val com = line.trim.split(" ")
+          com(0) match {
+            case s:String => {
+              if (com.length == 2){
+                com(1).toInt match {
+                  case i:Int => cmdQueue += (i->s)
+                  case _ =>
+                }
+              } else {
+                cmdQueue += (t->s)
+              }
+            }
+            case _ =>
+          }
+        }
+      }
+      if (cmdQueue.keySet.contains(t)) {
+        command(cmdQueue(t))
       }
     }
 
@@ -168,7 +189,7 @@ class Coordinator extends Actor
   def forgeGenBlock: Block = {
     val bn:Int = 0
     val ps:Slot = -1
-    val slot:Slot = t
+    val slot:Slot = 0
     val pi:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("NONCE"))
     val rho:Rho = vrf.vrfProofToHash(pi)
     val pi_y:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))

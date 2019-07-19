@@ -44,7 +44,9 @@ trait coordinatorVars
     FastCryptographicHash(Array(0x00.toByte))
   }
   //slot
-  var t = 0
+  var t:Slot = 0
+  var t0:Long = 0
+  var cmdQueue:Map[Int,String] = Map()
   //set of keys so gensis block can be signed and verified by verifyBlock
   val seed:Array[Byte] = if(randomFlag){
     FastCryptographicHash(uuid)

@@ -28,7 +28,7 @@ trait parameters {
   val dataOutInterval = epochLength
 
   // duration of slot in milliseconds
-  val slotT:Long = 100
+  val slotT:Long = 200
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds
@@ -36,7 +36,7 @@ trait parameters {
   // duration between update tics that actors send to themselves
   val updateTime = 1.millis
 
-  val commandUpdateTime = 200.millis
+  val commandUpdateTime = slotT.toInt.millis
 
   //uses randomness for public key seed and initial stake, set to false for deterministic run
   //still depends on number of actors
