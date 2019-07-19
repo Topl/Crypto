@@ -37,11 +37,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,currentSlot-1))) match {case b:Block => b}
         val bn:Int = pb._9 + 1
         val ps:Slot = pb._3
-        val blockTx: Tx = signTx(forgeBytes, sessionId, sk_sig, pk_sig)
+        val blockTx: Tx = signTx((forgeBytes,forgerReward), sessionId, sk_sig, pk_sig)
         val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
-        val state: State = Map(blockTx -> forgerReward)
+        val state: State = List(blockTx)
         val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
         val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)

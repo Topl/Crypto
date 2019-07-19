@@ -1,11 +1,13 @@
 package crypto.ouroboros
 
+import io.iohk.iodb.ByteArrayWrapper
+
 import scala.concurrent.duration._
 
 trait parameters {
-  val forgeBytes ="FORGER_REWARD".getBytes
-  val transferBytes = "TRANSFER".getBytes
-  val genesisBytes = "GENESIS".getBytes
+  val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
+  val transferBytes = ByteArrayWrapper("TRANSFER".getBytes)
+  val genesisBytes = ByteArrayWrapper("GENESIS".getBytes)
   val forgerReward = BigDecimal(1.0e8).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
   val keyLength = 3*32
 

@@ -214,12 +214,12 @@ class Coordinator extends Actor
         }
       }
       signTx(
-        genesisBytes
-          ++hex2bytes(genKeys(s"${ref.path}").split(";")(0))
+        (genesisBytes,
+          hex2bytes(genKeys(s"${ref.path}").split(";")(0))
           ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
-          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)),
-        ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig) -> BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-    }}.toMap
+          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)), BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt),
+        ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
+    }}
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
     val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
