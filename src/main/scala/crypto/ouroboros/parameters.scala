@@ -36,7 +36,7 @@ trait parameters {
   // duration between update tics that actors send to themselves
   val updateTime = 1.millis
 
-  val commandUpdateTime = slotT.toInt.millis
+  val commandUpdateTime = (slotT/2).toInt.millis
 
   //uses randomness for public key seed and initial stake, set to false for deterministic run
   //still depends on number of actors

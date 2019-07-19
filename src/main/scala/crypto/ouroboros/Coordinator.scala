@@ -62,8 +62,8 @@ class Coordinator extends Actor
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
 
-    case GetTime => {
-      val t1 = System.currentTimeMillis()
+    case GetTime => if (!actorStalled) {
+      val t1 = System.currentTimeMillis()-tp
       sender() ! GetTime(t1)
     }
 
@@ -106,9 +106,10 @@ class Coordinator extends Actor
     }
 
     case ReadCommand => {
-      val t1 = System.currentTimeMillis()
+      val t1 = System.currentTimeMillis()-tp
       t = ((t1 - t0) / slotT).toInt
       if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
+        println("-----------------------------------------------------------")
         val f = new File("/tmp/scorex/test-data/crypto/cmd")
         val cmd: String = ("cat" #< f).!!
         f.delete
@@ -132,7 +133,13 @@ class Coordinator extends Actor
       }
       if (cmdQueue.keySet.contains(t)) {
         command(cmdQueue(t))
+        cmdQueue -= t
       }
+    }
+    case StallActor => {
+      tp = System.currentTimeMillis()-tp
+      if (!actorStalled) {actorStalled = true}
+      else {actorStalled = false}
     }
 
     case _ => println("received unknown message")
@@ -142,7 +149,8 @@ class Coordinator extends Actor
     s.trim match {
       case "status" => self ! Status
       case "verify" => self ! Verify
-      case "pause" => send(holders,StallActor)
+      case "stall" => send(holders,StallActor)
+      case "pause" => self ! StallActor
       case "inbox" => send(holders,Inbox)
       case "stall0" => send(holders(0),StallActor)
       case "write" => fileWriter match {
