@@ -215,9 +215,9 @@ class Coordinator extends Actor
       }
       signTx(
         (genesisBytes,
-          hex2bytes(genKeys(s"${ref.path}").split(";")(0))
+          ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))
           ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
-          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2)), BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt),
+          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2))), BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt),
         ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
     }}
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)

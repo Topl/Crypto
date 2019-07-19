@@ -733,6 +733,11 @@ trait obMethods
                     val forgerBalance = nls.keySet.contains(pk_f)
                     val validTransfer = pk_s != pk_r
                     val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+
+                    if (memPool.keySet.contains(trans._4)){
+                      memPool += (trans._4->trans)
+                    }
+
                     if (validSender && validRecip && validTransfer) {
                       if (pk_s == pk_r && pk_s != pk_f) {
                         val s_net:BigInt = nls(pk_s)._1
@@ -752,7 +757,6 @@ trait obMethods
                         nls -= pk_r
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        nmem ++= List(trans)
                       } else if (pk_f == pk_r) {
                         val s_net:BigInt = nls(pk_s)._1
                         val r_net:BigInt = nls(pk_r)._1
@@ -762,7 +766,6 @@ trait obMethods
                         nls -= pk_r
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        nmem ++= List(trans)
                       } else {
                         val s_net:BigInt = nls(pk_s)._1
                         val r_net:BigInt = nls(pk_r)._1
@@ -776,7 +779,6 @@ trait obMethods
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
                         if (f_new > 0) nls += (pk_f -> (f_new,true))
-                        nmem ++= List(trans)
                       }
                     } else if (validRecip && validTransfer) {
                       if (pk_f == pk_s) {
@@ -787,7 +789,6 @@ trait obMethods
                         nls -= pk_r
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        nmem ++= List(trans)
                       } else if (pk_f == pk_r) {
                         val s_net:BigInt = 0
                         val r_net:BigInt = nls(pk_r)._1
@@ -796,7 +797,6 @@ trait obMethods
                         nls -= pk_r
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        nmem ++= List(trans)
                       } else {
                         val s_net:BigInt = 0
                         val r_net:BigInt = nls(pk_r)._1
@@ -809,7 +809,6 @@ trait obMethods
                         if (s_new > 0) nls += (pk_s -> (s_new,true))
                         if (r_new > 0) nls += (pk_r -> (r_new,true))
                         if (f_new > 0) nls += (pk_f -> (f_new,true))
-                        nmem ++= List(trans)
                       }
                     }
                   }
