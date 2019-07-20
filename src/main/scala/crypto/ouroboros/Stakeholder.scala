@@ -5,9 +5,11 @@ import bifrost.crypto.hash.FastCryptographicHash
 
 import util.control.Breaks._
 import java.io.BufferedWriter
-import scala.util.Random
 
+import scala.util.Random
 import io.iohk.iodb.ByteArrayWrapper
+
+import scala.math.BigInt
 
 /**
   * Stakeholder actor that executes the staking protocol and communicates with other stakeholders,
@@ -25,6 +27,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   val holderId:ActorPath = self.path
   val sessionId:Sid = ByteArrayWrapper(FastCryptographicHash(holderId.toString))
   val publicKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
+  val pkw:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
 
   /** Determines eligibility for a stakeholder to be a slot leader */
   /** Calculates a block with epoch variables */
@@ -67,7 +70,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     var bool = true
     var tine:Chain = foreignChains.last._1
     var counter:Int = foreignChains.last._2
-    var previousLen:Int = foreignChains.last._3
+    val previousLen:Int = foreignChains.last._3
     var prefix:Slot = 0
     breakable{
       while(bool) {
@@ -340,6 +343,34 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               }
               case _ =>
             }
+          }
+        }
+        case _ =>
+      }
+    }
+
+    case value: IssueTx => {
+      value.s match {
+        case data:(PublicKeyW,BigInt) => {
+          val trans:Transfer = signTransfer(sk_sig,pkw,data._1,data._2)
+          send(holderId, gossipers, SendTx(signTx(trans, sessionId, sk_sig, pk_sig)))
+        }
+      }
+    }
+
+    case value: SendTx => {
+      value.s match {
+        case tx:Tx => {
+          tx._1 match {
+            case trans:Transfer => {
+              if (!memPool.keySet.contains(trans._4)) {
+                if (verifyTransfer(trans) && verifyTx(tx)) {
+                  memPool += (trans._4->trans)
+                  send(holderId, gossipers, SendTx(signTx(trans, sessionId, sk_sig, pk_sig)))
+                }
+              }
+            }
+            case _ =>
           }
         }
         case _ =>
