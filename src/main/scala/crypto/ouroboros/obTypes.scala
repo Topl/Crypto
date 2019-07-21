@@ -19,7 +19,7 @@ trait obTypes {
   type Pi = Array[Byte]
   type Tx = (Any,Sid,Sig,PublicKey)
   type Transfer = (PublicKeyW,PublicKeyW,BigInt,Sid,Sig)
-  type State = List[Tx]
+  type State = List[Any]
   type LocalState = Map[ByteArrayWrapper,(BigInt,Boolean)]
   type MemPool = Map[Sid,Transfer]
   type Tr = Double

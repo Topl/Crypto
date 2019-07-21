@@ -549,52 +549,64 @@ trait obMethods
 
           if (slot == 0) {
             for (tx <- state) {
-              if (verifyTx(tx)) {
-                tx._1 match {
-                  case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
-                    if (entry._1 == genesisBytes) {
-                      val delta = entry._3
-                      val netStake:BigInt = 0
-                      val newStake:BigInt = netStake + delta
-                      val pk_g:PublicKeyW = entry._2
-                      if(nls.keySet.contains(pk_g)) nls -= pk_g
-                      nls += (pk_g -> (newStake,true))
+              tx match {
+                case tx:Tx => {
+                  if (verifyTx(tx)) {
+                    tx._1 match {
+                      case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
+                        if (entry._1 == genesisBytes) {
+                          val delta = entry._3
+                          val netStake:BigInt = 0
+                          val newStake:BigInt = netStake + delta
+                          val pk_g:PublicKeyW = entry._2
+                          if(nls.keySet.contains(pk_g)) nls -= pk_g
+                          nls += (pk_g -> (newStake,true))
+                        }
+                      }
+                      case _ =>
                     }
                   }
-                  case _ =>
                 }
+                case _ =>
               }
             }
           }
 
-          if (verifyTx(state.head)) {
-            state.head._1 match {
-              case entry:(ByteArrayWrapper,BigInt) => {
-                val delta = entry._2
-                if (entry._1 == forgeBytes && delta == forgerReward) {
-                  if (nls.keySet.contains(pk_f)) {
-                    val netStake: BigInt = nls(pk_f)._1
-                    val newStake: BigInt = netStake + forgerReward
-                    nls -= pk_f
-                    nls += (pk_f -> (newStake,true))
-                  } else {
-                    val netStake: BigInt = 0
-                    val newStake: BigInt = netStake + forgerReward
-                    nls += (pk_f -> (newStake,true))
+          state.head match {
+            case tx:Tx => {
+              if (verifyTx(tx)) {
+                tx._1 match {
+                  case entry:(ByteArrayWrapper,BigInt) => {
+                    val delta = entry._2
+                    if (entry._1 == forgeBytes && delta == forgerReward) {
+                      if (nls.keySet.contains(pk_f)) {
+                        val netStake: BigInt = nls(pk_f)._1
+                        val newStake: BigInt = netStake + forgerReward
+                        nls -= pk_f
+                        nls += (pk_f -> (newStake,true))
+                      } else {
+                        val netStake: BigInt = 0
+                        val newStake: BigInt = netStake + forgerReward
+                        nls += (pk_f -> (newStake,true))
+                      }
+                    } else {
+                      validForger = false
+                    }
                   }
-                } else {
-                  validForger = false
+                  case _ => validForger = false
                 }
+              } else {
+                validForger = false
               }
-              case _ => validForger = false
             }
+            case _ => validForger = false
           }
 
-          for (tx <- state.tail) {
-            if (verifyTx(tx) && validForger) {
-              tx._1 match {
+          if (validForger) {
+            for (entry <- state.tail) {
+              entry match {
                 case trans:Transfer => {
-                  if (verifyTransfer(trans) && ByteArrayWrapper(tx._4) == pk_sig_f) {
+                  if (verifyTransfer(trans)) {
                     val pk_s:PublicKeyW = trans._1
                     val pk_r:PublicKeyW = trans._2
                     val delta:BigInt = trans._3
@@ -678,13 +690,13 @@ trait obMethods
                     }
                   }
                 }
+                case _ =>
               }
             }
           }
         }
         case _ =>
       }
-
     }
     nls
   }
@@ -701,30 +713,37 @@ trait obMethods
           val pk_sig_f = ByteArrayWrapper(pk_sig)
           var validForger = true
 
-          if (verifyTx(state.head)) {
-            state.head._1 match {
-              case entry:(ByteArrayWrapper,BigInt) => {
-                val delta = entry._2
-                if (entry._1 == forgeBytes) {
-                  if (nls.keySet.contains(pk_f)) {
-                    val netStake:BigInt = nls(pk_f)._1
-                    val newStake:BigInt = netStake - delta
-                    nls -= pk_f
-                    if (newStake > 0) nls += (pk_f -> (newStake,true))
+          state.head match {
+            case tx:Tx => {
+              if (verifyTx(tx)) {
+                tx._1 match {
+                  case entry:(ByteArrayWrapper,BigInt) => {
+                    val delta = entry._2
+                    if (entry._1 == forgeBytes) {
+                      if (nls.keySet.contains(pk_f)) {
+                        val netStake:BigInt = nls(pk_f)._1
+                        val newStake:BigInt = netStake - delta
+                        nls -= pk_f
+                        if (newStake > 0) nls += (pk_f -> (newStake,true))
+                      }
+                    } else {
+                      validForger = false
+                    }
                   }
-                } else {
-                  validForger = false
+                  case _ => validForger = false
                 }
+              } else {
+                validForger = false
               }
-              case _ => validForger = false
             }
+            case _ => validForger = false
           }
 
-          for (tx <- state.tail) {
-            if (verifyTx(tx) && validForger) {
-              tx._1 match {
+          if (validForger) {
+            for (entry <- state.tail) {
+              entry match {
                 case trans:Transfer => {
-                  if (verifyTransfer(trans) && ByteArrayWrapper(tx._4) == pk_sig_f) {
+                  if (verifyTransfer(trans)) {
                     val pk_s:PublicKeyW = trans._1
                     val pk_r:PublicKeyW = trans._2
                     val delta:BigInt = trans._3
@@ -813,6 +832,7 @@ trait obMethods
                     }
                   }
                 }
+                case _ =>
               }
             }
           }

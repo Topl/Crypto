@@ -49,7 +49,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           val delta = entry._2._3
           val pk_s = entry._2._1
           val net = localState(pk_s)._1
-          if (delta<=net) state ::= signTx(entry._2,sessionId,sk_sig,pk_sig)
+          if (delta<=net) state ::= entry._2
         }
         state ::= blockTx
         memPool = Map()
@@ -122,8 +122,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
         val (rLocalState,rMemPool) = revertLocalState(localState,subChain(localChain,prefix+1,currentSlot),memPool)
         for (entry<-rMemPool) {
-          if (!memPool.keySet.contains(entry._1))
+          if (!memPool.keySet.contains(entry._1)) {
             memPool += entry
+            send(holderId, gossipers, SendTx(signTx(entry._2, sessionId, sk_sig, pk_sig)))
+          }
         }
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
@@ -135,7 +137,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case b:Block => {
                 val blockState = b._2
                 for (entry<-blockState) {
-                  entry._1 match {
+                  entry match {
                     case trans:Transfer => if (memPool.keySet.contains(trans._4)) memPool -= trans._4
                     case _ =>
                   }
@@ -341,6 +343,33 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 }
               }
             }
+            case bList: List[(Block,BlockId)] => {
+              for (bInfo <- bList) {
+                val bid:BlockId = bInfo._2
+                val foundBlock = blocks(bid._1).contains(bid._2)
+                if (!foundBlock) {
+                  val b:Block = bInfo._1
+                  val bHash = hash(b)
+                  val bSlot = b._3
+                  if (verifyTx(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
+                    val pSlot = b._10
+                    val pHash = b._1
+                    if (!foundBlock) {
+                      blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                      if (holderIndex == 0 && printFlag) {
+                        println("Holder " + holderIndex.toString + " Got Block Back")
+                      }
+                    }
+                    val foundParent = blocks(pSlot).contains(pHash)
+                    if (!foundBlock && !foundParent) {
+                      val ref:ActorRef = inbox(s._2)._1
+                      val pid:BlockId = (pSlot,pHash)
+                      ref ! RequestBlock(signTx(pid,sessionId,sk_sig,pk_sig))
+                    }
+                  }
+                }
+              }
+            }
             case _ =>
           }
         }
@@ -351,7 +380,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     case value: RequestBlock => if (!actorStalled) {
       value.s match {
         case s:Tx => {
-          if (verifyTx(s) && inbox.keySet.contains(s._2)) {
+          if (inbox.keySet.contains(s._2)) {
             if (holderIndex == 0 && printFlag) {
               println("Holder " + holderIndex.toString + " Was Requested Block")
             }
@@ -359,10 +388,28 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             s._1 match {
               case id:BlockId => {
                 if (blocks(id._1).contains(id._2)) {
-                  val returnedBlock = blocks(id._1)(id._2)
-                  ref ! ReturnBlock(signTx((returnedBlock,id),sessionId,sk_sig,pk_sig))
-                  if (holderIndex == 0 && printFlag) {
-                    println("Holder " + holderIndex.toString + " Returned Block")
+                  if (verifyTx(s)) {
+                    val returnedBlock = blocks(id._1)(id._2)
+                    ref ! ReturnBlock(signTx((returnedBlock,id),sessionId,sk_sig,pk_sig))
+                    if (holderIndex == 0 && printFlag) {
+                      println("Holder " + holderIndex.toString + " Returned Block")
+                    }
+                  }
+                }
+              }
+              case entry:(BlockId,Int) => {
+                val (id,tries) = entry
+                if (blocks(id._1).contains(id._2)) {
+                  if (verifyTx(s)) {
+                    val returnedBlock = blocks(id._1)(id._2)
+                    var returnedBlockList:List[(Block,BlockId)] = List()
+                    for (bid<-subChain(localChain,id._1-confirmationDepth*tries,id._1-1)) {
+                      if (bid._1 > -1) returnedBlockList ::= (getBlock(bid),bid)
+                    }
+                    ref ! ReturnBlock(signTx((returnedBlock,id),sessionId,sk_sig,pk_sig))
+                    if (holderIndex == 0 && printFlag) {
+                      println("Holder " + holderIndex.toString + " Returned Blocks")
+                    }
                   }
                 }
               }
@@ -390,9 +437,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           tx._1 match {
             case trans:Transfer => {
               if (!memPool.keySet.contains(trans._4)) {
-                if (verifyTransfer(trans) && verifyTx(tx)) {
-                  memPool += (trans._4->trans)
-                  send(holderId, gossipers, SendTx(value.s))
+                val delta:BigInt = trans._3
+                val pk_s:PublicKeyW = trans._1
+                val net = localState(pk_s)._1
+                if (delta<=net) {
+                  if (verifyTransfer(trans) && verifyTx(tx)) {
+                    memPool += (trans._4->trans)
+                    send(holderId, gossipers, SendTx(value.s))
+                  }
                 }
               }
             }

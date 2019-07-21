@@ -15,7 +15,7 @@ trait parameters {
   //max random transaction delta
   val maxTransfer = 1.0e7
 
-  val forgerReward:BigInt = BigDecimal(1.0e7).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+  val forgerReward:BigInt = BigDecimal(1.0e5).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
   //percent of transaction amount taken as fee by the forger
   val transferFee = 0.01
 
@@ -23,7 +23,7 @@ trait parameters {
   val f_s = 0.9
 
   //epoch length
-  val confirmationDepth:Int = 10
+  val confirmationDepth:Int = 100
   val epochLength:Int = 3*confirmationDepth
 
   val numGossipers = 6
@@ -33,7 +33,7 @@ trait parameters {
   val dataOutInterval = 10
 
   // duration of slot in milliseconds
-  val slotT:Long = 500
+  val slotT:Long = 10000
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds
