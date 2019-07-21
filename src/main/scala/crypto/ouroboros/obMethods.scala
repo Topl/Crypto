@@ -571,15 +571,15 @@ trait obMethods
             state.head._1 match {
               case entry:(ByteArrayWrapper,BigInt) => {
                 val delta = entry._2
-                if (entry._1 == forgeBytes) {
+                if (entry._1 == forgeBytes && delta == forgerReward) {
                   if (nls.keySet.contains(pk_f)) {
                     val netStake: BigInt = nls(pk_f)._1
-                    val newStake: BigInt = netStake + delta
+                    val newStake: BigInt = netStake + forgerReward
                     nls -= pk_f
                     nls += (pk_f -> (newStake,true))
                   } else {
                     val netStake: BigInt = 0
-                    val newStake: BigInt = netStake + delta
+                    val newStake: BigInt = netStake + forgerReward
                     nls += (pk_f -> (newStake,true))
                   }
                 } else {
@@ -734,7 +734,7 @@ trait obMethods
                     val validTransfer = pk_s != pk_r
                     val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
 
-                    if (memPool.keySet.contains(trans._4)){
+                    if (!memPool.keySet.contains(trans._4)){
                       memPool += (trans._4->trans)
                     }
 

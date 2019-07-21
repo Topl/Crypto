@@ -44,7 +44,15 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val pi: Pi = vrf.vrfProof(sk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"))
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
-        val state: State = List(blockTx)
+        var state: State = List()
+        for (entry<-memPool) {
+          val delta = entry._2._3
+          val pk_s = entry._2._1
+          val net = localState(pk_s)._1
+          if (delta<=net) state ::= signTx(entry._2,sessionId,sk_sig,pk_sig)
+        }
+        state ::= blockTx
+        memPool = Map()
         val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
         val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, state, slot, cert, rho, pi, sig, pk_kes,bn,ps)
@@ -104,7 +112,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       val bnl = {getBlock(localChain(lastActiveSlot(localChain,currentSlot))) match {case b:Block => b._9}}
       if(s1 - prefix < confirmationDepth && bnl < bnt) {
         trueChain = true
-      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,time))) {
+      } else if (getActiveSlots(tine) > getActiveSlots(subChain(localChain,prefix,currentSlot))) {
         trueChain = true
       }
       if (trueChain) {
@@ -113,15 +121,32 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       if(trueChain) {
         if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
         val (rLocalState,rMemPool) = revertLocalState(localState,subChain(localChain,prefix+1,currentSlot),memPool)
+        for (entry<-rMemPool) {
+          if (!memPool.keySet.contains(entry._1))
+            memPool += entry
+        }
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
         for (id <- tine) {
-          if (id._1 > -1) localChain.update(id._1,id)
+          if (id._1 > -1) {
+            localChain.update(id._1,id)
+            getBlock(id) match {
+              case b:Block => {
+                val blockState = b._2
+                for (entry<-blockState) {
+                  entry._1 match {
+                    case trans:Transfer => if (memPool.keySet.contains(trans._4)) memPool -= trans._4
+                    case _ =>
+                  }
+                }
+              }
+              case _ =>
+            }
+          }
         }
         localState = history_state(prefix)
         eta_Ep = history_eta(prefix/epochLength)
-        memPool = rMemPool
         currentSlot = prefix
         currentEpoch = currentSlot/epochLength
       }
@@ -352,21 +377,22 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     case value: IssueTx => {
       value.s match {
         case data:(PublicKeyW,BigInt) => {
+          if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
           val trans:Transfer = signTransfer(sk_sig,pkw,data._1,data._2)
           send(holderId, gossipers, SendTx(signTx(trans, sessionId, sk_sig, pk_sig)))
         }
       }
     }
 
-    case value: SendTx => {
+    case value: SendTx => if (!actorStalled) {
       value.s match {
-        case tx:Tx => {
+        case tx:Tx => if (inbox.keySet.contains(tx._2)) {
           tx._1 match {
             case trans:Transfer => {
               if (!memPool.keySet.contains(trans._4)) {
                 if (verifyTransfer(trans) && verifyTx(tx)) {
                   memPool += (trans._4->trans)
-                  send(holderId, gossipers, SendTx(signTx(trans, sessionId, sk_sig, pk_sig)))
+                  send(holderId, gossipers, SendTx(value.s))
                 }
               }
             }
@@ -474,7 +500,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** prints stats */
     case Status => {
       println("Holder "+holderIndex.toString + ": t = " + currentSlot.toString + ", alpha = " + alpha_Ep.toString + ", blocks forged = "
-        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString)
+        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString+", MemPool Size = "+memPool.size)
       var chainBytes:Array[Byte] = Array()
       for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
         getBlock(id) match {

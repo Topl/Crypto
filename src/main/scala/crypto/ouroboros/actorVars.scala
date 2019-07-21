@@ -37,6 +37,7 @@ trait coordinatorVars
     with utils {
   //empty list of stake holders
   var holders: List[ActorRef] = List()
+  var holderKeys:Map[ActorRef,PublicKeyW] = Map()
   //initial nonce for genesis block
   val eta0:Eta = if(randomFlag){
     FastCryptographicHash(uuid)

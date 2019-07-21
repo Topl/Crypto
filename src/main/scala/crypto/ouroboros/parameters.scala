@@ -8,11 +8,14 @@ trait parameters {
   val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
   val transferBytes = ByteArrayWrapper("TRANSFER".getBytes)
   val genesisBytes = ByteArrayWrapper("GENESIS".getBytes)
-  val forgerReward = BigDecimal(1.0e8).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
   val keyLength = 3*32
 
   //max initial stake
   val initStakeMax = 1.0e9
+  //max random transaction delta
+  val maxTransfer = 1.0e7
+
+  val forgerReward:BigInt = BigDecimal(1.0e7).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
   //percent of transaction amount taken as fee by the forger
   val transferFee = 0.01
 
@@ -20,17 +23,17 @@ trait parameters {
   val f_s = 0.9
 
   //epoch length
-  val confirmationDepth:Int = 30
+  val confirmationDepth:Int = 10
   val epochLength:Int = 3*confirmationDepth
 
   val numGossipers = 6
   val tineMaxTries = 10
 
   // data write interval in slots
-  val dataOutInterval = epochLength
+  val dataOutInterval = 10
 
   // duration of slot in milliseconds
-  val slotT:Long = 200
+  val slotT:Long = 500
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds
@@ -42,7 +45,7 @@ trait parameters {
 
   //uses randomness for public key seed and initial stake, set to false for deterministic run
   //still depends on number of actors
-  val randomFlag = false
+  val randomFlag = true
 
   // skips some verification for faster performance if true
   val performanceFlag = false

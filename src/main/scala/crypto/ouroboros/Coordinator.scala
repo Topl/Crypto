@@ -65,6 +65,8 @@ class Coordinator extends Actor
     case GetTime => if (!actorStalled) {
       val t1 = System.currentTimeMillis()-tp
       sender() ! GetTime(t1)
+    } else {
+      sender() ! GetTime(tp)
     }
 
     //tells actors to print status */
@@ -135,6 +137,12 @@ class Coordinator extends Actor
         command(cmdQueue(t))
         cmdQueue -= t
       }
+      if (!actorStalled) {
+        for (i <- 1 to 30){
+          val r = Random.nextInt(3)
+          if (r==1) issueTx
+        }
+      }
     }
     case StallActor => {
       tp = System.currentTimeMillis()-tp
@@ -143,6 +151,22 @@ class Coordinator extends Actor
     }
 
     case _ => println("received unknown message")
+  }
+
+  def issueTx: Unit = {
+    val holder1 = holders(Random.nextInt(holders.length))
+    val holder2 = holders(Random.nextInt(holders.length))
+    var delta:BigInt = 0
+    if (holder1 == holder2) {
+      delta = 0
+    } else {
+      delta = BigDecimal(if (randomFlag) {
+        maxTransfer*Random.nextDouble
+      } else {
+        maxTransfer
+      }).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+    }
+    holder1 ! IssueTx((holderKeys(holder2),delta))
   }
 
   def command(s:String): Unit = {
@@ -205,21 +229,21 @@ class Coordinator extends Actor
     val h:Hash = ByteArrayWrapper(eta0)
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
-    val state: State = holders.map{ case ref:ActorRef => {
-      val initStake = {
-        if (randomFlag) {
-          initStakeMax*r.nextDouble
-        } else {
-          initStakeMax
+    val state: State = holders.map{
+      case ref:ActorRef => {
+        val initStake = {
+          if (randomFlag) {
+            initStakeMax*r.nextDouble
+          } else {
+            initStakeMax
+          }
         }
+        println(initStake)
+        val pkw = ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))++hex2bytes(genKeys(s"${ref.path}").split(";")(1))++hex2bytes(genKeys(s"${ref.path}").split(";")(2)))
+        holderKeys += (ref-> pkw)
+        signTx((genesisBytes, pkw, BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
       }
-      signTx(
-        (genesisBytes,
-          ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))
-          ++hex2bytes(genKeys(s"${ref.path}").split(";")(1))
-          ++hex2bytes(genKeys(s"${ref.path}").split(";")(2))), BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt),
-        ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
-    }}
+    }
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
     val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
