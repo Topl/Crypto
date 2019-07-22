@@ -498,8 +498,8 @@ trait obMethods
         }
       }
 
-      if(!bool) sharedFlags.throwError
-      if (sharedFlags.error) {
+      if(!bool) sharedData.throwError
+      if (sharedData.error) {
         for (id<-subChain(localChain,0,prefix)++tine) {
           if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+bytes2hex(id._2.data))
         }
@@ -533,7 +533,9 @@ trait obMethods
 
   def signTransfer(sk_s:PrivateKey,pk_s:PublicKeyW,pk_r:PublicKeyW,delta:BigInt): Transfer = {
     val sid:Sid = hash(uuid)
-    (pk_s,pk_r,delta,sid,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data))
+    val trans:Transfer = (pk_s,pk_r,delta,sid,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data))
+    sharedData.txData += (sid->trans)
+    trans
   }
 
   def updateLocalState(ls:LocalState,c:Chain): LocalState = {
@@ -544,9 +546,7 @@ trait obMethods
           val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
           val (pk_vrf,_,_,pk_sig,_) = cert
           val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
-          val pk_sig_f = ByteArrayWrapper(pk_sig)
           var validForger = true
-
           if (slot == 0) {
             for (tx <- state) {
               tx match {
@@ -571,7 +571,6 @@ trait obMethods
               }
             }
           }
-
           state.head match {
             case tx:Tx => {
               if (verifyTx(tx)) {
@@ -701,9 +700,8 @@ trait obMethods
     nls
   }
 
-  def revertLocalState(ls: LocalState,c:Chain,mem:MemPool): (LocalState,MemPool) = {
+  def revertLocalState(ls: LocalState,c:Chain):LocalState = {
     var nls:LocalState = ls
-    var nmem:MemPool = mem
     for (id <- c.reverse) {
       getBlock(id) match {
         case b:Block => {
@@ -719,10 +717,10 @@ trait obMethods
                 tx._1 match {
                   case entry:(ByteArrayWrapper,BigInt) => {
                     val delta = entry._2
-                    if (entry._1 == forgeBytes) {
+                    if (entry._1 == forgeBytes && delta == forgerReward) {
                       if (nls.keySet.contains(pk_f)) {
                         val netStake:BigInt = nls(pk_f)._1
-                        val newStake:BigInt = netStake - delta
+                        val newStake:BigInt = netStake - forgerReward
                         nls -= pk_f
                         if (newStake > 0) nls += (pk_f -> (newStake,true))
                       }
@@ -841,7 +839,55 @@ trait obMethods
       }
 
     }
-    (nls,nmem)
+    nls
+  }
+
+  def rollbackMemPool(c:Chain): Unit = {
+    for (id <- c.reverse) {
+      getBlock(id) match {
+        case b:Block => {
+          val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
+          val (pk_vrf,_,_,pk_sig,_) = cert
+          val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
+          val pk_sig_f = ByteArrayWrapper(pk_sig)
+          var validForger = true
+
+          state.head match {
+            case tx:Tx => {
+              if (verifyTx(tx)) {
+                tx._1 match {
+                  case entry:(ByteArrayWrapper,BigInt) => {
+                    if (entry._1 != forgeBytes) {
+                      validForger = false
+                    }
+                  }
+                  case _ => validForger = false
+                }
+              } else {
+                validForger = false
+              }
+            }
+            case _ => validForger = false
+          }
+
+          if (validForger) {
+            for (entry <- state.tail) {
+              entry match {
+                case trans:Transfer => {
+                  if (verifyTransfer(trans)) {
+                    if (!memPool.keySet.contains(trans._4)){
+                      memPool += (trans._4->trans)
+                    }
+                  }
+                }
+                case _ =>
+              }
+            }
+          }
+        }
+        case _ =>
+      }
+    }
   }
 
   /**

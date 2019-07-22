@@ -2,10 +2,11 @@ package crypto.ouroboros
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
-object sharedFlags {
+object sharedData extends obTypes {
   var counter = 0
   var errorFlag = false
   var killFlag = false
+  var txData:Map[Sid,Transfer] = Map()
   def count:Int = {
     val out = counter
     counter += 1

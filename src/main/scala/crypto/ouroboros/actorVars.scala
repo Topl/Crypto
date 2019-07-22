@@ -15,7 +15,7 @@ trait stakeHolderVars
   var alpha_Ep = 0.0
   var blocksForged = 0
   var time = 0
-  var foreignChains:Array[(Chain,Int,Int)] = Array()
+  var foreignChains:Array[(Chain,Int,Int,Int,ActorRef)] = Array()
   var genBlock: Any = 0
   var genBlockHash: Hash = ByteArrayWrapper(Array())
   var roundBlock: Any = 0

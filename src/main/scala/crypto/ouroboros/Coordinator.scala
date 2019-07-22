@@ -1,7 +1,7 @@
 package crypto.ouroboros
 
 import java.io.{BufferedWriter, FileWriter}
-import java.io.{File, FileNotFoundException}
+import java.io.File
 
 import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
@@ -137,7 +137,7 @@ class Coordinator extends Actor
         command(cmdQueue(t))
         cmdQueue -= t
       }
-      if (!actorStalled) {
+      if (!actorStalled && transactionFlag) {
         for (i <- 1 to 30){
           val r = Random.nextInt(3)
           if (r==1) issueTx
@@ -177,6 +177,7 @@ class Coordinator extends Actor
       case "pause" => self ! StallActor
       case "inbox" => send(holders,Inbox)
       case "stall0" => send(holders(0),StallActor)
+      case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
       case "write" => fileWriter match {
         case fw:BufferedWriter => fw.flush
         case _ => println("File writer not initialized")
@@ -184,7 +185,7 @@ class Coordinator extends Actor
       case "kill" => {
         send(holders,StallActor)
         for (holder<-holders){ holder ! PoisonPill}
-        sharedFlags.killFlag = true
+        sharedData.killFlag = true
         self ! CloseDataFile
         context.system.terminate
       }
@@ -238,7 +239,6 @@ class Coordinator extends Actor
             initStakeMax
           }
         }
-        println(initStake)
         val pkw = ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))++hex2bytes(genKeys(s"${ref.path}").split(";")(1))++hex2bytes(genKeys(s"${ref.path}").split(";")(2)))
         holderKeys += (ref-> pkw)
         signTx((genesisBytes, pkw, BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
