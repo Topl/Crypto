@@ -842,7 +842,7 @@ trait obMethods
     nls
   }
 
-  def rollbackMemPool(c:Chain): Unit = {
+  def collectState(c:Chain): Unit = {
     for (id <- c.reverse) {
       getBlock(id) match {
         case b:Block => {

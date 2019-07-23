@@ -126,7 +126,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       if(trueChain) {
         if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
-        rollbackMemPool(subChain(localChain,prefix+1,currentSlot))
+        collectState(subChain(localChain,prefix+1,currentSlot))
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
@@ -151,6 +151,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         eta_Ep = history_eta(prefix/epochLength)
         currentSlot = prefix
         currentEpoch = currentSlot/epochLength
+      } else {
+        collectState(tine)
       }
       foreignChains = foreignChains.dropRight(1)
     } else {
