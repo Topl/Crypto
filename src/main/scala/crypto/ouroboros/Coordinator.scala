@@ -72,6 +72,8 @@ class Coordinator extends Actor
     //tells actors to print status */
     case Status => {
       send(holders,Status)
+      println("Total Transactions: "+sharedData.txCounter.toString)
+      sharedData.txCounter = 0
     }
 
     case Verify => {
@@ -150,10 +152,6 @@ class Coordinator extends Actor
       else {actorStalled = false}
     }
 
-    case value:Transfer => {
-      txData += (value._4->value)
-    }
-
     case _ => println("received unknown message")
   }
 
@@ -174,7 +172,6 @@ class Coordinator extends Actor
   def command(s:String): Unit = {
     s.trim match {
       case "status" => {
-        sharedData.txData = txData
         self ! Status
       }
       case "verify" => self ! Verify

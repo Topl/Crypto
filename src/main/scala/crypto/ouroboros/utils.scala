@@ -6,7 +6,7 @@ object sharedData extends obTypes {
   var counter = 0
   var errorFlag = false
   var killFlag = false
-  var txData:Map[Sid,Transfer] = Map()
+  var txCounter = 0
   def count:Int = {
     val out = counter
     counter += 1
