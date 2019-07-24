@@ -46,10 +46,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val h: Hash = hash(pb)
         var state: State = List()
         for (entry<-memPool) {
+          val transIdList:List[Sid] = pb._2.tail.map{ case trans:Transfer => {trans._4}}
           val delta = entry._2._3
           val pk_s = entry._2._1
           val net = localState(pk_s)._1
-          if (delta<=net) state ::= entry._2
+          if (delta<=net && !transIdList.contains(entry._1)) state ::= entry._2
         }
         state ::= blockTx
         memPool = Map()
@@ -126,16 +127,40 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       if (trueChain) {
         if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
-//        collectState(tine)
-//        for (id <- subChain(localChain,prefix+1,currentSlot)) {
+
+        collectState(subChain(localChain,prefix+1,currentSlot))
+        collectState(tine)
+
+        for (id <- subChain(localChain,prefix+1,currentSlot)) {
+          if (id._1 > -1) {
+            getBlock(id) match {
+              case b: Block => {
+                val blockState = b._2
+                for (entry <- blockState.tail) {
+                  entry match {
+                    case trans: Transfer =>  {
+                      if (memPool.keySet.contains(trans._4)){
+                        memPool -= trans._4
+                      }
+                    }
+                    case _ =>
+                  }
+                }
+              }
+              case _ =>
+            }
+          }
+        }
+
+//        for (id <- tine) {
 //          if (id._1 > -1) {
 //            getBlock(id) match {
-//              case b: Block => {
+//              case b:Block => {
 //                val blockState = b._2
-//                for (entry <- blockState.tail) {
+//                for (entry<-blockState.tail) {
 //                  entry match {
-//                    case trans: Transfer =>  {
-//                      if (memPool.keySet.contains(trans._4)){
+//                    case trans:Transfer => {
+//                      if (memPool.keySet.contains(trans._4)) {
 //                        memPool -= trans._4
 //                      }
 //                    }
@@ -147,10 +172,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 //            }
 //          }
 //        }
-        collectState(subChain(localChain,prefix+1,currentSlot))
+//
         for (i <- prefix+1 to currentSlot) {
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
+
         for (id <- tine) {
           if (id._1 > -1) {
             localChain.update(id._1,id)
@@ -172,10 +198,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             }
           }
         }
+
         localState = history_state(prefix)
         eta_Ep = history_eta(prefix/epochLength)
         currentSlot = prefix
         currentEpoch = currentSlot/epochLength
+
       } else {
         collectState(tine)
         for (id <- subChain(localChain,prefix+1,currentSlot)) {
@@ -199,8 +227,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
       }
+
       foreignChains = foreignChains.dropRight(1)
+
     } else {
+
       if (counter>tineMaxTries) {
         if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Dropping Tine")
         foreignChains = foreignChains.dropRight(1)
