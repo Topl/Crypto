@@ -138,9 +138,9 @@ class Coordinator extends Actor
         cmdQueue -= t
       }
       if (!actorStalled && transactionFlag) {
-        for (i <- 1 to 30){
-          val r = Random.nextInt(3)
-          if (r==1) issueTx
+        for (i <- 1 to holders.length){
+          val r = Random.nextInt(10)
+          if (r==0) issueTx
         }
       }
     }
@@ -150,6 +150,10 @@ class Coordinator extends Actor
       else {actorStalled = false}
     }
 
+    case value:Transfer => {
+      txData += (value._4->value)
+    }
+
     case _ => println("received unknown message")
   }
 
@@ -157,21 +161,22 @@ class Coordinator extends Actor
     val holder1 = holders(Random.nextInt(holders.length))
     val holder2 = holders(Random.nextInt(holders.length))
     var delta:BigInt = 0
-    if (holder1 == holder2) {
-      delta = 0
-    } else {
+    if (holder1 != holder2) {
       delta = BigDecimal(if (randomFlag) {
         maxTransfer*Random.nextDouble
       } else {
         maxTransfer
       }).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+      holder1 ! IssueTx((holderKeys(holder2),delta))
     }
-    holder1 ! IssueTx((holderKeys(holder2),delta))
   }
 
   def command(s:String): Unit = {
     s.trim match {
-      case "status" => self ! Status
+      case "status" => {
+        sharedData.txData = txData
+        self ! Status
+      }
       case "verify" => self ! Verify
       case "stall" => send(holders,StallActor)
       case "pause" => self ! StallActor

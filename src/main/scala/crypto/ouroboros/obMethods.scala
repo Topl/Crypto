@@ -534,7 +534,6 @@ trait obMethods
   def signTransfer(sk_s:PrivateKey,pk_s:PublicKeyW,pk_r:PublicKeyW,delta:BigInt): Transfer = {
     val sid:Sid = hash(uuid)
     val trans:Transfer = (pk_s,pk_r,delta,sid,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data))
-    sharedData.txData += (sid->trans)
     trans
   }
 
@@ -752,7 +751,7 @@ trait obMethods
                     val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
 
                     if (!memPool.keySet.contains(trans._4)){
-                      memPool += (trans._4->trans)
+                      if (verifyTransfer(trans)) memPool += (trans._4->trans)
                     }
 
                     if (validSender && validRecip && validTransfer) {
@@ -869,15 +868,12 @@ trait obMethods
             }
             case _ => validForger = false
           }
-
           if (validForger) {
             for (entry <- state.tail) {
               entry match {
                 case trans:Transfer => {
-                  if (verifyTransfer(trans)) {
-                    if (!memPool.keySet.contains(trans._4)){
-                      memPool += (trans._4->trans)
-                    }
+                  if (!memPool.keySet.contains(trans._4)) {
+                    if (verifyTransfer(trans)) memPool += (trans._4->trans)
                   }
                 }
                 case _ =>

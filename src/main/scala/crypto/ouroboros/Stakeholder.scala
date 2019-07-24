@@ -136,9 +136,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             getBlock(id) match {
               case b:Block => {
                 val blockState = b._2
-                for (entry<-blockState) {
+                for (entry<-blockState.tail) {
                   entry match {
-                    case trans:Transfer => if (memPool.keySet.contains(trans._4)) memPool -= trans._4
+                    case trans:Transfer => {
+                      if (memPool.keySet.contains(trans._4)) {
+                        memPool -= trans._4
+                      }
+                    }
                     case _ =>
                   }
                 }
@@ -153,6 +157,26 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         currentEpoch = currentSlot/epochLength
       } else {
         collectState(tine)
+        for (id <- subChain(localChain,prefix+1,currentSlot)) {
+          if (id._1 > -1) {
+            getBlock(id) match {
+              case b: Block => {
+                val blockState = b._2
+                for (entry <- blockState.tail) {
+                  entry match {
+                    case trans: Transfer =>  {
+                      if (memPool.keySet.contains(trans._4)){
+                        memPool -= trans._4
+                      }
+                    }
+                    case _ =>
+                  }
+                }
+              }
+              case _ =>
+            }
+          }
+        }
       }
       foreignChains = foreignChains.dropRight(1)
     } else {
@@ -447,10 +471,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case data:(PublicKeyW,BigInt) => {
           val (pk_r,delta) = data
+          val net = localState(pkw)._1
           if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-          if (localState(pkw)._1 >= delta) {
+          if (delta <= net) {
             val trans:Transfer = signTransfer(sk_sig,pkw,pk_r,delta)
-            send(holderId, gossipers, SendTx(signTx(trans, sessionId, sk_sig, pk_sig)))
+            send(holderId, gossipers, SendTx(trans))
+            coordinatorRef ! trans
           }
         }
       }
@@ -458,22 +484,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case value: SendTx => if (!actorStalled) {
       value.s match {
-        case tx:Tx => if (inbox.keySet.contains(tx._2)) {
-          tx._1 match {
-            case trans:Transfer => {
-              if (!memPool.keySet.contains(trans._4)) {
-                val delta:BigInt = trans._3
-                val pk_s:PublicKeyW = trans._1
-                val net = localState(pk_s)._1
-                if (delta<=net) {
-                  if (verifyTransfer(trans) && verifyTx(tx)) {
-                    memPool += (trans._4->trans)
-                    send(holderId, gossipers, SendTx(value.s))
-                  }
-                }
+        case trans:Transfer => {
+          if (!memPool.keySet.contains(trans._4)) {
+            val delta:BigInt = trans._3
+            val pk_s:PublicKeyW = trans._1
+            val net = localState(pk_s)._1
+            if (delta<=net) {
+              if (verifyTransfer(trans)) {
+                memPool += (trans._4->trans)
+                send(holderId, gossipers, SendTx(value.s))
               }
             }
-            case _ =>
           }
         }
         case _ =>
@@ -584,14 +605,54 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
         getBlock(id) match {
           case b:Block => {
-            txCount += b._2.tail.length
             chainBytes ++= FastCryptographicHash(serialize(b))
           }
           case _ =>
         }
       }
-      println(s"Transactions on chain: $txCount out of $txTotal")
+      var duplicatesFound = false
+      for (id <- subChain(localChain,1,currentSlot)) {
+        getBlock(id) match {
+          case b:Block => {
+            val state = b._2
+            var allTx = sharedData.txData
+            txCount += b._2.tail.length
+            for (entry<-state.tail) {
+              entry match {
+                case trans:Transfer => {
+                  if (allTx.keySet.contains(trans._4)) {
+                    allTx -= trans._4
+                  } else {
+                    duplicatesFound = true
+                    println("Dup found at "+b._3.toString)
+                  }
+                }
+              }
+            }
+          }
+          case _ =>
+        }
+      }
+      println(s"Transactions on chain: $txCount out of $txTotal, duplicates: $duplicatesFound")
       println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
+      if (duplicatesFound){
+        for (id <- localChain) {
+          if (id._1 > -1) {
+            println("S:" + id._1.toString)
+            getBlock(id) match {
+              case b:Block => {
+                for (entry<-b._2.tail) {
+                  entry match {
+                    case trans:Transfer => println(bytes2hex(trans._4.data)+":"+trans._3.toString)
+                    case _ =>
+                  }
+                }
+              }
+              case _ => println("error")
+            }
+          }
+        }
+      }
       sender() ! "done"
     }
 

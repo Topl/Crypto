@@ -65,4 +65,5 @@ trait coordinatorVars
   //empty list of keys to be populated by stakeholders once they are instantiated
   var genKeys:Map[String,String] = Map()
   var fileWriter:Any = 0
+  var txData:MemPool = Map()
 }

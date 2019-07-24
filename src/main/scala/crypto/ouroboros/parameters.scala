@@ -40,7 +40,7 @@ trait parameters {
   val dataOutInterval = epochLength
 
   // duration of slot in milliseconds
-  val slotT:Long = 1000
+  val slotT:Long = 500
 
   // time out for dropped messages from coordinator
   val waitTime = 600 seconds
