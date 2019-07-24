@@ -29,6 +29,7 @@ trait stakeHolderVars
   var actorStalled = false
   var coordinatorRef:ActorRef = _
   var txCounter = 0
+  var txNonce:Hash = ByteArrayWrapper(Array())
 }
 
 trait coordinatorVars

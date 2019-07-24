@@ -453,14 +453,10 @@ trait obMethods
           if (i/epochLength > ep) {
             ep = i/epochLength
             if (ep0 + 1 == ep) {
-              //println("C Holder " + holderIndex.toString + " Epoch: " + (ep - 1).toString + "\nEta:" + bytes2hex(eta_Ep))
               eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-              //println("C Holder " + holderIndex.toString + " Epoch: " + ep.toString + "\nEta:" + bytes2hex(eta_Ep))
               stakingState = history_state((ep - 1) * epochLength)
             } else {
-              //println("C' Holder " + holderIndex.toString + " Epoch: " + (ep - 1).toString + "\nEta:" + bytes2hex(eta_Ep))
               eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-              //println("C' Holder " + holderIndex.toString + " Epoch: " + ep.toString + "\nEta:" + bytes2hex(eta_Ep))
               stakingState = updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength))
             }
           }
@@ -512,12 +508,12 @@ trait obMethods
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
     for (member <- ls.keySet) {
-      val (balance,activityIndex) = ls(member)
+      val (balance,activityIndex,txC) = ls(member)
       if (activityIndex) netStake += balance
     }
     val holderKey = ByteArrayWrapper(holderKeys._1++holderKeys._2++holderKeys._3)
     if (ls.keySet.contains(holderKey)){
-      val (balance,activityIndex) = ls(holderKey)
+      val (balance,activityIndex,txC) = ls(holderKey)
       if (activityIndex) holderStake += balance
     }
     if (netStake > 0) {
@@ -528,12 +524,12 @@ trait obMethods
   }
 
   def verifyTransfer(t:Transfer):Boolean = {
-    sig.verify(t._5,t._2.data++t._3.toByteArray++t._4.data,t._1.data.take(sig.KeyLength))
+    sig.verify(t._6,t._2.data++t._3.toByteArray++t._4.data++serialize(t._5),t._1.data.take(sig.KeyLength))
   }
 
-  def signTransfer(sk_s:PrivateKey,pk_s:PublicKeyW,pk_r:PublicKeyW,delta:BigInt): Transfer = {
+  def signTransfer(sk_s:PrivateKey,pk_s:PublicKeyW,pk_r:PublicKeyW,delta:BigInt,txCounter:Int): Transfer = {
     val sid:Sid = hash(uuid)
-    val trans:Transfer = (pk_s,pk_r,delta,sid,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data))
+    val trans:Transfer = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
     trans
   }
 
@@ -542,12 +538,12 @@ trait obMethods
     for (id <- c) {
       getBlock(id) match {
         case b:Block => {
-          val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
+          val (_,ledger:Ledger,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
           val (pk_vrf,_,_,pk_sig,_) = cert
           val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
           var validForger = true
           if (slot == 0) {
-            for (tx <- state) {
+            for (tx <- ledger) {
               tx match {
                 case tx:Tx => {
                   if (verifyTx(tx)) {
@@ -559,7 +555,7 @@ trait obMethods
                           val newStake:BigInt = netStake + delta
                           val pk_g:PublicKeyW = entry._2
                           if(nls.keySet.contains(pk_g)) nls -= pk_g
-                          nls += (pk_g -> (newStake,true))
+                          nls += (pk_g -> (newStake,true,0))
                         }
                       }
                       case _ =>
@@ -570,7 +566,7 @@ trait obMethods
               }
             }
           }
-          state.head match {
+          ledger.head match {
             case tx:Tx => {
               if (verifyTx(tx)) {
                 tx._1 match {
@@ -579,13 +575,12 @@ trait obMethods
                     if (entry._1 == forgeBytes && delta == forgerReward) {
                       if (nls.keySet.contains(pk_f)) {
                         val netStake: BigInt = nls(pk_f)._1
+                        val txC:Int = nls(pk_f)._3
                         val newStake: BigInt = netStake + forgerReward
                         nls -= pk_f
-                        nls += (pk_f -> (newStake,true))
+                        nls += (pk_f -> (newStake,true,txC))
                       } else {
-                        val netStake: BigInt = 0
-                        val newStake: BigInt = netStake + forgerReward
-                        nls += (pk_f -> (newStake,true))
+                        validForger = false
                       }
                     } else {
                       validForger = false
@@ -601,92 +596,10 @@ trait obMethods
           }
 
           if (validForger) {
-            for (entry <- state.tail) {
+            for (entry <- ledger.tail) {
               entry match {
                 case trans:Transfer => {
-                  if (verifyTransfer(trans)) {
-                    val pk_s:PublicKeyW = trans._1
-                    val pk_r:PublicKeyW = trans._2
-                    val delta:BigInt = trans._3
-                    val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-                    val validSender = nls.keySet.contains(pk_s)
-                    val validRecip = nls.keySet.contains(pk_r)
-                    val forgerBalance = nls.keySet.contains(pk_f)
-                    val validFunds = if(validSender) {nls(pk_s)._1 >= delta} else { false }
-                    if (validSender && validRecip && validFunds) {
-                      if (pk_s == pk_r && pk_s != pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new: BigInt = s_net - fee
-                        val f_new: BigInt = f_net + fee
-                        nls -= pk_s
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_f -> (f_new,true))
-                      } else if (pk_s == pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = nls(pk_r)._1
-                        val s_new: BigInt = s_net - delta + fee
-                        val r_new: BigInt = r_net + delta - fee
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                      } else if (pk_r == pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = nls(pk_r)._1
-                        val s_new: BigInt = s_net - delta
-                        val r_new: BigInt = r_net + delta
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                      } else {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = nls(pk_r)._1
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new: BigInt = s_net - delta
-                        val r_new: BigInt = r_net + delta - fee
-                        val f_new: BigInt = f_net + fee
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                        nls += (pk_f -> (f_new,true))
-                      }
-                    } else if (validSender && validFunds) {
-                      if (pk_s == pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = 0
-                        val s_new: BigInt = s_net - delta + fee
-                        val r_new: BigInt = r_net + delta - fee
-                        nls -= pk_s
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                      } else if (pk_r == pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = 0
-                        val s_new: BigInt = s_net - delta
-                        val r_new: BigInt = r_net + delta
-                        nls -= pk_s
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                      } else {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = 0
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new: BigInt = s_net - delta
-                        val r_new: BigInt = r_net + delta - fee
-                        val f_new: BigInt = f_net + fee
-                        nls -= pk_s
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_r -> (r_new,true))
-                        nls += (pk_f -> (f_new,true))
-                      }
-                    }
-                  }
+                  nls = applyTransfer(nls,trans,pk_f)
                 }
                 case _ =>
               }
@@ -699,185 +612,108 @@ trait obMethods
     nls
   }
 
-  def revertLocalState(ls: LocalState,c:Chain):LocalState = {
+  def applyTransfer(ls:LocalState,trans:Transfer,pk_f:PublicKeyW): LocalState = {
     var nls:LocalState = ls
-    for (id <- c.reverse) {
-      getBlock(id) match {
-        case b:Block => {
-          val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
-          val (pk_vrf,_,_,pk_sig,_) = cert
-          val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
-          val pk_sig_f = ByteArrayWrapper(pk_sig)
-          var validForger = true
-
-          state.head match {
-            case tx:Tx => {
-              if (verifyTx(tx)) {
-                tx._1 match {
-                  case entry:(ByteArrayWrapper,BigInt) => {
-                    val delta = entry._2
-                    if (entry._1 == forgeBytes && delta == forgerReward) {
-                      if (nls.keySet.contains(pk_f)) {
-                        val netStake:BigInt = nls(pk_f)._1
-                        val newStake:BigInt = netStake - forgerReward
-                        nls -= pk_f
-                        if (newStake > 0) nls += (pk_f -> (newStake,true))
-                      }
-                    } else {
-                      validForger = false
-                    }
-                  }
-                  case _ => validForger = false
-                }
-              } else {
-                validForger = false
-              }
-            }
-            case _ => validForger = false
+    if (verifyTransfer(trans)) {
+      val pk_s:PublicKeyW = trans._1
+      val pk_r:PublicKeyW = trans._2
+      val validSender = nls.keySet.contains(pk_s)
+      val txC_s:Int = nls(pk_s)._3
+      if (validSender && trans._5 == txC_s) {
+        val delta:BigInt = trans._3
+        val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+        val validRecip = nls.keySet.contains(pk_r)
+        val validFunds = nls(pk_s)._1 >= delta
+        if (validRecip && validFunds) {
+          if (pk_s == pk_r && pk_s != pk_f) {
+            val s_net:BigInt = nls(pk_s)._1
+            val f_net:BigInt = nls(pk_f)._1
+            val f_txC:Int =nls(pk_f)._3
+            val s_new: BigInt = s_net - fee
+            val f_new: BigInt = f_net + fee
+            nls -= pk_s
+            nls -= pk_f
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_f -> (f_new,true,f_txC))
+          } else if (pk_s == pk_f) {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = nls(pk_r)._1
+            val r_txC:Int = nls(pk_r)._3
+            val s_new: BigInt = s_net - delta + fee
+            val r_new: BigInt = r_net + delta - fee
+            nls -= pk_s
+            nls -= pk_r
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,r_txC))
+          } else if (pk_r == pk_f) {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = nls(pk_r)._1
+            val r_txC:Int = nls(pk_r)._3
+            val s_new: BigInt = s_net - delta
+            val r_new: BigInt = r_net + delta
+            nls -= pk_s
+            nls -= pk_r
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,r_txC))
+          } else {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = nls(pk_r)._1
+            val r_txC:Int = nls(pk_r)._3
+            val f_net:BigInt = nls(pk_f)._1
+            val f_txC:Int = nls(pk_f)._3
+            val s_new: BigInt = s_net - delta
+            val r_new: BigInt = r_net + delta - fee
+            val f_new: BigInt = f_net + fee
+            nls -= pk_s
+            nls -= pk_r
+            nls -= pk_f
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,r_txC))
+            nls += (pk_f -> (f_new,true,f_txC))
           }
-
-          if (validForger) {
-            for (entry <- state.tail) {
-              entry match {
-                case trans:Transfer => {
-                  if (verifyTransfer(trans)) {
-                    val pk_s:PublicKeyW = trans._1
-                    val pk_r:PublicKeyW = trans._2
-                    val delta:BigInt = trans._3
-                    val validSender = nls.keySet.contains(pk_s)
-                    val validRecip = nls.keySet.contains(pk_r)
-                    val forgerBalance = nls.keySet.contains(pk_f)
-                    val validTransfer = pk_s != pk_r
-                    val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-
-                    if (!memPool.keySet.contains(trans._4)){
-                      if (verifyTransfer(trans)) memPool += (trans._4->trans)
-                    }
-
-                    if (validSender && validRecip && validTransfer) {
-                      if (pk_s == pk_r && pk_s != pk_f) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new: BigInt = s_net + fee
-                        val f_new: BigInt = f_net - fee
-                        nls -= pk_s
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        nls += (pk_f -> (f_new,true))
-                      } else if (pk_f == pk_s) {
-                        val s_net: BigInt = nls(pk_s)._1
-                        val r_net: BigInt = nls(pk_r)._1
-                        val s_new: BigInt = s_net + delta - fee
-                        val r_new: BigInt = r_net - delta + fee
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                      } else if (pk_f == pk_r) {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = nls(pk_r)._1
-                        val s_new:BigInt = s_net + delta
-                        val r_new:BigInt = r_net - delta
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                      } else {
-                        val s_net:BigInt = nls(pk_s)._1
-                        val r_net:BigInt = nls(pk_r)._1
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new:BigInt = s_net + delta
-                        val r_new:BigInt = r_net - delta + fee
-                        val f_new:BigInt = f_net - fee
-                        nls -= pk_s
-                        nls -= pk_r
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        if (f_new > 0) nls += (pk_f -> (f_new,true))
-                      }
-                    } else if (validRecip && validTransfer) {
-                      if (pk_f == pk_s) {
-                        val s_net: BigInt = 0
-                        val r_net: BigInt = nls(pk_r)._1
-                        val s_new: BigInt = s_net + delta - fee
-                        val r_new: BigInt = r_net - delta + fee
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                      } else if (pk_f == pk_r) {
-                        val s_net:BigInt = 0
-                        val r_net:BigInt = nls(pk_r)._1
-                        val s_new:BigInt = s_net + delta
-                        val r_new:BigInt = r_net - delta
-                        nls -= pk_r
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                      } else {
-                        val s_net:BigInt = 0
-                        val r_net:BigInt = nls(pk_r)._1
-                        val f_net:BigInt = {if (forgerBalance) nls(pk_f)._1 else 0}
-                        val s_new:BigInt = s_net + delta
-                        val r_new:BigInt = r_net - delta + fee
-                        val f_new:BigInt = f_net - fee
-                        nls -= pk_r
-                        if (forgerBalance) nls -= pk_f
-                        if (s_new > 0) nls += (pk_s -> (s_new,true))
-                        if (r_new > 0) nls += (pk_r -> (r_new,true))
-                        if (f_new > 0) nls += (pk_f -> (f_new,true))
-                      }
-                    }
-                  }
-                }
-                case _ =>
-              }
-            }
+        } else if (validFunds) {
+          if (pk_s == pk_f) {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = 0
+            val s_new: BigInt = s_net - delta + fee
+            val r_new: BigInt = r_net + delta - fee
+            nls -= pk_s
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,0))
+          } else {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = 0
+            val f_net:BigInt = nls(pk_f)._1
+            val f_txC = nls(pk_f)._3
+            val s_new: BigInt = s_net - delta
+            val r_new: BigInt = r_net + delta - fee
+            val f_new: BigInt = f_net + fee
+            nls -= pk_s
+            nls -= pk_f
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,0))
+            nls += (pk_f -> (f_new,true,f_txC))
           }
         }
-        case _ =>
       }
-
     }
     nls
   }
+
 
   def collectState(c:Chain): Unit = {
-    for (id <- c.reverse) {
+    for (id <- c) {
       getBlock(id) match {
         case b:Block => {
-          val (_,state:State,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
-          val (pk_vrf,_,_,pk_sig,_) = cert
-          val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
-          val pk_sig_f = ByteArrayWrapper(pk_sig)
-          var validForger = true
-
-          state.head match {
-            case tx:Tx => {
-              if (verifyTx(tx)) {
-                tx._1 match {
-                  case entry:(ByteArrayWrapper,BigInt) => {
-                    if (entry._1 != forgeBytes) {
-                      validForger = false
-                    }
-                  }
-                  case _ => validForger = false
+          val ledger:Ledger = b._2
+          for (entry <- ledger.tail) {
+            entry match {
+              case trans:Transfer => {
+                if (!memPool.keySet.contains(trans._4)) {
+                  if (verifyTransfer(trans)) memPool += (trans._4->trans)
                 }
-              } else {
-                validForger = false
               }
-            }
-            case _ => validForger = false
-          }
-          if (validForger) {
-            for (entry <- state.tail) {
-              entry match {
-                case trans:Transfer => {
-                  if (!memPool.keySet.contains(trans._4)) {
-                    if (verifyTransfer(trans)) memPool += (trans._4->trans)
-                  }
-                }
-                case _ =>
-              }
+              case _ =>
             }
           }
         }

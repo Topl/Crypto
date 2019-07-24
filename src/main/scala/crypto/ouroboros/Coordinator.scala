@@ -232,7 +232,7 @@ class Coordinator extends Actor
     val h:Hash = ByteArrayWrapper(eta0)
     val r = scala.util.Random
     // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
-    val state: State = holders.map{
+    val ledger: Ledger = holders.map{
       case ref:ActorRef => {
         val initStake = {
           if (randomFlag) {
@@ -247,8 +247,8 @@ class Coordinator extends Actor
       }
     }
     val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
-    val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
-    (h,state,slot,cert,rho,pi,sig,pk_kes,bn,ps)
+    val sig:MalkinSignature = kes.sign(malkinKey, h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (h,ledger,slot,cert,rho,pi,sig,pk_kes,bn,ps)
   }
 }
 
