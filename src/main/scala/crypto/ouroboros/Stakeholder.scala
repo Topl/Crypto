@@ -46,7 +46,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
         var ledger: Ledger = List()
+        var ls: LocalState = localState
         for (entry<-ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5):_*)) {
+          if (entry._2._5 == ls(entry._2._1)._3) {
+            ls = applyTransfer(ls,entry._2,pkw)
+          }
           ledger ::= entry._2
           memPool -= entry._1
         }
