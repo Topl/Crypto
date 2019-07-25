@@ -50,6 +50,7 @@ trait coordinatorVars
   var t0:Long = 0
   var tp:Long = 0
   var actorStalled = false
+  var actorPaused = false
   var cmdQueue:Map[Int,String] = Map()
   //set of keys so gensis block can be signed and verified by verifyBlock
   val seed:Array[Byte] = if(randomFlag){

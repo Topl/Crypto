@@ -19,6 +19,10 @@ trait obMethods
     with parameters
     with utils {
 
+  //tags for identifying ledger entries
+  val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
+  val genesisBytes = ByteArrayWrapper("GENESIS".getBytes)
+
   var localChain:Chain = Array()
   var blocks:ChainData = Array()
   var localState:LocalState = Map()
@@ -322,82 +326,80 @@ trait obMethods
     */
 
   def verifyChain(c:Chain, gh:Hash): Boolean = {
-    if (!performanceFlag) {
-      var bool = true
-      var ep = -1
-      var alpha_Ep = 0.0
-      var tr_Ep = 0.0
-      var eta_Ep: Eta = eta(c, 0)
-      var stakingState: LocalState = Map()
-      var pid:BlockId = (0,gh)
-      var i = 0
+    var bool = true
+    var ep = -1
+    var alpha_Ep = 0.0
+    var tr_Ep = 0.0
+    var eta_Ep: Eta = eta(c, 0)
+    var stakingState: LocalState = Map()
+    var pid:BlockId = (0,gh)
+    var i = 0
 
-      getBlock(c(0)) match {
-        case b:Block => bool &&= hash(b) == gh
-        case _ => bool &&= false
-      }
+    getBlock(c(0)) match {
+      case b:Block => bool &&= hash(b) == gh
+      case _ => bool &&= false
+    }
 
-      for (id <- c.tail) {
-        getBlock(id) match {
-          case b:Block => {
-            getParentBlock(b) match {
-              case pb:Block => {
-                bool &&= getParentId(b) == pid
-                if (getParentId(b) != pid) println("Holder "+holderIndex.toString+" pid mismatch")
-                compareBlocks(pb,b)
-                pid = id
-              }
-              case _ => bool &&= false
+    for (id <- c.tail) {
+      getBlock(id) match {
+        case b:Block => {
+          getParentBlock(b) match {
+            case pb:Block => {
+              bool &&= getParentId(b) == pid
+              if (getParentId(b) != pid) println("Holder "+holderIndex.toString+" pid mismatch")
+              compareBlocks(pb,b)
+              pid = id
             }
+            case _ => bool &&= false
           }
-          case _ =>
         }
+        case _ =>
       }
+    }
 
-      def compareBlocks(parent: Block, block: Block) = {
-        val (h0, _, slot, cert, rho, pi, _, pk_kes, bn, ps) = block
-        val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
-        while(i<=slot) {
-          if (i/epochLength > ep) {
-            ep = i/epochLength
-            eta_Ep = eta(c, ep, eta_Ep)
-            stakingState = updateLocalState(stakingState,subChain(c,(i/epochLength)*epochLength-2*epochLength+1,(i/epochLength)*epochLength-epochLength))
-          }
-          i+=1
+    def compareBlocks(parent: Block, block: Block) = {
+      val (h0, _, slot, cert, rho, pi, _, pk_kes, bn, ps) = block
+      val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
+      while(i<=slot) {
+        if (i/epochLength > ep) {
+          ep = i/epochLength
+          eta_Ep = eta(c, ep, eta_Ep)
+          stakingState = updateLocalState(stakingState,subChain(c,(i/epochLength)*epochLength-2*epochLength+1,(i/epochLength)*epochLength-epochLength))
         }
-        alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
-        tr_Ep = phi(alpha_Ep, f_s)
-        bool &&= (
-          hash(parent) == h0
-            && verifyBlock(block)
-            && parent._3 == ps
-            && parent._9 + 1 == bn
-            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
-            && vrf.vrfProofToHash(pi).deep == rho.deep
-            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
-            && vrf.vrfProofToHash(pi_y).deep == y.deep
-            && tr_Ep == tr_c
-            && compare(y, tr_Ep)
-          )
-        if (!bool) {
-          print(slot)
-          print(" ")
-          println(Seq(
-            hash(parent) == h0 //1
-            , verifyBlock(block) //2
-            , parent._3 == ps //3
-            , parent._9 + 1 == bn //4
-            , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi) //5
-            , vrf.vrfProofToHash(pi).deep == rho.deep //6
-            , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y) //7
-            , vrf.vrfProofToHash(pi_y).deep == y.deep //8
-            , tr_Ep == tr_c //9
-            , compare(y, tr_Ep) //10
-          ))
-        }
+        i+=1
       }
-      bool
-    } else { true }
+      alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
+      tr_Ep = phi(alpha_Ep, f_s)
+      bool &&= (
+        hash(parent) == h0
+          && verifyBlock(block)
+          && parent._3 == ps
+          && parent._9 + 1 == bn
+          && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+          && vrf.vrfProofToHash(pi).deep == rho.deep
+          && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+          && vrf.vrfProofToHash(pi_y).deep == y.deep
+          && tr_Ep == tr_c
+          && compare(y, tr_Ep)
+        )
+      if (!bool) {
+        print(slot)
+        print(" ")
+        println(Seq(
+          hash(parent) == h0 //1
+          , verifyBlock(block) //2
+          , parent._3 == ps //3
+          , parent._9 + 1 == bn //4
+          , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi) //5
+          , vrf.vrfProofToHash(pi).deep == rho.deep //6
+          , vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y) //7
+          , vrf.vrfProofToHash(pi_y).deep == y.deep //8
+          , tr_Ep == tr_c //9
+          , compare(y, tr_Ep) //10
+        ))
+      }
+    }
+    bool
   }
 
   /**
@@ -407,101 +409,99 @@ trait obMethods
     */
 
   def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
-    if (!performanceFlag) {
-      val ep0 = prefix/epochLength
-      var eta_Ep:Eta = history_eta(ep0)
-      var stakingState: LocalState = {
-        if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
-      }
-      var ep = ep0
-      var bool = true
-      var alpha_Ep = 0.0
-      var tr_Ep = 0.0
-      var pid:BlockId = (0,ByteArrayWrapper(Array()))
-      var i = prefix+1
+    val ep0 = prefix/epochLength
+    var eta_Ep:Eta = history_eta(ep0)
+    var stakingState: LocalState = {
+      if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
+    }
+    var ep = ep0
+    var bool = true
+    var alpha_Ep = 0.0
+    var tr_Ep = 0.0
+    var pid:BlockId = (0,ByteArrayWrapper(Array()))
+    var i = prefix+1
 
-      breakable{
-        for (id<-tine) {
-          if (!id._2.data.isEmpty) {
-            pid = getParentId(id) match {case value:BlockId => value}
-            break()
-          }
+    breakable{
+      for (id<-tine) {
+        if (!id._2.data.isEmpty) {
+          pid = getParentId(id) match {case value:BlockId => value}
+          break()
         }
-        bool &&= false
       }
+      bool &&= false
+    }
 
-      for (id <- tine) {
-        getBlock(id) match {
-          case b:Block => {
-            getParentBlock(b) match {
-              case pb:Block => {
-                bool &&= getParentId(b) == pid
-                compareBlocks(pb,b)
-                pid = id
-              }
-              case _ => bool &&= false
+    for (id <- tine) {
+      getBlock(id) match {
+        case b:Block => {
+          getParentBlock(b) match {
+            case pb:Block => {
+              bool &&= getParentId(b) == pid
+              compareBlocks(pb,b)
+              pid = id
             }
+            case _ => bool &&= false
           }
-          case _ =>
         }
+        case _ =>
       }
+    }
 
-      def compareBlocks(parent:Block,block:Block) = {
-        val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block
-        val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
-        while(i<=slot) {
-          if (i/epochLength > ep) {
-            ep = i/epochLength
-            if (ep0 + 1 == ep) {
-              eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-              stakingState = history_state((ep - 1) * epochLength)
-            } else {
-              eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-              stakingState = updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength))
-            }
+    def compareBlocks(parent:Block,block:Block) = {
+      val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block
+      val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
+      while(i<=slot) {
+        if (i/epochLength > ep) {
+          ep = i/epochLength
+          if (ep0 + 1 == ep) {
+            eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
+            stakingState = history_state((ep - 1) * epochLength)
+          } else {
+            eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
+            stakingState = updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength))
           }
-          i+=1
         }
-        alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
-        tr_Ep = phi(alpha_Ep, f_s)
-        bool &&= (
-               hash(parent) == h0
-            && verifyBlock(block)
-            && parent._3 == ps
-            && parent._9+1 == bn
-            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
-            && vrf.vrfProofToHash(pi).deep == rho.deep
-            && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
-            && vrf.vrfProofToHash(pi_y).deep == y.deep
-            && tr_Ep == tr_c
-            && compare(y, tr_Ep)
-          )
-        if(!bool){
-          print("Error: Holder "+holderIndex.toString+" ");print(slot);print(" ")
-          println(Seq(
-              hash(parent) == h0 //1
-            , verifyBlock(block) //2
-            , parent._3 == ps //3
-            , parent._9+1 == bn //4
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
-            , vrf.vrfProofToHash(pi).deep == rho.deep //6
-            , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
-            , vrf.vrfProofToHash(pi_y).deep == y.deep //8
-            , tr_Ep == tr_c //9
-            , compare(y,tr_Ep) //10
-          ))
-          println("Holder "+holderIndex.toString+" Epoch:"+(slot/epochLength).toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
-        }
+        i+=1
       }
+      alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
+      tr_Ep = phi(alpha_Ep, f_s)
+      bool &&= (
+             hash(parent) == h0
+          && verifyBlock(block)
+          && parent._3 == ps
+          && parent._9+1 == bn
+          && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("NONCE"), pi)
+          && vrf.vrfProofToHash(pi).deep == rho.deep
+          && vrf.vrfVerify(pk_vrf, eta_Ep ++ serialize(slot) ++ serialize("TEST"), pi_y)
+          && vrf.vrfProofToHash(pi_y).deep == y.deep
+          && tr_Ep == tr_c
+          && compare(y, tr_Ep)
+        )
+      if(!bool){
+        print("Error: Holder "+holderIndex.toString+" ");print(slot);print(" ")
+        println(Seq(
+            hash(parent) == h0 //1
+          , verifyBlock(block) //2
+          , parent._3 == ps //3
+          , parent._9+1 == bn //4
+          , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("NONCE"),pi) //5
+          , vrf.vrfProofToHash(pi).deep == rho.deep //6
+          , vrf.vrfVerify(pk_vrf,eta_Ep++serialize(slot)++serialize("TEST"),pi_y) //7
+          , vrf.vrfProofToHash(pi_y).deep == y.deep //8
+          , tr_Ep == tr_c //9
+          , compare(y,tr_Ep) //10
+        ))
+        println("Holder "+holderIndex.toString+" Epoch:"+(slot/epochLength).toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
+      }
+    }
 
-      if(!bool) sharedData.throwError
-      if (sharedData.error) {
-        for (id<-subChain(localChain,0,prefix)++tine) {
-          if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+bytes2hex(id._2.data))
-        }
+    if(!bool) sharedData.throwError
+    if (sharedData.error) {
+      for (id<-subChain(localChain,0,prefix)++tine) {
+        if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+bytes2hex(id._2.data))
       }
-      bool
-    } else { true }
+    }
+    bool
   }
 
   def relativeStake(holderKeys:PublicKeys,ls:LocalState): Double = {
@@ -700,7 +700,6 @@ trait obMethods
     nls
   }
 
-
   def collectState(c:Chain): Unit = {
     for (id <- c) {
       getBlock(id) match {
@@ -729,11 +728,9 @@ trait obMethods
     */
 
   def verifyTxStamp(value: String): Boolean = {
-    if (!performanceFlag) {
-      val values: Array[String] = value.split(";")
-      val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
-      sig.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
-    } else { true }
+    val values: Array[String] = value.split(";")
+    val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
+    sig.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
   }
 
   /**
@@ -758,14 +755,11 @@ trait obMethods
       val result = block // call-by-name
       val t1 = System.nanoTime()
       val outTime = (t1 - t0)*1.0e-9
-      if (outTime>slotT*1.0e-3) {
-        val tString = "%6.6f".format(outTime)
-        println("Elapsed time: " + tString + " s")
-      }
+      val tString = "%6.6f".format(outTime)
+      println("Elapsed time: " + tString + " s")
       result
     } else {
       block
     }
   }
-
 }

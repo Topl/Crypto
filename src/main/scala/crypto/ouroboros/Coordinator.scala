@@ -19,7 +19,10 @@ class Coordinator extends Actor
   with obMethods
   with coordinatorVars {
   val coordId = s"${self.path}"
+  val sys:SystemLoadMonitor = new SystemLoadMonitor
+  var loadAverage = Array.fill(3){0.0}
   private case object timerKey
+
 
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
@@ -139,6 +142,25 @@ class Coordinator extends Actor
         command(cmdQueue(t))
         cmdQueue -= t
       }
+
+      if (performanceFlag) {
+        val newLoad = sys.cpuLoad
+        if (newLoad>0.0){
+          loadAverage = loadAverage.tail++Array(newLoad)
+        }
+
+        if (!actorPaused) {
+          val cpuLoad = (0.0 /: loadAverage){_ + _}/loadAverage.length
+          if (cpuLoad >= systemLoadThreshold && !actorStalled) {
+            tp = System.currentTimeMillis()-tp
+            actorStalled = true
+          } else if (cpuLoad < systemLoadThreshold && actorStalled) {
+            tp = System.currentTimeMillis()-tp
+            actorStalled = false
+          }
+        }
+      }
+
       if (!actorStalled && transactionFlag) {
         for (i <- 1 to holders.length){
           val r = Random.nextInt(10)
@@ -146,10 +168,10 @@ class Coordinator extends Actor
         }
       }
     }
+
     case StallActor => {
-      tp = System.currentTimeMillis()-tp
-      if (!actorStalled) {actorStalled = true}
-      else {actorStalled = false}
+      if (!actorPaused) {actorPaused = true;actorStalled = true;tp = System.currentTimeMillis()-tp}
+      else {actorPaused = false}
     }
 
     case _ => println("received unknown message")

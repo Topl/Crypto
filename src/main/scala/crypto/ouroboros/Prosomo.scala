@@ -32,7 +32,7 @@ object Prosomo extends App {
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
-  coordinator ! Populate(64)
+  coordinator ! Populate(100)
 
   coordinator ! Run(20000)
 
