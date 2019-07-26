@@ -20,7 +20,7 @@ class Coordinator extends Actor
   with coordinatorVars {
   val coordId = s"${self.path}"
   val sys:SystemLoadMonitor = new SystemLoadMonitor
-  var loadAverage = Array.fill(3){0.0}
+  var loadAverage = Array.fill(numAverageLoad){0.0}
   private case object timerKey
 
 
@@ -170,8 +170,20 @@ class Coordinator extends Actor
     }
 
     case StallActor => {
-      if (!actorPaused) {actorPaused = true;actorStalled = true;tp = System.currentTimeMillis()-tp}
-      else {actorPaused = false}
+      if (!actorPaused) {
+        actorPaused = true
+        if (!actorStalled) {
+          actorStalled = true
+          tp = System.currentTimeMillis()-tp
+        }
+      }
+      else {
+        actorPaused = false
+        if (actorStalled) {
+          actorStalled = false
+          tp = System.currentTimeMillis()-tp
+        }
+      }
     }
 
     case _ => println("received unknown message")

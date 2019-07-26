@@ -69,6 +69,9 @@ trait parameters {
   // threshold of cpu usage above which coordinator will stall if performanceFlag = true
   val systemLoadThreshold = 0.95
 
+  // number of values to average for load threshold
+  val numAverageLoad = 3
+
   // print Stakeholder 0 status per slot if true
   val printFlag = true
 

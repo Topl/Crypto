@@ -49,6 +49,7 @@ trait coordinatorVars
   var t:Slot = 0
   var t0:Long = 0
   var tp:Long = 0
+  var ts:Long = 0
   var actorStalled = false
   var actorPaused = false
   var cmdQueue:Map[Int,String] = Map()
