@@ -572,11 +572,11 @@ trait obMethods
                 tx._1 match {
                   case entry:(ByteArrayWrapper,BigInt) => {
                     val delta = entry._2
-                    if (entry._1 == forgeBytes && delta == forgerReward) {
+                    if (entry._1 == forgeBytes && delta == BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
                       if (nls.keySet.contains(pk_f)) {
                         val netStake: BigInt = nls(pk_f)._1
                         val txC:Int = nls(pk_f)._3
-                        val newStake: BigInt = netStake + forgerReward
+                        val newStake: BigInt = netStake + BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
                         nls -= pk_f
                         nls += (pk_f -> (newStake,true,txC))
                       } else {
