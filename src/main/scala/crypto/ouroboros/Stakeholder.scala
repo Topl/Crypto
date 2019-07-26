@@ -241,6 +241,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         if (currentEpoch > 1) {history_state((currentEpoch-1)*epochLength)} else {history_state(0)}
       }
       alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
+      netStake_Ep = {
+        var net:BigInt = 0
+        for (entry<-stakingState) {
+          net += entry._2._1
+        }
+        net
+      }
+      if (currentEpoch == 0) netStake_Ep0 = netStake_Ep
       Tr_Ep = phi(alpha_Ep, f_s)
       if (currentEpoch > 0) {
         eta_Ep = eta(localChain, currentEpoch, history_eta(currentEpoch-1))
@@ -465,11 +473,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case data:(PublicKeyW,BigInt) => {
           val (pk_r,delta) = data
+          val scaledDelta = BigDecimal(delta.toDouble*netStake_Ep.toDouble/netStake_Ep0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
           val net = issueState(pkw)._1
           val txC = issueState(pkw)._3
           if (delta <= net) {
             if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-            val trans:Transfer = signTransfer(sk_sig,pkw,pk_r,delta,txC)
+            val trans:Transfer = signTransfer(sk_sig,pkw,pk_r,scaledDelta,txC)
             issueState = applyTransfer(issueState,trans,pk_r)
             txCounter += 1
             send(holderId, gossipers, SendTx(trans))

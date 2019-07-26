@@ -21,6 +21,8 @@ trait stakeHolderVars
   var roundBlock: Any = 0
   var eta_Ep:Eta = Array()
   var Tr_Ep: Double = 0.0
+  var netStake_Ep: BigInt = 0
+  var netStake_Ep0: BigInt = 0
   var tMax = 0
   var t0:Long = 0
   var currentSlot = 0

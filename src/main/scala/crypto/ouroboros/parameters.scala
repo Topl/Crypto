@@ -5,13 +5,13 @@ import scala.concurrent.duration._
 trait parameters {
 
   //number of stakeholders
-  val numHolders = 16
+  val numHolders = 32
 
   //max initial stake
   val initStakeMax = 2.0e9
 
   //max random transaction delta
-  val maxTransfer = 1.0e9
+  val maxTransfer = 5.0e8
 
   //reward for forging blocks
   val forgerReward = 1.0e8
@@ -50,7 +50,7 @@ trait parameters {
   val dataOutInterval = epochLength
 
   //duration of slot in milliseconds
-  val slotT:Long = 100
+  val slotT:Long = 200
 
   //time out for dropped messages from coordinator
   val waitTime = 600 seconds
