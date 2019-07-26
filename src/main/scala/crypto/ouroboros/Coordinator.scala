@@ -163,7 +163,7 @@ class Coordinator extends Actor
 
       if (!actorStalled && transactionFlag) {
         for (i <- 1 to holders.length){
-          val r = Random.nextInt(10)
+          val r = Random.nextInt(txDenominator)
           if (r==0) issueTx
         }
       }

@@ -26,6 +26,7 @@ trait obMethods
   var localChain:Chain = Array()
   var blocks:ChainData = Array()
   var localState:LocalState = Map()
+  var issueState:LocalState = Map()
   var stakingState:LocalState = Map()
   var history_state:Array[LocalState] = Array()
   var history_eta:Array[Eta] = Array()

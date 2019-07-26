@@ -54,6 +54,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           ledger ::= entry._2
           memPool -= entry._1
         }
+        ledger = ledger.reverse
         ledger ::= blockTx
         val cert: Cert = (pk_vrf, y, pi_y, pk_sig, Tr_Ep)
         val sig: MalkinSignature = kes.sign(malkinKey,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
@@ -226,6 +227,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       })
     }
     localState = updateLocalState(localState, Array(localChain(currentSlot)))
+    issueState = localState
     if (dataOutFlag && time % dataOutInterval == 0) {
       coordinatorRef ! WriteFile
     }
@@ -463,10 +465,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case data:(PublicKeyW,BigInt) => {
           val (pk_r,delta) = data
-          val net = localState(pkw)._1
-          if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
+          val net = issueState(pkw)._1
+          val txC = issueState(pkw)._3
           if (delta <= net) {
-            val trans:Transfer = signTransfer(sk_sig,pkw,pk_r,delta,txCounter)
+            if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
+            val trans:Transfer = signTransfer(sk_sig,pkw,pk_r,delta,txC)
+            issueState = applyTransfer(issueState,trans,pk_r)
             txCounter += 1
             send(holderId, gossipers, SendTx(trans))
           }

@@ -1,9 +1,10 @@
 # Prosomo
 
 Ouroboros Prosomoiotís (v0.2)
-Aaron Schutza
-June 2019
 
+Aaron Schutza
+
+July 2019
 
 - Introduction / purpose
 - Requirements
@@ -13,11 +14,11 @@ June 2019
 - Rationale
 
 
-Purpose
+##Purpose
 
 A simulation of the Ouroboros Proof of Stake protocol has been written.  Prosomoiotís - the Greek word for simulator, is a stand alone blockchain application that executes the Ouroboros protocol.  We intend to study the properties of the protocol and probe the behavior of the emulated network under different parameterizations of the model.  Key parameters include the active slots coefficient, epoch length, network delay, active party number, stake distribution, and confirmation depth.  The simulation is designed to mimic the real world execution of the protocol in a single network node, thus all security and cryptographic measures are carried out by the actors.  In principle the simulation could be extended to communicate with other nodes over a network to achieve the same consensus, persistence, and liveness properties that the protocol guarantees.  For now, the scope is limited to instantiating a set of actors on one node that communicate via message passing.  The number of actors is limited only by the memory of the node and simulations using hundreds of actors are possible, spanning thousands of epochs.
 
-Requirements
+##Requirements
 Capabilities
 - Uses Akka actors to emulate stakeholders
 - One coordinator actor instantiates the stakeholders, collects their public keys, and disseminates the genesis block
@@ -25,12 +26,14 @@ Capabilities
 - Stakeholders communicate via Akka message passing
 - Forged blocks give stakeholders a forger reward that adds to their stake distribution
 - Transactions are issued, broadcast, and added to forged blocks
+
 Constraints
 - Designed to emulate Ouroboros Genesis - the actors should mimic the dynamic stake protocol given in Praos and Genesis as closely as possible
 - The execution should be resilient against adversarial tampering assuming honest majority
 - Actors should reach consensus
 - Should achieve a robust live ledger
-Specification
+
+##Specification
 
 The target protocol is Ouroboros Genesis and some terminology and functionality will carry over from Ouroboros Praos.  The main difference between the two is the chain selection rule.  Stakeholders participate in rounds by diffusing messages and registering the other parties present on the network.  The stake distribution and epoch nonce is set at the beginning of each epoch.  The epoch nonce represents the seed randomness for which all stakeholders apply their Verifiable Random Function for slot leader election and future nonce generation.  The threshold of slot leader eligibility during the epoch is held constant and updated each epoch from the chain generated in two previous epochs.  The stakeholders proceed round by round communicating forged blocks and transactions that are issued from stakeholders.
 
@@ -260,14 +263,17 @@ Plots are created with python script via matplotlib.  Some example plots for a s
 The main parameters of the simulation are given in /Crypto/src/main/scala/crypto/ouroboros/parameters.scala:
 
 
+    //number of stakeholders
+    val numHolders = 16
+    
     //max initial stake
-    val initStakeMax = 1.0e9
+    val initStakeMax = 2.0e9
     
     //max random transaction delta
     val maxTransfer = 1.0e9
     
     //reward for forging blocks
-    val forgerReward = 1.0e7
+    val forgerReward = 1.0e8
     
     //percent of transaction amount taken as fee by the forger
     val transferFee = 0.01
@@ -275,13 +281,16 @@ The main parameters of the simulation are given in /Crypto/src/main/scala/crypto
     //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
     val f_s = 0.9
     
-    // checkpoint depth in slots, k parameter in maxValid-bg
+    //simulation runtime in slots
+    val L_s = 20000
+    
+    //checkpoint depth in slots, k parameter in maxValid-bg
     val k_s:Int = 30
     
-    // epoch length R >= 3k/2f
+    //epoch length R >= 3k/2f
     val epochLength:Int = 3*(k_s*(0.5/f_s)).toInt
     
-    // slot window for chain selection, s = k/4f
+    //slot window for chain selection, s = k/4f
     val slotWindow:Int = (k_s*0.25/f_s).toInt
     
     //status and verify check chain hash data up to this depth to gauge consensus amongst actors
@@ -300,7 +309,7 @@ The main parameters of the simulation are given in /Crypto/src/main/scala/crypto
     val dataOutInterval = epochLength
     
     //duration of slot in milliseconds
-    val slotT:Long = 200
+    val slotT:Long = 50
     
     //time out for dropped messages from coordinator
     val waitTime = 600 seconds
@@ -313,6 +322,9 @@ The main parameters of the simulation are given in /Crypto/src/main/scala/crypto
     
     //Issue random transactions if true
     var transactionFlag = true
+    
+    //p = 1/txDenominator chance of issuing transaction per iteration of update
+    var txDenominator = 10
     
     //uses randomness for public key seed and initial stake, set to false for deterministic run
     val randomFlag = true
@@ -327,7 +339,7 @@ The main parameters of the simulation are given in /Crypto/src/main/scala/crypto
     val numAverageLoad = 3
     
     //print Stakeholder 0 status per slot if true
-    val printFlag = true
+    val printFlag = false
     
     //print Stakeholder 0 execution time per slot if true
     val timingFlag = false
@@ -337,6 +349,7 @@ The main parameters of the simulation are given in /Crypto/src/main/scala/crypto
 
 Each actor executes in its own thread so they compete for computational resources.  This constrains the time step, represented by the slot time length, to scale with the resource load of all actors.  Slot times of as little as 50 ms are possible with 32 actors without a transaction load.  With a randomized transaction load of ~100 per slot, 64 actors can execute the protocol with 1 second slot times on desktop hardware.  Pushing the slot time lower causes actors to lag the coordinator clock.  A performance limiting feature has been built in to stall the coordinator when the system load reaches a threshold.  This slows the time between slots, allowing the holder actors to complete execution of protocol routines before the next slot commands are issued.  This allows massive reorgs with hundreds of actors to play out without the coordinator racing ahead.
 
-Rationale
+##Rationale
 
 Ouroboros has been presented in a very rigorous and formal mathematical style that stands out among other protocol designs. The protocol is formulated from probabilistic arguments drawn from mathematical proofs about the outcome of an idealized representation constructed from ideal functionalities.  This presentation style gives assurance that the protocol is secure but makes it difficult to conceptualize the procedure and how it operates on a network.  We wish to form a better intuition about protocol behavior under different circumstances to put theory to the test.  The papers provide no data about the execution of the protocol and details of the actual implementation are sparse at best.   We will remedy this by plotting metrics of the simulated network for different settings of key parameters.  Future work involves simulating adversarial manipulation, network connectivity conditions, and chain visualization.
+

@@ -9,7 +9,7 @@ import scala.io.StdIn
 import scala.reflect.io.Path
 import scala.util.Try
 
-object Prosomo extends App {
+object Prosomo extends App with parameters {
 
   /**
     * Ouroboros Prosomoiotís:
@@ -32,9 +32,9 @@ object Prosomo extends App {
 
   coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
 
-  coordinator ! Populate(64)
+  coordinator ! Populate(numHolders)
 
-  coordinator ! Run(20000)
+  coordinator ! Run(L_s)
 
   println("-->Press ENTER to exit<--")
   try StdIn.readLine()
