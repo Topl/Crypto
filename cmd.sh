@@ -12,6 +12,9 @@ do
 	if [ "$CMD" == "plot" ]
 	then
 	    python ./src/main/python/obPlot.py
+	elif [ "$CMD" == "plot_graph" ]
+	then
+	    python ./src/main/python/obGraph.py
 	elif [ "$CMD" != "q" ]
 	then
         mkdir -p "$pth"

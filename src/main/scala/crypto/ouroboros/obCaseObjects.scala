@@ -14,6 +14,8 @@ case object WriteFile
 case object StallActor
 case object ReadCommand
 case object Verify
+case object RequestGossipers
+case object RequestState
 case class CoordRef(ref: Any)
 case class GetTime(t1:Long)
 case class Run(max:Int)
@@ -28,4 +30,7 @@ case class SendTx(s:Any)
 case class IssueTx(s:Any)
 case class WriteFile(fw: Any)
 case class NewDataFile(name:String)
+case class NewGraphFile(name:String)
+case class GetGossipers(list:Any)
 case class Party(list:Any,clear:Boolean)
+case class GetState(s:Any)

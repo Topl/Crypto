@@ -694,6 +694,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
+    case RequestGossipers => {
+      sender() ! GetGossipers(gossipers)
+    }
+
+    case RequestState => {
+      sender() ! GetState(stakingState)
+    }
+
     case _ => if (!actorStalled) {
       println("received unknown message"); sender() ! "error"
     }

@@ -19,7 +19,7 @@ object Prosomo extends App with parameters {
     *
     */
 
-  val dataFileDir = "/tmp/scorex/test-data/crypto"
+
   val dataPath = Path(dataFileDir)
   //Try(dataPath.deleteRecursively())
   Try(dataPath.createDirectory())
@@ -30,7 +30,7 @@ object Prosomo extends App with parameters {
 
   val coordinator = system.actorOf(Coordinator.props, "Coordinator")
 
-  coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.txt")
+  coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.data")
 
   coordinator ! Populate(numHolders)
 

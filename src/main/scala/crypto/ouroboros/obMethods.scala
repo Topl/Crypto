@@ -251,11 +251,47 @@ trait obMethods
 
   def send(holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
-      implicit val timeout = Timeout(waitTime)
+      implicit val timeout:Timeout = Timeout(waitTime)
       val future = holder ? command
       val result = Await.result(future, timeout.duration)
       assert(result == "done")
     }
+  }
+
+  def getGossipers(holders:List[ActorRef]):Map[ActorRef,List[ActorRef]] = {
+    var gossipersMap:Map[ActorRef,List[ActorRef]] = Map()
+    for (holder <- holders){
+      implicit val timeout:Timeout = Timeout(waitTime)
+      val future = holder ? RequestGossipers
+      val result = Await.result(future, timeout.duration)
+      result match {
+        case value:GetGossipers => {
+          value.list match {
+            case l:List[ActorRef] => gossipersMap += (holder->l)
+            case _ => println("error")
+          }
+        }
+        case _ => println("error")
+      }
+    }
+    gossipersMap
+  }
+
+  def getStakingState(holder:ActorRef):State = {
+    var state:State = Map()
+      implicit val timeout:Timeout = Timeout(waitTime)
+      val future = holder ? RequestState
+      val result = Await.result(future, timeout.duration)
+      result match {
+        case value:GetState => {
+          value.s match {
+            case s:State => state = s
+            case _ => println("error")
+          }
+        }
+        case _ => println("error")
+      }
+    state
   }
 
   /**
@@ -269,7 +305,7 @@ trait obMethods
   def sendGenKeys(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
-      implicit val timeout = Timeout(waitTime)
+      implicit val timeout:Timeout = Timeout(waitTime)
       val future = holder ? command
       Await.result(future, timeout.duration) match {
         case str:String => {
@@ -298,7 +334,7 @@ trait obMethods
 
   def sendAndWait(holderId:ActorPath,holders:List[ActorRef],command: Box) = {
     for (holder <- holders){
-      implicit val timeout = Timeout(waitTime)
+      implicit val timeout:Timeout = Timeout(waitTime)
       if (holder.path != holderId) {
         val future = holder ? command
         val result = Await.result(future, timeout.duration)

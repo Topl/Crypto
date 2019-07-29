@@ -1,11 +1,12 @@
-import matplotlib.pyplot as plt
 import glob
 import os
+import pandas as pd
 import numpy as np
-import matplotlib.cm as cm
+import networkx as nx
+import matplotlib.pyplot as plt
 
 
-list_of_files = glob.glob('/tmp/scorex/test-data/crypto/*.data') # * means all if need specific format then *.csv
+list_of_files = glob.glob('/tmp/scorex/test-data/crypto/*.graph') # * means all if need specific format then *.csv
 latest_file = max(list_of_files, key=os.path.getctime)
 
 data_file = open(latest_file,'r')
@@ -50,46 +51,40 @@ def getColumns(inFile, delim="\t", header=True):
                     i += 1
     return cols, indexToName
 
-cols, indexToName = getColumns(data_file," ",True)
+cols, indexToName = getColumns(data_file," ",False)
 data_file.close()
 
 
-numHolders = max([int(numeric_string) for numeric_string in cols[indexToName[0]]])+1
+numHolders = len(cols[indexToName[0]])
 print("Number of holders:")
 print(numHolders)
-numDataPoints = len(cols[indexToName[0]])
-print("Number of data points:")
-print(numDataPoints)
 
-colors = cm.rainbow(np.linspace(0, 1, numHolders))
+fromList = []
+toList = []
 
-rows = range(numDataPoints)
+for row in range(numHolders):
+    for col in range(numHolders):
+        entry = int(cols[indexToName[col]][row])
+        if entry == 1:
+            fromList.append(str(row))
+            toList.append(str(col))
 
-plt.figure(1)
-for row in rows:
-	plt.scatter(int(cols["t"][row]),int(cols["blocks_forged"][row]),color=colors[int(cols["Holder_number"][row])],marker =".")
-	if int(cols["Holder_number"][row]) == 0 :
-		plt.scatter(int(cols["t"][row]),int(cols["t"][row]),color="grey",marker =".")
-		plt.scatter(int(cols["t"][row]),int(cols["chain_length"][row]),color="black",marker =".")
-plt.ylabel("number of blocks")
-plt.xlabel("slot")
-plt.title("Blocks forged")
-plt.autoscale(enable=True, axis='x', tight=True)
-plt.autoscale(enable=True, axis='y', tight=True)
-plt.tight_layout()
 
-plt.figure(2)
-for row in rows:
-	plt.scatter(int(cols["t"][row]),float(cols["alpha"][row]),color=colors[int(cols["Holder_number"][row])],marker =".")
-plt.ylabel("alpha")
-plt.xlabel("slot")
-plt.title("Relative Stake")
-plt.autoscale(enable=True, axis='x', tight=True)
-plt.autoscale(enable=True, axis='y', tight=True)
-plt.tight_layout()
 
-print("plotting")
+# ------- DIRECTED
 
+# Build a dataframe with your connections
+# This time a pair can appear 2 times, in one side or in the other!
+df = pd.DataFrame({ 'from':fromList, 'to':toList})
+df
+
+# Build your graph. Note that we use the DiGraph function to create the graph!
+G=nx.from_pandas_edgelist(df, 'from', 'to', create_using=nx.DiGraph() )
+
+# Make the graph
+nx.draw(G, with_labels=True, node_size=1500, alpha=0.3, arrows=True)
+
+# Build your graph
 plt.show()
 
 

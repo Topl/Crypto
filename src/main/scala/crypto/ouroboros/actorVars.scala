@@ -61,6 +61,8 @@ trait coordinatorVars
     with utils {
   //empty list of stake holders
   var holders: List[ActorRef] = List()
+  //list of parties
+  var parties: List[List[ActorRef]] = List()
   //holder keys for genesis block creation
   var holderKeys:Map[ActorRef,PublicKeyW] = Map()
   //initial nonce for genesis block
@@ -98,4 +100,6 @@ trait coordinatorVars
   //empty list of keys to be populated by stakeholders once they are instantiated
   var genKeys:Map[String,String] = Map()
   var fileWriter:Any = 0
+  var graphWriter:Any = 0
+  var gossipersMap:Map[ActorRef,List[ActorRef]] = Map()
 }

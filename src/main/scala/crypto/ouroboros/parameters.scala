@@ -4,7 +4,7 @@ import scala.concurrent.duration._
 
 trait parameters {
   //number of stakeholders
-  val numHolders = 64
+  val numHolders = 32
   //duration of slot in milliseconds
   val slotT:Long = 200
   // checkpoint depth in slots, k parameter in maxValid-bg
@@ -28,7 +28,7 @@ trait parameters {
   //percent of transaction amount taken as fee by the forger
   val transactionFee = 0.01
   //number of holders on gossip list for sending new blocks and transactions
-  val numGossipers = 6
+  val numGossipers = 3
   //max number of tries for a tine to ask for parent blocks
   val tineMaxTries = 10
   //max depth in multiples of confirmation depth that can be returned from an actor
@@ -36,7 +36,7 @@ trait parameters {
   //data write interval in slots
   val dataOutInterval = epochLength
   //time out for dropped messages from coordinator
-  val waitTime = 600 seconds
+  val waitTime = 2 seconds
   //duration between update tics that stakeholder actors send to themselves
   val updateTime = 1.millis
   //duration between command read tics and transaction generation for the coordinator
@@ -59,4 +59,6 @@ trait parameters {
   val timingFlag = false
   //Record data if true, plot data points with ./cmd.sh and enter command: plot
   val dataOutFlag = true
+  //path for data output files
+  val dataFileDir = "/tmp/scorex/test-data/crypto"
 }

@@ -2,12 +2,14 @@ package crypto.ouroboros
 
 import java.io.{BufferedWriter, FileWriter}
 import java.io.File
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
 import io.iohk.iodb.ByteArrayWrapper
-import scala.util.Random
 
+import scala.util.Random
 import scala.sys.process._
 
 /**
@@ -60,6 +62,8 @@ class Coordinator extends Actor
       send(holders,StartTime(t0))
       println("Diffuse Holder Info")
       send(holders,Diffuse)
+      println("Getting Gossipers")
+      gossipersMap = getGossipers(holders)
       println("Run")
       send(holders,Run(value.max))
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
@@ -205,19 +209,60 @@ class Coordinator extends Actor
 
   def command(s:String): Unit = {
     s.trim match {
+
       case "status" => {
         self ! Status
       }
+
       case "verify" => self ! Verify
+
       case "stall" => send(holders,StallActor)
+
       case "pause" => self ! StallActor
+
       case "inbox" => send(holders,Inbox)
+
       case "stall0" => send(holders(0),StallActor)
+
       case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
+
       case "write" => fileWriter match {
-        case fw:BufferedWriter => fw.flush
+        case fw:BufferedWriter => fw.flush()
         case _ => println("File writer not initialized")
       }
+
+      case "graph" => {
+        val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+        graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
+        graphWriter match {
+          case fw:BufferedWriter => {
+            var line:String = ""
+            for (holder<-holders) {
+              line = ""
+              for (ref<-holders) {
+                if (gossipersMap(holder).contains(ref)) {
+                  line = line + "1"
+                } else {
+                  line = line + "0"
+                }
+                if (holders.indexOf(ref)!=holders.length-1) {
+                  line = line + " "
+                }
+              }
+              fw.write(line+"\n")
+            }
+            fw.flush()
+          }
+          case _ =>
+        }
+        graphWriter match {
+          case fw:BufferedWriter => {
+            fw.close()
+          }
+          case _ =>
+        }
+      }
+
       case "kill" => {
         send(holders,StallActor)
         for (holder<-holders){ holder ! PoisonPill}
@@ -225,15 +270,62 @@ class Coordinator extends Actor
         self ! CloseDataFile
         context.system.terminate
       }
+
       case "split" => {
+        parties = List()
         val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-2)+1)
         println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         send(holders1,Party(holders1,true))
         send(holders1,Diffuse)
         send(holders2,Party(holders2,true))
         send(holders2,Diffuse)
+        parties ::= holders1
+        parties ::= holders2
+        gossipersMap = getGossipers(holders)
       }
+
+      case "split_stake" => {
+        val stakingState:State = getStakingState(holders(0))
+        val netStake:BigInt = {
+          var out:BigInt = 0
+          for (holder<-holders){
+            out += stakingState(holderKeys(holder))._1
+          }
+          out
+        }
+        var holders1:List[ActorRef] = List()
+        var net1:BigInt = 0
+        var holders2:List[ActorRef] = List()
+        var net2:BigInt = 0
+        for (holder <- Random.shuffle(holders)) {
+          val holderStake = stakingState(holderKeys(holder))._1
+          if (net1<net2) {
+            net1 += holderStake
+            holders1 ::= holder
+          } else {
+            net2 += holderStake
+            holders2 ::= holder
+          }
+        }
+        val alpha1 = net1.toDouble/netStake.toDouble
+        val alpha2 = net2.toDouble/netStake.toDouble
+        val numh1 = holders1.length
+        val numh2 = holders2.length
+
+        parties = List()
+
+        println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+        send(holders1,Party(holders1,true))
+        send(holders1,Diffuse)
+        send(holders2,Party(holders2,true))
+        send(holders2,Diffuse)
+        parties ::= holders1
+        parties ::= holders2
+        gossipersMap = getGossipers(holders)
+      }
+
       case "bridge" => {
+        parties = List()
         val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-3)+2)
         println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         val commonRef = holders1.head
@@ -244,12 +336,65 @@ class Coordinator extends Actor
         send(holders1.tail,Diffuse)
         send(holders2,Party(commonRef::holders2,false))
         send(holders2,Diffuse)
+        parties ::= holders1
+        parties ::= holders2
+        gossipersMap = getGossipers(holders)
       }
+
+      case "bridge_stake" => {
+        parties = List()
+        val stakingState:State = getStakingState(holders(0))
+        val netStake:BigInt = {
+          var out:BigInt = 0
+          for (holder<-holders){
+            out += stakingState(holderKeys(holder))._1
+          }
+          out
+        }
+        var holders1:List[ActorRef] = List()
+        var net1:BigInt = 0
+        var holders2:List[ActorRef] = List()
+        var net2:BigInt = 0
+        for (holder <- Random.shuffle(holders)) {
+          val holderStake = stakingState(holderKeys(holder))._1
+          if (net1<net2) {
+            net1 += holderStake
+            holders1 ::= holder
+          } else {
+            net2 += holderStake
+            holders2 ::= holder
+          }
+        }
+        val alpha1 = net1.toDouble/netStake.toDouble
+        val alpha2 = net2.toDouble/netStake.toDouble
+        val numh1 = holders1.length
+        val numh2 = holders2.length
+
+        parties = List()
+
+        println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+        val commonRef = holders1.head
+        send(holders,Party(List(),true))
+        send(List(commonRef),Party(holders,false))
+        send(List(commonRef),Diffuse)
+        send(holders1.tail,Party(holders1,false))
+        send(holders1.tail,Diffuse)
+        send(holders2,Party(commonRef::holders2,false))
+        send(holders2,Diffuse)
+        parties ::= holders1
+        parties ::= holders2
+        gossipersMap = getGossipers(holders)
+      }
+
       case "join" => {
+        parties = List()
         println("Joining Parties")
         send(holders,Party(holders,true))
         send(holders,Diffuse)
+        parties ::= holders
+        gossipersMap = getGossipers(holders)
       }
+
       case _ =>
     }
   }
