@@ -25,10 +25,10 @@ trait obMethods
 
   var localChain:Chain = Array()
   var blocks:ChainData = Array()
-  var localState:LocalState = Map()
-  var issueState:LocalState = Map()
-  var stakingState:LocalState = Map()
-  var history_state:Array[LocalState] = Array()
+  var localState:State = Map()
+  var issueState:State = Map()
+  var stakingState:State = Map()
+  var history_state:Array[State] = Array()
   var history_eta:Array[Eta] = Array()
   var memPool:MemPool = Map()
   var holderIndex:Int = -1
@@ -216,12 +216,12 @@ trait obMethods
     str+";"+id+";"+bytes2hex(sig.sign(sk_sig,serialize(str+";"+id)))
   }
 
-  def signTx(data: Any,id:Sid,sk_sig: PrivateKey,pk_sig: PublicKey): Tx = {
+  def signBox(data: Any, id:Sid, sk_sig: PrivateKey, pk_sig: PublicKey): Box = {
     (data,id,sig.sign(sk_sig,serialize(data)++id.data),pk_sig)
   }
 
-  def verifyTx(tx:Tx): Boolean = {
-    sig.verify(tx._3,serialize(tx._1)++tx._2.data,tx._4)
+  def verifyBox(box:Box): Boolean = {
+    sig.verify(box._3,serialize(box._1)++box._2.data,box._4)
   }
 
   def gossipSet(id:ActorPath,h:List[ActorRef]):List[ActorRef] = {
@@ -273,7 +273,7 @@ trait obMethods
       val future = holder ? command
       Await.result(future, timeout.duration) match {
         case str:String => {
-          if (verifyTxStamp(str)) list = list++Map(s"${holder.path}" -> str)
+          if (verifyStamp(str)) list = list++Map(s"${holder.path}" -> str)
         }
         case _ => println("error")
       }
@@ -296,7 +296,7 @@ trait obMethods
     }
   }
 
-  def sendAndWait(holderId:ActorPath,holders:List[ActorRef],command: Tx) = {
+  def sendAndWait(holderId:ActorPath,holders:List[ActorRef],command: Box) = {
     for (holder <- holders){
       implicit val timeout = Timeout(waitTime)
       if (holder.path != holderId) {
@@ -332,7 +332,7 @@ trait obMethods
     var alpha_Ep = 0.0
     var tr_Ep = 0.0
     var eta_Ep: Eta = eta(c, 0)
-    var stakingState: LocalState = Map()
+    var stakingState: State = Map()
     var pid:BlockId = (0,gh)
     var i = 0
 
@@ -412,7 +412,7 @@ trait obMethods
   def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
     val ep0 = prefix/epochLength
     var eta_Ep:Eta = history_eta(ep0)
-    var stakingState: LocalState = {
+    var stakingState: State = {
       if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
     }
     var ep = ep0
@@ -505,7 +505,7 @@ trait obMethods
     bool
   }
 
-  def relativeStake(holderKeys:PublicKeys,ls:LocalState): Double = {
+  def relativeStake(holderKeys:PublicKeys,ls:State): Double = {
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
     for (member <- ls.keySet) {
@@ -524,18 +524,18 @@ trait obMethods
     }
   }
 
-  def verifyTransfer(t:Transfer):Boolean = {
+  def verifyTransaction(t:Transaction):Boolean = {
     sig.verify(t._6,t._2.data++t._3.toByteArray++t._4.data++serialize(t._5),t._1.data.take(sig.KeyLength))
   }
 
-  def signTransfer(sk_s:PrivateKey,pk_s:PublicKeyW,pk_r:PublicKeyW,delta:BigInt,txCounter:Int): Transfer = {
+  def signTransaction(sk_s:PrivateKey, pk_s:PublicKeyW, pk_r:PublicKeyW, delta:BigInt, txCounter:Int): Transaction = {
     val sid:Sid = hash(uuid)
-    val trans:Transfer = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
+    val trans:Transaction = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
     trans
   }
 
-  def updateLocalState(ls:LocalState,c:Chain): LocalState = {
-    var nls:LocalState = ls
+  def updateLocalState(ls:State, c:Chain): State = {
+    var nls:State = ls
     for (id <- c) {
       getBlock(id) match {
         case b:Block => {
@@ -544,11 +544,11 @@ trait obMethods
           val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
           var validForger = true
           if (slot == 0) {
-            for (tx <- ledger) {
-              tx match {
-                case tx:Tx => {
-                  if (verifyTx(tx)) {
-                    tx._1 match {
+            for (entry <- ledger) {
+              entry match {
+                case box:Box => {
+                  if (verifyBox(box)) {
+                    box._1 match {
                       case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
                         if (entry._1 == genesisBytes) {
                           val delta = entry._3
@@ -568,9 +568,9 @@ trait obMethods
             }
           }
           ledger.head match {
-            case tx:Tx => {
-              if (verifyTx(tx)) {
-                tx._1 match {
+            case box:Box => {
+              if (verifyBox(box)) {
+                box._1 match {
                   case entry:(ByteArrayWrapper,BigInt) => {
                     val delta = entry._2
                     if (entry._1 == forgeBytes && delta == BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
@@ -599,8 +599,8 @@ trait obMethods
           if (validForger) {
             for (entry <- ledger.tail) {
               entry match {
-                case trans:Transfer => {
-                  nls = applyTransfer(nls,trans,pk_f)
+                case trans:Transaction => {
+                  nls = applyTransaction(nls,trans,pk_f)
                 }
                 case _ =>
               }
@@ -613,16 +613,16 @@ trait obMethods
     nls
   }
 
-  def applyTransfer(ls:LocalState,trans:Transfer,pk_f:PublicKeyW): LocalState = {
-    var nls:LocalState = ls
-    if (verifyTransfer(trans)) {
+  def applyTransaction(ls:State, trans:Transaction, pk_f:PublicKeyW): State = {
+    var nls:State = ls
+    if (verifyTransaction(trans)) {
       val pk_s:PublicKeyW = trans._1
       val pk_r:PublicKeyW = trans._2
       val validSender = nls.keySet.contains(pk_s)
       val txC_s:Int = nls(pk_s)._3
       if (validSender && trans._5 == txC_s) {
         val delta:BigInt = trans._3
-        val fee = BigDecimal(delta.toDouble*transferFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+        val fee = BigDecimal(delta.toDouble*transactionFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
         val validRecip = nls.keySet.contains(pk_r)
         val validFunds = nls(pk_s)._1 >= delta
         if (validRecip && validFunds) {
@@ -701,16 +701,16 @@ trait obMethods
     nls
   }
 
-  def collectState(c:Chain): Unit = {
+  def collectLedger(c:Chain): Unit = {
     for (id <- c) {
       getBlock(id) match {
         case b:Block => {
           val ledger:Ledger = b._2
           for (entry <- ledger.tail) {
             entry match {
-              case trans:Transfer => {
+              case trans:Transaction => {
                 if (!memPool.keySet.contains(trans._4)) {
-                  if (verifyTransfer(trans)) memPool += (trans._4->trans)
+                  if (verifyTransaction(trans)) memPool += (trans._4->trans)
                 }
               }
               case _ =>
@@ -728,14 +728,14 @@ trait obMethods
     * @return true if signature is valid, false otherwise
     */
 
-  def verifyTxStamp(value: String): Boolean = {
+  def verifyStamp(value: String): Boolean = {
     val values: Array[String] = value.split(";")
     val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
     sig.verify(hex2bytes(values(4)), serialize(m), hex2bytes(values(0)))
   }
 
   /**
-    * Return Id String from Tx stamp
+    * Return Id String from stamp
     * @param value stamp to be parsed
     * @return string containing unique info
     */
