@@ -7,7 +7,10 @@ import java.time.temporal.ChronoUnit
 
 import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
+import io.circe.Json
+import io.circe.syntax._
 import io.iohk.iodb.ByteArrayWrapper
+import scorex.crypto.encode.Base58
 
 import scala.util.Random
 import scala.sys.process._
@@ -252,6 +255,52 @@ class Coordinator extends Actor
               fw.write(line+"\n")
             }
             fw.flush()
+          }
+          case _ =>
+        }
+        graphWriter match {
+          case fw:BufferedWriter => {
+            fw.close()
+          }
+          case _ =>
+        }
+      }
+
+      case "tree" => {
+        var tn = 0
+        if (!actorStalled) {
+          val t1 = System.currentTimeMillis()-tp
+          tn = ((t1 - t0) / slotT).toInt
+        } else {
+          val t1 = tp
+          tn = ((t1 - t0) / slotT).toInt
+        }
+        getBlockTree(holders(0))
+        val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+        graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
+        graphWriter match {
+          case fw:BufferedWriter => {
+            for (i<-0 to tn){
+              val line:Json = Map(
+                "tree" -> Map(
+                  "slot" -> i.asJson,
+                  "blocks" -> blocks(i).map{
+                    case value:(ByteArrayWrapper,Block) => Map(
+                      "id" -> Base58.encode(value._1.data).asJson,
+                      "pid" -> Base58.encode(getParentId(value._2)._2.data).asJson,
+                      "ps" -> getParentId(value._2)._1.asJson
+                    ).asJson
+                  }.asJson,
+                  "history" -> chainHistory(i).map{
+                    case value:BlockId => Map(
+                      "id" -> Base58.encode(value._2.data).asJson
+                    ).asJson
+                  }.asJson
+                )
+              ).asJson
+              fw.write(line+"\n")
+              fw.flush()
+            }
           }
           case _ =>
         }

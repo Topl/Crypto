@@ -25,6 +25,7 @@ trait obMethods
 
   var localChain:Chain = Array()
   var blocks:ChainData = Array()
+  var chainHistory:ChainHistory = Array()
   var localState:State = Map()
   var issueState:State = Map()
   var stakingState:State = Map()
@@ -292,6 +293,25 @@ trait obMethods
         case _ => println("error")
       }
     state
+  }
+
+  def getBlockTree(holder:ActorRef) = {
+    implicit val timeout:Timeout = Timeout(waitTime)
+    val future = holder ? RequestBlockTree
+    val result = Await.result(future, timeout.duration)
+    result match {
+      case value:GetBlockTree => {
+        value.t match {
+          case t:ChainData => blocks = t
+          case _ => println("error")
+        }
+        value.h match {
+          case h:ChainHistory => chainHistory = h
+          case _ => println("error")
+        }
+      }
+      case _ => println("error")
+    }
   }
 
   /**

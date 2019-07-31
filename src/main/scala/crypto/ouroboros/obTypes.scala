@@ -28,4 +28,5 @@ trait obTypes {
   type BlockId = (Slot,ByteArrayWrapper)
   type Chain = Array[BlockId]
   type ChainData = Array[Map[ByteArrayWrapper,Block]]
+  type ChainHistory = Array[List[BlockId]]
 }

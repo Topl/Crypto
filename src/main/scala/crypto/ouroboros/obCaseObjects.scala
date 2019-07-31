@@ -16,6 +16,7 @@ case object ReadCommand
 case object Verify
 case object RequestGossipers
 case object RequestState
+case object RequestBlockTree
 case class CoordRef(ref: Any)
 case class GetTime(t1:Long)
 case class Run(max:Int)
@@ -34,3 +35,4 @@ case class NewGraphFile(name:String)
 case class GetGossipers(list:Any)
 case class Party(list:Any,clear:Boolean)
 case class GetState(s:Any)
+case class GetBlockTree(t:Any,h:Any)
