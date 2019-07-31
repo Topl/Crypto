@@ -280,27 +280,26 @@ class Coordinator extends Actor
         graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
         graphWriter match {
           case fw:BufferedWriter => {
-            for (i<-0 to tn){
-              val line:Json = Map(
-                "tree" -> Map(
-                  "slot" -> i.asJson,
-                  "blocks" -> blocks(i).map{
-                    case value:(ByteArrayWrapper,Block) => Map(
-                      "id" -> Base58.encode(value._1.data).asJson,
-                      "pid" -> Base58.encode(getParentId(value._2)._2.data).asJson,
-                      "ps" -> getParentId(value._2)._1.asJson
-                    ).asJson
-                  }.asJson,
-                  "history" -> chainHistory(i).map{
-                    case value:BlockId => Map(
-                      "id" -> Base58.encode(value._2.data).asJson
-                    ).asJson
-                  }.asJson
-                )
+            val json:Json = (0 to tn).toArray.map{
+              case i:Int => Map(
+                "slot" -> i.asJson,
+                "blocks" -> blocks(i).map{
+                  case value:(ByteArrayWrapper,Block) => Map(
+                    "id" -> Base58.encode(value._1.data).asJson,
+                    "pid" -> Base58.encode(getParentId(value._2)._2.data).asJson,
+                    "ps" -> getParentId(value._2)._1.asJson
+                  ).asJson
+                }.asJson,
+                "history" -> chainHistory(i).map{
+                  case value:BlockId => Map(
+                    "id" -> Base58.encode(value._2.data).asJson
+                  ).asJson
+                }.asJson
               ).asJson
-              fw.write(line+"\n")
-              fw.flush()
-            }
+            }.asJson
+            fw.write(json.toString)
+            fw.flush()
+
           }
           case _ =>
         }
