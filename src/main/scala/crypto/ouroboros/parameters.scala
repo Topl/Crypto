@@ -1,64 +1,74 @@
 package crypto.ouroboros
 
 import scala.concurrent.duration._
+import com.typesafe.config.{Config, ConfigFactory}
 
 trait parameters {
+
+  def getConfig:Config = {
+    val baseConfig = ConfigFactory.load
+    val localConfig = ConfigFactory.load("local")
+    localConfig.withFallback(baseConfig)
+  }
+
+  val config:Config = getConfig
+
   //number of stakeholders
-  val numHolders = 64
+  val numHolders:Int = config.getInt("params.numHolders")
   //duration of slot in milliseconds
-  val slotT:Long = 500
+  val slotT:Long = config.getInt("params.slotT")
   // checkpoint depth in slots, k parameter in maxValid-bg
-  val k_s:Int = 1000
+  val k_s:Int = config.getInt("params.k_s")
   //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
-  val f_s = 0.9
+  val f_s:Double = config.getDouble("params.f_s")
   //simulation runtime in slots
-  val L_s = 20000
+  val L_s:Int = config.getInt("params.L_s")
   // epoch length R >= 3k/2f
   val epochLength:Int = 3*(k_s*(0.5/f_s)).toInt
   // slot window for chain selection, s = k/4f
   val slotWindow:Int = (k_s*0.25/f_s).toInt
   //status and verify check chain hash data up to this depth to gauge consensus amongst actors
-  val confirmationDepth = 10
+  val confirmationDepth:Int = config.getInt("params.confirmationDepth")
   //max initial stake
-  val initStakeMax = 2.0e9
+  val initStakeMax:Double = config.getDouble("params.initStakeMax")
   //max random transaction delta
-  val maxTransfer = 5.0e8
+  val maxTransfer:Double = config.getDouble("params.maxTransfer")
   //reward for forging blocks
-  val forgerReward = 1.0e8
+  val forgerReward:Double = config.getDouble("params.forgerReward")
   //percent of transaction amount taken as fee by the forger
-  val transactionFee = 0.01
+  val transactionFee:Double = config.getDouble("params.transactionFee")
   //number of holders on gossip list for sending new blocks and transactions
-  val numGossipers = 6
+  val numGossipers:Int = config.getInt("params.numGossipers")
   //max number of tries for a tine to ask for parent blocks
-  val tineMaxTries = 10
+  val tineMaxTries:Int = config.getInt("params.tineMaxTries")
   //max depth in multiples of confirmation depth that can be returned from an actor
-  val tineMaxDepth = 10
+  val tineMaxDepth:Int = config.getInt("params.tineMaxDepth")
   //data write interval in slots
-  val dataOutInterval = epochLength
+  val dataOutInterval:Int = epochLength
   //time out for dropped messages from coordinator
-  val waitTime = 600 seconds
+  val waitTime:FiniteDuration = config.getInt("params.waitTime") seconds
   //duration between update tics that stakeholder actors send to themselves
-  val updateTime = 1.millis
+  val updateTime:FiniteDuration = config.getInt("params.updateTime") millis
   //duration between command read tics and transaction generation for the coordinator
-  val commandUpdateTime = (slotT/2).toInt.millis
+  val commandUpdateTime:FiniteDuration = (slotT/2).toInt millis
   //Issue random transactions if true
-  var transactionFlag = true
+  var transactionFlag:Boolean = config.getBoolean("params.transactionFlag")
   // p = 1/txDenominator => 2*(1-p)^numHolders chance of issuing transaction per slot, lower means more txs
-  var txDenominator = 10
+  var txDenominator:Int = config.getInt("params.txDenominator")
   //uses randomness for public key seed and initial stake, set to false for deterministic run
-  val randomFlag = true
+  val randomFlag:Boolean = config.getBoolean("params.randomFlag")
   //when true, if system cpu load is too high the coordinator will stall to allow stakeholders to catch up
-  val performanceFlag = true
+  val performanceFlag:Boolean = config.getBoolean("params.performanceFlag")
   //threshold of cpu usage above which coordinator will stall if performanceFlag = true
-  val systemLoadThreshold = 0.95
+  val systemLoadThreshold:Double = config.getDouble("params.systemLoadThreshold")
   //number of values to average for load threshold
-  val numAverageLoad = 3
+  val numAverageLoad:Int = config.getInt("params.numAverageLoad")
   //print Stakeholder 0 status per slot if true
-  val printFlag = true
+  val printFlag:Boolean = config.getBoolean("params.printFlag")
   //print Stakeholder 0 execution time per slot if true
-  val timingFlag = false
+  val timingFlag:Boolean = config.getBoolean("params.timingFlag")
   //Record data if true, plot data points with ./cmd.sh and enter command: plot
-  val dataOutFlag = true
+  val dataOutFlag:Boolean = config.getBoolean("params.dataOutFlag")
   //path for data output files
-  val dataFileDir = "/tmp/scorex/test-data/crypto"
+  val dataFileDir:String = config.getString("params.dataFileDir")
 }

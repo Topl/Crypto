@@ -7,6 +7,7 @@ case object Diffuse
 case object Inbox
 case object CloseDataFile
 case object Status
+case object Run
 case object GetGenKeys
 case object GetTime
 case object Update
@@ -19,8 +20,8 @@ case object RequestState
 case object RequestBlockTree
 case class CoordRef(ref: Any)
 case class GetTime(t1:Long)
-case class Run(max:Int)
-case class StartTime(t0:Long)
+case class Initialize(tMax:Int)
+case class SetClock(t0:Long)
 case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(s:Any)

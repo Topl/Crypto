@@ -276,14 +276,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
-    case value:StartTime => {
-      t0 = value.t0
-      sender() ! "done"
-    }
-
-    case value:Run => {
+    case value:Initialize => {
       println("Holder "+holderIndex.toString+" starting...")
-      tMax = value.max
+      tMax = value.tMax
       blocks = blocks++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
       localChain = Array((0,genBlockHash))++Array.fill(tMax){(-1,ByteArrayWrapper(Array()))}
       chainHistory = Array(List((0,genBlockHash)))++Array.fill(tMax){List((-1,ByteArrayWrapper(Array())))}
@@ -294,7 +289,15 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       eta = eta(localChain, 0, Array())
       history_state.update(0,localState)
       history_eta.update(0,eta)
+      sender() ! "done"
+    }
+
+    case Run => {
       timers.startPeriodicTimer(timerKey, Update, updateTime)
+    }
+
+    case value:SetClock => {
+      t0 = value.t0
       sender() ! "done"
     }
 

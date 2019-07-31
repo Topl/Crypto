@@ -34,7 +34,7 @@ object Prosomo extends App with parameters {
 
   coordinator ! Populate(numHolders)
 
-  coordinator ! Run(L_s)
+  coordinator ! Run
 
   println("-->Press ENTER to exit<--")
   try StdIn.readLine()

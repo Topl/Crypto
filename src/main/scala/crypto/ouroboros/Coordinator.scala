@@ -59,16 +59,19 @@ class Coordinator extends Actor
     /**tells actors to print their inbox */
     case Inbox => send(holders,Inbox)
 
-    case value:Run => {
-      println("Starting")
-      t0 = System.currentTimeMillis()
-      send(holders,StartTime(t0))
+    case Run => {
       println("Diffuse Holder Info")
       send(holders,Diffuse)
       println("Getting Gossipers")
       gossipersMap = getGossipers(holders)
+      println("Starting")
+      send(holders,Initialize(L_s))
       println("Run")
-      send(holders,Run(value.max))
+      t0 = System.currentTimeMillis()
+      send(holders,SetClock(t0))
+      for (holder<-Random.shuffle(holders)) {
+        send(holder,Run)
+      }
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
 
@@ -168,7 +171,7 @@ class Coordinator extends Actor
         }
       }
 
-      if (!actorStalled && transactionFlag) {
+      if (!actorStalled && transactionFlag && t>1) {
         for (i <- 1 to holders.length){
           val r = Random.nextInt(txDenominator)
           if (r==0) issueTx
