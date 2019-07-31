@@ -4,11 +4,11 @@ import scala.concurrent.duration._
 
 trait parameters {
   //number of stakeholders
-  val numHolders = 32
+  val numHolders = 64
   //duration of slot in milliseconds
-  val slotT:Long = 200
+  val slotT:Long = 500
   // checkpoint depth in slots, k parameter in maxValid-bg
-  val k_s:Int = 100
+  val k_s:Int = 1000
   //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
   val f_s = 0.9
   //simulation runtime in slots
@@ -28,7 +28,7 @@ trait parameters {
   //percent of transaction amount taken as fee by the forger
   val transactionFee = 0.01
   //number of holders on gossip list for sending new blocks and transactions
-  val numGossipers = 3
+  val numGossipers = 6
   //max number of tries for a tine to ask for parent blocks
   val tineMaxTries = 10
   //max depth in multiples of confirmation depth that can be returned from an actor
@@ -36,14 +36,14 @@ trait parameters {
   //data write interval in slots
   val dataOutInterval = epochLength
   //time out for dropped messages from coordinator
-  val waitTime = 2 seconds
+  val waitTime = 600 seconds
   //duration between update tics that stakeholder actors send to themselves
   val updateTime = 1.millis
   //duration between command read tics and transaction generation for the coordinator
   val commandUpdateTime = (slotT/2).toInt.millis
   //Issue random transactions if true
   var transactionFlag = true
-  // p = 1/txDenominator chance of issuing transaction per iteration of update, lower means more txs
+  // p = 1/txDenominator => 2*(1-p)^numHolders chance of issuing transaction per slot, lower means more txs
   var txDenominator = 10
   //uses randomness for public key seed and initial stake, set to false for deterministic run
   val randomFlag = true
