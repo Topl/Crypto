@@ -1,8 +1,8 @@
 
 
-name := "Crypto"
+name := "prosomo"
 
-version := "0.1"
+version := "0.2"
 
 scalaVersion := "2.12.8"
 
@@ -92,3 +92,5 @@ scalacOptions ++= Seq("-feature", "-deprecation")
 javaOptions ++= Seq(
   "-Dcom.sun.management.jmxremote"
 )
+
+enablePlugins(JavaAppPackaging)
