@@ -2,16 +2,48 @@ package crypto.ouroboros
 
 import scala.concurrent.duration._
 import com.typesafe.config.{Config, ConfigFactory}
+import java.io.File
+import collection.JavaConverters._
 
-trait parameters {
+trait Parameters {
 
   def getConfig:Config = {
-    val baseConfig = ConfigFactory.load
-    val localConfig = ConfigFactory.load("local")
-    localConfig.withFallback(baseConfig)
+    import Prosomo.input
+    if (input.length > 0) {
+      val inputConfigFile = new File(input.head.stripSuffix(".conf")+".conf")
+      val localConfig = ConfigFactory.parseFile(inputConfigFile).getConfig("input")
+      val baseConfig = ConfigFactory.load
+      ConfigFactory.load(localConfig).withFallback(baseConfig)
+    } else {
+      val baseConfig = ConfigFactory.load
+      val localConfig = ConfigFactory.load("local")
+      localConfig.withFallback(baseConfig)
+    }
   }
 
   val config:Config = getConfig
+
+  val inputCommands:Map[Int,String] = if (config.hasPath("command")) {
+    var out:Map[Int,String] = Map()
+    val cmdList = config.getStringList("command.cmd").asScala.toList
+    for (line<-cmdList) {
+      val com = line.trim.split(" ")
+      com(0) match {
+        case s:String => {
+          if (com.length == 2){
+            com(1).toInt match {
+              case i:Int => out += (i->s)
+              case _ =>
+            }
+          }
+        }
+        case _ =>
+      }
+    }
+    out
+  } else {
+    Map()
+  }
 
   //number of stakeholders
   val numHolders:Int = config.getInt("params.numHolders")

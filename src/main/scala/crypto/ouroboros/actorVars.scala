@@ -82,7 +82,7 @@ trait coordinatorVars
   //lock for pausing system
   var actorPaused = false
   //queue of commands to be processed in a given slot
-  var cmdQueue:Map[Slot,String] = Map()
+  var cmdQueue:Map[Slot,String] = inputCommands
 
   //set of keys so genesis block can be signed and verified by verifyBlock
   val seed:Array[Byte] = if(randomFlag){

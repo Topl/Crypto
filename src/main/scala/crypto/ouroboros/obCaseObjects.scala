@@ -18,11 +18,12 @@ case object Verify
 case object RequestGossipers
 case object RequestState
 case object RequestBlockTree
+case object Populate
+case object NewDataFile
 case class CoordRef(ref: Any)
 case class GetTime(t1:Long)
 case class Initialize(tMax:Int)
 case class SetClock(t0:Long)
-case class Populate(n:Int)
 case class GenBlock(b: Any)
 case class SendBlock(s:Any)
 case class RequestBlock(s:Any)
@@ -31,7 +32,6 @@ case class ReturnBlock(s:Any)
 case class SendTx(s:Any)
 case class IssueTx(s:Any)
 case class WriteFile(fw: Any)
-case class NewDataFile(name:String)
 case class NewGraphFile(name:String)
 case class GetGossipers(list:Any)
 case class Party(list:Any,clear:Boolean)

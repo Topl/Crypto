@@ -1,15 +1,9 @@
 package crypto.ouroboros
 
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-
 import akka.actor.ActorSystem
-
 import scala.io.StdIn
-import scala.reflect.io.Path
-import scala.util.Try
 
-object Prosomo extends App with parameters {
+object Prosomo extends App {
 
   /**
     * Ouroboros Prosomoiotís:
@@ -19,20 +13,15 @@ object Prosomo extends App with parameters {
     *
     */
 
-
-  val dataPath = Path(dataFileDir)
-  //Try(dataPath.deleteRecursively())
-  Try(dataPath.createDirectory())
-
-  val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+  val input = args
 
   val system = ActorSystem("Stakeholders")
 
   val coordinator = system.actorOf(Coordinator.props, "Coordinator")
 
-  coordinator ! NewDataFile(s"$dataFileDir/ouroboros-data-$dateString.data")
+  coordinator ! NewDataFile
 
-  coordinator ! Populate(numHolders)
+  coordinator ! Populate
 
   coordinator ! Run
 

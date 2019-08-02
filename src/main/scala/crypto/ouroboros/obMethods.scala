@@ -16,7 +16,7 @@ import scala.util.Random
 
 trait obMethods
   extends obTypes
-    with parameters
+    with Parameters
     with utils {
 
   //tags for identifying ledger entries

@@ -12,7 +12,8 @@ import io.circe.syntax._
 import io.iohk.iodb.ByteArrayWrapper
 import scorex.crypto.encode.Base58
 
-import scala.util.Random
+import scala.reflect.io.Path
+import scala.util.{Random, Try}
 import scala.sys.process._
 
 /**
@@ -28,14 +29,13 @@ class Coordinator extends Actor
   var loadAverage = Array.fill(numAverageLoad){0.0}
   private case object timerKey
 
-
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
       * This is the F_init functionality */
-    case value: Populate => {
+    case Populate => {
       println("Populating")
       var i = -1
-      holders = List.fill(value.n){
+      holders = List.fill(numHolders){
         i+=1
         if (randomFlag) {
           context.actorOf(Stakeholder.props(FastCryptographicHash(Array(i.toByte))), "Holder:" + bytes2hex(FastCryptographicHash(i.toString)))
@@ -93,9 +93,12 @@ class Coordinator extends Actor
       send(holders,Verify)
     }
 
-    case value:NewDataFile => {
+    case NewDataFile => {
       if(dataOutFlag) {
-        fileWriter = new BufferedWriter(new FileWriter(value.name))
+        val dataPath = Path(dataFileDir)
+        Try(dataPath.createDirectory())
+        val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+        fileWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-data-$dateString.data"))
         val fileString = (
           "Holder_number"
             + " t"
