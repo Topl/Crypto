@@ -2,8 +2,7 @@ package crypto.ouroboros
 
 import java.security.SecureRandom
 
-import crypto.crypto.Ed25519
-import crypto.crypto.Ed25519.{PointAccum, PointExt}
+import crypto.ouroboros.Ed25519.{PointAccum, PointExt}
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.params.{Ed25519KeyGenerationParameters, Ed25519PrivateKeyParameters, Ed25519PublicKeyParameters}
 import scorex.crypto.hash.Sha512

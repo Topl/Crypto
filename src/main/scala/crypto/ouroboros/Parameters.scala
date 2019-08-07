@@ -45,6 +45,8 @@ trait Parameters {
     Map()
   }
 
+  //seed for pseudo random runs
+  val inputSeed:String = config.getString("params.inputSeed")
   //number of stakeholders
   val numHolders:Int = config.getInt("params.numHolders")
   //duration of slot in milliseconds

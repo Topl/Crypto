@@ -53,6 +53,7 @@ trait stakeHolderVars
   var coordinatorRef:ActorRef = _
   //total number of transactions issued
   var txCounter = 0
+  //random holder ordering
 }
 
 trait coordinatorVars
@@ -65,12 +66,6 @@ trait coordinatorVars
   var parties: List[List[ActorRef]] = List()
   //holder keys for genesis block creation
   var holderKeys:Map[ActorRef,PublicKeyW] = Map()
-  //initial nonce for genesis block
-  val eta0:Eta = if(randomFlag){
-    FastCryptographicHash(uuid)
-  }else{
-    FastCryptographicHash(Array(0x00.toByte))
-  }
   //slot
   var t:Slot = 0
   //initial system time
@@ -83,12 +78,18 @@ trait coordinatorVars
   var actorPaused = false
   //queue of commands to be processed in a given slot
   var cmdQueue:Map[Slot,String] = inputCommands
-
   //set of keys so genesis block can be signed and verified by verifyBlock
+  val newSeed:String = uuid
   val seed:Array[Byte] = if(randomFlag){
-    FastCryptographicHash(uuid)
+    FastCryptographicHash(newSeed+"seed")
   }else{
-    FastCryptographicHash(Array(0xFF.toByte))
+    FastCryptographicHash(inputSeed+"seed")
+  }
+  //initial nonce for genesis block
+  val eta0:Eta = if(randomFlag){
+    FastCryptographicHash(newSeed+"eta0")
+  }else{
+    FastCryptographicHash(inputSeed+"eta0")
   }
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val (sk_vrf,pk_vrf) = vrf.vrfKeypair(seed)

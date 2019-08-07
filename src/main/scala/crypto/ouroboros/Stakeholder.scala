@@ -6,11 +6,11 @@ import bifrost.crypto.hash.FastCryptographicHash
 import util.control.Breaks._
 import java.io.BufferedWriter
 
-import scala.util.Random
 import scala.collection.immutable.ListMap
 import io.iohk.iodb.ByteArrayWrapper
 
 import scala.math.BigInt
+import scala.util.Random
 
 /**
   * Stakeholder actor that executes the staking protocol and communicates with other stakeholders,
@@ -29,6 +29,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   val sessionId:Sid = ByteArrayWrapper(FastCryptographicHash(holderId.toString))
   val publicKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
   val pkw:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
+  rng = new Random(BigInt(seed).toLong)
 
   /** Determines eligibility for a stakeholder to be a slot leader */
   /** Calculates a block with epoch variables */
@@ -310,7 +311,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       if (!actorStalled) {
         if (!updating) {
           updating = true
-          if (time > tMax) {
+          if (time > tMax || sharedData.killFlag) {
             timers.cancelAll
           } else if (diffuseSent) {
             coordinatorRef ! GetTime

@@ -13,7 +13,7 @@ import io.iohk.iodb.ByteArrayWrapper
 import scorex.crypto.encode.Base58
 
 import scala.reflect.io.Path
-import scala.util.{Random, Try}
+import scala.util.{Try,Random}
 import scala.sys.process._
 
 /**
@@ -28,6 +28,12 @@ class Coordinator extends Actor
   val sys:SystemLoadMonitor = new SystemLoadMonitor
   var loadAverage = Array.fill(numAverageLoad){0.0}
   private case object timerKey
+  if (randomFlag) {
+    rng = new Random(BigInt(FastCryptographicHash(newSeed+"coord")).toLong)
+
+  } else {
+    rng = new Random(BigInt(FastCryptographicHash(inputSeed+"coord")).toLong)
+  }
 
   def receive: Receive = {
     /**populates the holder list with stakeholder actor refs
@@ -38,9 +44,9 @@ class Coordinator extends Actor
       holders = List.fill(numHolders){
         i+=1
         if (randomFlag) {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(Array(i.toByte))), "Holder:" + bytes2hex(FastCryptographicHash(i.toString)))
+          context.actorOf(Stakeholder.props(FastCryptographicHash(newSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(newSeed+i.toString)))
         } else {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(uuid)), "Holder:" + bytes2hex(FastCryptographicHash(uuid)))
+          context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
         }
       }
       println("Sending holders list")
@@ -69,7 +75,7 @@ class Coordinator extends Actor
       println("Run")
       t0 = System.currentTimeMillis()
       send(holders,SetClock(t0))
-      for (holder<-Random.shuffle(holders)) {
+      for (holder<-rng.shuffle(holders)) {
         send(holder,Run)
       }
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
@@ -126,8 +132,13 @@ class Coordinator extends Actor
     }
 
     case ReadCommand => {
-      val t1 = System.currentTimeMillis()-tp
-      t = ((t1 - t0) / slotT).toInt
+      if (!actorStalled) {
+        val t1 = System.currentTimeMillis()-tp
+        t = ((t1 - t0) / slotT).toInt
+      } else {
+        t = ((tp - t0) / slotT).toInt
+      }
+
       if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
         println("-----------------------------------------------------------")
         val f = new File("/tmp/scorex/test-data/crypto/cmd")
@@ -174,11 +185,21 @@ class Coordinator extends Actor
         }
       }
 
-      if (!actorStalled && transactionFlag && t>1) {
+      if (!actorStalled && transactionFlag && t>1 && t<L_s) {
         for (i <- 1 to holders.length){
-          val r = Random.nextInt(txDenominator)
+          val r = rng.nextInt(txDenominator)
           if (r==0) issueTx
         }
+      }
+
+      if (sharedData.killFlag || t>L_s+10) {
+        timers.cancelAll
+        println("exiting")
+        fileWriter match {
+          case fw:BufferedWriter => fw.close()
+          case _ => println("error: file writer close on non writer object")
+        }
+        context.system.terminate
       }
     }
 
@@ -203,15 +224,11 @@ class Coordinator extends Actor
   }
 
   def issueTx: Unit = {
-    val holder1 = holders(Random.nextInt(holders.length))
-    val holder2 = holders(Random.nextInt(holders.length))
+    val holder1 = holders(rng.nextInt(holders.length))
+    val holder2 = holders(rng.nextInt(holders.length))
     var delta:BigInt = 0
     if (holder1 != holder2) {
-      delta = BigDecimal(if (randomFlag) {
-        maxTransfer*Random.nextDouble
-      } else {
-        maxTransfer
-      }).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+      delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
       holder1 ! IssueTx((holderKeys(holder2),delta))
     }
   }
@@ -327,7 +344,7 @@ class Coordinator extends Actor
 
       case "split" => {
         parties = List()
-        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-2)+1)
+        val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-2)+1)
         println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         send(holders1,Party(holders1,true))
         send(holders1,Diffuse)
@@ -351,7 +368,7 @@ class Coordinator extends Actor
         var net1:BigInt = 0
         var holders2:List[ActorRef] = List()
         var net2:BigInt = 0
-        for (holder <- Random.shuffle(holders)) {
+        for (holder <- rng.shuffle(holders)) {
           val holderStake = stakingState(holderKeys(holder))._1
           if (net1<net2) {
             net1 += holderStake
@@ -380,7 +397,7 @@ class Coordinator extends Actor
 
       case "bridge" => {
         parties = List()
-        val (holders1,holders2) = Random.shuffle(holders).splitAt(Random.nextInt(holders.length-3)+2)
+        val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-3)+2)
         println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         val commonRef = holders1.head
         send(holders,Party(List(),true))
@@ -409,7 +426,7 @@ class Coordinator extends Actor
         var net1:BigInt = 0
         var holders2:List[ActorRef] = List()
         var net2:BigInt = 0
-        for (holder <- Random.shuffle(holders)) {
+        for (holder <- rng.shuffle(holders)) {
           val holderStake = stakingState(holderKeys(holder))._1
           if (net1<net2) {
             net1 += holderStake
@@ -463,17 +480,9 @@ class Coordinator extends Actor
     val pi_y:Pi = vrf.vrfProof(sk_vrf,eta0++serialize(slot)++serialize("TEST"))
     val y:Rho = vrf.vrfProofToHash(pi_y)
     val h:Hash = ByteArrayWrapper(eta0)
-    val r = scala.util.Random
-    // set initial stake distribution, set to random value between 0.0 and initStakeMax for each stakeholder
     val ledger: Ledger = holders.map{
       case ref:ActorRef => {
-        val initStake = {
-          if (randomFlag) {
-            initStakeMax*r.nextDouble
-          } else {
-            initStakeMax
-          }
-        }
+        val initStake = {initStakeMax*rng.nextDouble}
         val pkw = ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))++hex2bytes(genKeys(s"${ref.path}").split(";")(1))++hex2bytes(genKeys(s"${ref.path}").split(";")(2)))
         holderKeys += (ref-> pkw)
         signBox((genesisBytes, pkw, BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)

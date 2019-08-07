@@ -37,6 +37,7 @@ trait obMethods
   val vrf = new obVrf
   val kes = new obKes
   val sig = new obSig
+  var rng:Random = new Random
 
   def getBlock(bid:BlockId): Any = {
     if (bid._1 >= 0 && !bid._2.data.isEmpty) {
@@ -227,7 +228,7 @@ trait obMethods
 
   def gossipSet(id:ActorPath,h:List[ActorRef]):List[ActorRef] = {
     var out:List[ActorRef] = List()
-    for (holder <- Random.shuffle(h)) {
+    for (holder <- rng.shuffle(h)) {
       if (holder.path != id && out.length < numGossipers) {
         out = holder::out
       }
@@ -345,7 +346,7 @@ trait obMethods
     */
 
   def send(holderId:ActorPath, holders:List[ActorRef],command: Any) = {
-    for (holder <- Random.shuffle(holders)){
+    for (holder <- holders){
       if (holder.path != holderId) {
         holder ! command
       }
@@ -585,7 +586,7 @@ trait obMethods
   }
 
   def signTransaction(sk_s:PrivateKey, pk_s:PublicKeyW, pk_r:PublicKeyW, delta:BigInt, txCounter:Int): Transaction = {
-    val sid:Sid = hash(uuid)
+    val sid:Sid = hash(rng.nextString(64))
     val trans:Transaction = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
     trans
   }

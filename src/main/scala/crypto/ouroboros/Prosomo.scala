@@ -14,21 +14,14 @@ object Prosomo extends App {
     */
 
   val input = args
-
   val system = ActorSystem("Stakeholders")
-
   val coordinator = system.actorOf(Coordinator.props, "Coordinator")
-
   coordinator ! NewDataFile
-
   coordinator ! Populate
-
   coordinator ! Run
-
   println("-->Press ENTER to exit<--")
   try StdIn.readLine()
   finally {
-    coordinator ! CloseDataFile
     system.terminate()
   }
 
