@@ -38,6 +38,7 @@ trait obMethods
   val kes = new obKes
   val sig = new obSig
   var rng:Random = new Random
+  var routerRef:ActorRef = _
 
   def getBlock(bid:BlockId): Any = {
     if (bid._1 >= 0 && !bid._2.data.isEmpty) {
@@ -237,21 +238,44 @@ trait obMethods
   }
 
   /**
-    * Sends commands one by one to list of stakeholders
+    * Sends command to one of the stakeholders
     * @param holder actor list
     * @param command object to be sent
     */
 
-  def send(holder:ActorRef,command: Any) = {
-    holder ! command
+  def send(sender:ActorRef,holder:ActorRef,command: Any) = {
+    if (useRouting) {
+      routerRef ! (sender,holder,command)
+    } else {
+      holder ! command
+    }
   }
+
+
   /**
     * Sends commands one by one to list of stakeholders
     * @param holders actor list
     * @param command object to be sent
     */
 
-  def send(holders:List[ActorRef],command: Any) = {
+  def send(sender:ActorRef,holders:List[ActorRef],command: Any) = {
+    for (holder <- holders){
+      if (useRouting) {
+        routerRef ! (sender,holder,command)
+      } else {
+        holder ! command
+      }
+    }
+  }
+
+
+  /**
+    * Sends commands one by one to list of stakeholders
+    * @param holders actor list
+    * @param command object to be sent
+    */
+
+  def sendAssertDone(holders:List[ActorRef], command: Any) = {
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
       val future = holder ? command
@@ -323,7 +347,7 @@ trait obMethods
     * @return map of holder data
     */
 
-  def sendGenKeys(holders:List[ActorRef],command: Any,input: Map[String,String]): Map[String,String] = {
+  def collectGenKeys(holders:List[ActorRef], command: Any, input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
@@ -338,22 +362,7 @@ trait obMethods
     list
   }
 
-  /**
-    * Sends commands one by one to shuffled list of stakeholders, except ref given by holderId
-    * @param holderId actor not to send
-    * @param holders actor list
-    * @param command object to be sent
-    */
-
-  def send(holderId:ActorPath, holders:List[ActorRef],command: Any) = {
-    for (holder <- holders){
-      if (holder.path != holderId) {
-        holder ! command
-      }
-    }
-  }
-
-  def sendAndWait(holderId:ActorPath,holders:List[ActorRef],command: Box) = {
+  def sendDiffuse(holderId:ActorPath, holders:List[ActorRef], command: Box) = {
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
       if (holder.path != holderId) {

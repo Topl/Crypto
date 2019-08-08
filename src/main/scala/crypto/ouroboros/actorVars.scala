@@ -81,13 +81,13 @@ trait coordinatorVars
   //set of keys so genesis block can be signed and verified by verifyBlock
   val newSeed:String = uuid
   val seed:Array[Byte] = if(randomFlag){
-    FastCryptographicHash(newSeed+"seed")
+    FastCryptographicHash(uuid)
   }else{
     FastCryptographicHash(inputSeed+"seed")
   }
   //initial nonce for genesis block
   val eta0:Eta = if(randomFlag){
-    FastCryptographicHash(newSeed+"eta0")
+    FastCryptographicHash(uuid)
   }else{
     FastCryptographicHash(inputSeed+"eta0")
   }

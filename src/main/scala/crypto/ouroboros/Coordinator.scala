@@ -29,8 +29,7 @@ class Coordinator extends Actor
   var loadAverage = Array.fill(numAverageLoad){0.0}
   private case object timerKey
   if (randomFlag) {
-    rng = new Random(BigInt(FastCryptographicHash(newSeed+"coord")).toLong)
-
+    rng = new Random(BigInt(FastCryptographicHash(uuid+"coord")).toLong)
   } else {
     rng = new Random(BigInt(FastCryptographicHash(inputSeed+"coord")).toLong)
   }
@@ -40,6 +39,11 @@ class Coordinator extends Actor
       * This is the F_init functionality */
     case Populate => {
       println("Populating")
+      if (randomFlag) {
+        routerRef = context.actorOf(Router.props(FastCryptographicHash(newSeed+"router")), "Router")
+      } else {
+        routerRef = context.actorOf(Router.props(FastCryptographicHash(inputSeed+"router")), "Router")
+      }
       var i = -1
       holders = List.fill(numHolders){
         i+=1
@@ -50,33 +54,32 @@ class Coordinator extends Actor
         }
       }
       println("Sending holders list")
-      send(holders,holders)
+      sendAssertDone(List(routerRef),holders)
+      sendAssertDone(holders,holders)
       println("Sending holders coordinator ref")
-      send(holders,CoordRef(self))
+      sendAssertDone(holders,RouterRef(routerRef))
+      sendAssertDone(holders,CoordRef(self))
       println("Getting holder keys")
-      genKeys = sendGenKeys(holders,GetGenKeys,genKeys)
+      genKeys = collectGenKeys(holders,RequestKeys,genKeys)
       assert(!containsDuplicates(genKeys))
       println("Forge Genesis Block")
       val genBlock:Block = forgeGenBlock
       println("Send GenBlock")
-      send(holders,GenBlock(genBlock))
-
+      sendAssertDone(holders,GenBlock(genBlock))
     }
     /**tells actors to print their inbox */
-    case Inbox => send(holders,Inbox)
+    case Inbox => sendAssertDone(holders,Inbox)
 
     case Run => {
       println("Diffuse Holder Info")
-      send(holders,Diffuse)
-      println("Getting Gossipers")
-      gossipersMap = getGossipers(holders)
+      sendAssertDone(holders,Diffuse)
       println("Starting")
-      send(holders,Initialize(L_s))
+      sendAssertDone(holders,Initialize(L_s))
       println("Run")
       t0 = System.currentTimeMillis()
-      send(holders,SetClock(t0))
+      sendAssertDone(holders,SetClock(t0))
       for (holder<-rng.shuffle(holders)) {
-        send(holder,Run)
+        holder ! Run
       }
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
@@ -90,13 +93,13 @@ class Coordinator extends Actor
 
     //tells actors to print status */
     case Status => {
-      send(holders,Status)
+      sendAssertDone(holders,Status)
       println("Total Transactions: "+sharedData.txCounter.toString)
       sharedData.txCounter = 0
     }
 
     case Verify => {
-      send(holders,Verify)
+      sendAssertDone(holders,Verify)
     }
 
     case NewDataFile => {
@@ -242,13 +245,13 @@ class Coordinator extends Actor
 
       case "verify" => self ! Verify
 
-      case "stall" => send(holders,StallActor)
+      case "stall" => sendAssertDone(holders,StallActor)
 
       case "pause" => self ! StallActor
 
-      case "inbox" => send(holders,Inbox)
+      case "inbox" => sendAssertDone(holders,Inbox)
 
-      case "stall0" => send(holders(0),StallActor)
+      case "stall0" => holders(0) ! StallActor
 
       case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
 
@@ -258,6 +261,8 @@ class Coordinator extends Actor
       }
 
       case "graph" => {
+        println("Getting Gossipers")
+        gossipersMap = getGossipers(holders)
         val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
         graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
         graphWriter match {
@@ -335,7 +340,7 @@ class Coordinator extends Actor
       }
 
       case "kill" => {
-        send(holders,StallActor)
+        sendAssertDone(holders,StallActor)
         for (holder<-holders){ holder ! PoisonPill}
         sharedData.killFlag = true
         self ! CloseDataFile
@@ -346,10 +351,10 @@ class Coordinator extends Actor
         parties = List()
         val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-2)+1)
         println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
-        send(holders1,Party(holders1,true))
-        send(holders1,Diffuse)
-        send(holders2,Party(holders2,true))
-        send(holders2,Diffuse)
+        sendAssertDone(holders1,Party(holders1,true))
+        sendAssertDone(holders1,Diffuse)
+        sendAssertDone(holders2,Party(holders2,true))
+        sendAssertDone(holders2,Diffuse)
         parties ::= holders1
         parties ::= holders2
         gossipersMap = getGossipers(holders)
@@ -386,10 +391,10 @@ class Coordinator extends Actor
         parties = List()
 
         println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
-        send(holders1,Party(holders1,true))
-        send(holders1,Diffuse)
-        send(holders2,Party(holders2,true))
-        send(holders2,Diffuse)
+        sendAssertDone(holders1,Party(holders1,true))
+        sendAssertDone(holders1,Diffuse)
+        sendAssertDone(holders2,Party(holders2,true))
+        sendAssertDone(holders2,Diffuse)
         parties ::= holders1
         parties ::= holders2
         gossipersMap = getGossipers(holders)
@@ -400,13 +405,13 @@ class Coordinator extends Actor
         val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-3)+2)
         println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
         val commonRef = holders1.head
-        send(holders,Party(List(),true))
-        send(List(commonRef),Party(holders,false))
-        send(List(commonRef),Diffuse)
-        send(holders1.tail,Party(holders1,false))
-        send(holders1.tail,Diffuse)
-        send(holders2,Party(commonRef::holders2,false))
-        send(holders2,Diffuse)
+        sendAssertDone(holders,Party(List(),true))
+        sendAssertDone(List(commonRef),Party(holders,false))
+        sendAssertDone(List(commonRef),Diffuse)
+        sendAssertDone(holders1.tail,Party(holders1,false))
+        sendAssertDone(holders1.tail,Diffuse)
+        sendAssertDone(holders2,Party(commonRef::holders2,false))
+        sendAssertDone(holders2,Diffuse)
         parties ::= holders1
         parties ::= holders2
         gossipersMap = getGossipers(holders)
@@ -445,13 +450,13 @@ class Coordinator extends Actor
 
         println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
         val commonRef = holders1.head
-        send(holders,Party(List(),true))
-        send(List(commonRef),Party(holders,false))
-        send(List(commonRef),Diffuse)
-        send(holders1.tail,Party(holders1,false))
-        send(holders1.tail,Diffuse)
-        send(holders2,Party(commonRef::holders2,false))
-        send(holders2,Diffuse)
+        sendAssertDone(holders,Party(List(),true))
+        sendAssertDone(List(commonRef),Party(holders,false))
+        sendAssertDone(List(commonRef),Diffuse)
+        sendAssertDone(holders1.tail,Party(holders1,false))
+        sendAssertDone(holders1.tail,Diffuse)
+        sendAssertDone(holders2,Party(commonRef::holders2,false))
+        sendAssertDone(holders2,Diffuse)
         parties ::= holders1
         parties ::= holders2
         gossipersMap = getGossipers(holders)
@@ -460,8 +465,8 @@ class Coordinator extends Actor
       case "join" => {
         parties = List()
         println("Joining Parties")
-        send(holders,Party(holders,true))
-        send(holders,Diffuse)
+        sendAssertDone(holders,Party(holders,true))
+        sendAssertDone(holders,Diffuse)
         parties ::= holders
         gossipersMap = getGossipers(holders)
       }

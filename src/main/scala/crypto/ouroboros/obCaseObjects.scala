@@ -8,7 +8,7 @@ case object Inbox
 case object CloseDataFile
 case object Status
 case object Run
-case object GetGenKeys
+case object RequestKeys
 case object GetTime
 case object Update
 case object WriteFile
@@ -20,7 +20,9 @@ case object RequestState
 case object RequestBlockTree
 case object Populate
 case object NewDataFile
+case class Hello(id: Any)
 case class CoordRef(ref: Any)
+case class RouterRef(ref: Any)
 case class GetTime(t1:Long)
 case class Initialize(tMax:Int)
 case class SetClock(t0:Long)

@@ -71,7 +71,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         blocks.update(currentSlot, blocks(currentSlot) + (hb -> b))
         localChain.update(currentSlot, (currentSlot, hb))
         chainHistory.update(currentSlot,(currentSlot, hb)::chainHistory(currentSlot))
-        send(holderId, gossipers, SendBlock(signBox((b,(currentSlot, hb)), sessionId, sk_sig, pk_sig)))
+        send(self,gossipers, SendBlock(signBox((b,(currentSlot, hb)), sessionId, sk_sig, pk_sig)))
         blocksForged += 1
       }
       case _ =>
@@ -203,10 +203,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             tineMaxDepth
           }
           val request:ChainRequest = (tine.head._1-1,depth)
-          send(holderId, List(ref), RequestChain(signBox(request,sessionId,sk_sig,pk_sig)))
+          send(self,ref, RequestChain(signBox(request,sessionId,sk_sig,pk_sig)))
         } else {
           if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block C:"+counter.toString+"L:"+tine.length)
-          send(holderId,List(ref), RequestBlock(signBox(tine.head,sessionId,sk_sig,pk_sig)))
+          send(self,ref, RequestBlock(signBox(tine.head,sessionId,sk_sig,pk_sig)))
         }
       }
     }
@@ -269,42 +269,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
   def receive: Receive = {
 
-    case value:CoordRef => {
-      value.ref match {
-        case r: ActorRef => coordinatorRef = r
-        case _ =>
-      }
-      sender() ! "done"
-    }
-
-    case value:Initialize => {
-      println("Holder "+holderIndex.toString+" starting...")
-      tMax = value.tMax
-      blocks = blocks++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
-      localChain = Array((0,genBlockHash))++Array.fill(tMax){(-1,ByteArrayWrapper(Array()))}
-      chainHistory = Array(List((0,genBlockHash)))++Array.fill(tMax){List((-1,ByteArrayWrapper(Array())))}
-      history_eta = Array.fill(tMax/epochLength+1){Array()}
-      history_state = Array.fill(tMax+1){Map()}
-      assert(genBlockHash == hash(blocks(0)(genBlockHash)))
-      localState = updateLocalState(localState, Array(localChain(0)))
-      eta = eta(localChain, 0, Array())
-      history_state.update(0,localState)
-      history_eta.update(0,eta)
-      sender() ! "done"
-    }
-
-    case Run => {
-      timers.startPeriodicTimer(timerKey, Update, updateTime)
-    }
-
-    case value:SetClock => {
-      t0 = value.t0
-      sender() ! "done"
-    }
-
-    case value:GetTime => if (!actorStalled) {
-      time = ((value.t1 - t0) / slotT).toInt
-    }
+/**************************************************** Holders *********************************************************/
 
     /** updates time, the kes key, and resets variables */
     case Update => { if (sharedData.error) {actorStalled = true}
@@ -314,6 +279,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           if (time > tMax || sharedData.killFlag) {
             timers.cancelAll
           } else if (diffuseSent) {
+            if (gossipers.length < numGossipers) {
+              send(self,holders.filter(_!=self),Hello(self))
+            }
             coordinatorRef ! GetTime
             if (time > currentSlot) {
               while (time > currentSlot) {
@@ -335,6 +303,25 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
 
+    case value:SendTx => if (!actorStalled) {
+      value.s match {
+        case trans:Transaction => {
+          if (!memPool.keySet.contains(trans._4)) {
+            val delta:BigInt = trans._3
+            val pk_s:PublicKeyW = trans._1
+            val net = localState(pk_s)._1
+            if (delta<=net) {
+              if (verifyTransaction(trans)) {
+                memPool += (trans._4->trans)
+                send(self,gossipers, SendTx(value.s))
+              }
+            }
+          }
+        }
+        case _ =>
+      }
+    }
+
     case value:SendBlock => if (!actorStalled) {
       value.s match {
         case s:Box => if (inbox.keySet.contains(s._2)) {
@@ -353,7 +340,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                       println("Holder " + holderIndex.toString + " Received Block")
                     }
                     val newId = (bSlot, bHash)
-                    send(holderId, gossipers, SendBlock(signBox((b,newId), sessionId, sk_sig, pk_sig)))
+                    send(self,gossipers, SendBlock(signBox((b,newId), sessionId, sk_sig, pk_sig)))
                     tines = Array((Array(newId),0,0,0,inbox(s._2)._1))++tines
                   }
                 }
@@ -462,7 +449,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                         returnedBlockList ::= (block,bid)
                       }
                     }
-                    ref ! ReturnBlock(signBox(returnedBlockList,sessionId,sk_sig,pk_sig))
+                    send(self,ref,ReturnBlock(signBox(returnedBlockList,sessionId,sk_sig,pk_sig)))
                     if (holderIndex == 0 && printFlag) {
                       println("Holder " + holderIndex.toString + " Returned Blocks")
                     }
@@ -489,29 +476,33 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
             issueState = applyTransaction(issueState,trans,pk_r)
             txCounter += 1
-            send(holderId, gossipers, SendTx(trans))
+            send(self,gossipers, SendTx(trans))
           }
         }
       }
     }
 
-    case value:SendTx => if (!actorStalled) {
-      value.s match {
-        case trans:Transaction => {
-          if (!memPool.keySet.contains(trans._4)) {
-            val delta:BigInt = trans._3
-            val pk_s:PublicKeyW = trans._1
-            val net = localState(pk_s)._1
-            if (delta<=net) {
-              if (verifyTransaction(trans)) {
-                memPool += (trans._4->trans)
-                send(holderId, gossipers, SendTx(value.s))
-              }
+    case value:Hello => {
+      value.id match {
+        case id:Sid => {
+          if (gossipers.length < numGossipers) {
+            if (inbox.keySet.contains(id) && !gossipers.contains(inbox(id)._1)) {
+              gossipers = gossipers ++ List(inbox(id)._1)
             }
           }
         }
+        case id:ActorRef => {
+          send(self,id,Hello(sessionId))
+        }
         case _ =>
       }
+    }
+
+
+/************************************************** Diffuse ***********************************************************/
+    case Diffuse => {
+      sendDiffuse(holderId, holders, signBox((self,publicKeys), sessionId, sk_sig, pk_sig))
+      sender() ! "done"
     }
 
     /** validates diffused string from other holders and stores in inbox */
@@ -526,33 +517,52 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
+
+/************************************************** Coordinator *******************************************************/
+
+    case value:Initialize => {
+      println("Holder "+holderIndex.toString+" starting...")
+      tMax = value.tMax
+      blocks = blocks++Array.fill(tMax){Map[ByteArrayWrapper,Block]()}
+      localChain = Array((0,genBlockHash))++Array.fill(tMax){(-1,ByteArrayWrapper(Array()))}
+      chainHistory = Array(List((0,genBlockHash)))++Array.fill(tMax){List((-1,ByteArrayWrapper(Array())))}
+      history_eta = Array.fill(tMax/epochLength+1){Array()}
+      history_state = Array.fill(tMax+1){Map()}
+      assert(genBlockHash == hash(blocks(0)(genBlockHash)))
+      localState = updateLocalState(localState, Array(localChain(0)))
+      eta = eta(localChain, 0, Array())
+      history_state.update(0,localState)
+      history_eta.update(0,eta)
+      sender() ! "done"
+    }
+
+    case Run => {
+      timers.startPeriodicTimer(timerKey, Update, updateTime)
+    }
+
+    case value:SetClock => {
+      t0 = value.t0
+      sender() ! "done"
+    }
+
+    case value:GetTime => if (!actorStalled) {
+      time = ((value.t1 - t0) / slotT).toInt
+    }
+
+
     /** accepts list of other holders from coordinator */
     case list:List[ActorRef] => {
       holders = list
-      gossipers = gossipSet(holderId,holders)
+      if (useRouting) {
+        gossipers = List()
+      } else {
+        gossipers = gossipSet(holderId,holders)
+      }
       var i = 0
       for (holder <- holders) {
         if (self == holder) holderIndex = i
         i += 1
       }
-      sender() ! "done"
-    }
-
-    case value:Party => {
-      value.list match {
-        case list: List[ActorRef] => {
-          holders = list
-          gossipers = gossipSet(holderId,holders)
-          if (value.clear) inbox = Map()
-          diffuseSent = false
-        }
-        case _ =>
-      }
-      sender() ! "done"
-    }
-
-    case Diffuse => {
-      sendAndWait(holderId, holders, signBox((self,publicKeys), sessionId, sk_sig, pk_sig))
       sender() ! "done"
     }
 
@@ -566,6 +576,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
         case _ => println("error")
       }
+      sender() ! "done"
+    }
+
+    case StallActor => {
+      if (!actorStalled) {actorStalled = true}
+      else {actorStalled = false}
       sender() ! "done"
     }
 
@@ -674,11 +690,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
-    /** sends coordinator keys */
-    case GetGenKeys => {
-      sender() ! diffuse(bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes), s"{$holderId}", sk_sig)
-    }
-
     case value:WriteFile => if (!actorStalled) {
       value.fw match {
         case fileWriter: BufferedWriter => {
@@ -696,9 +707,36 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
 
-    case StallActor => {
-      if (!actorStalled) {actorStalled = true}
-      else {actorStalled = false}
+    case value:CoordRef => {
+      value.ref match {
+        case r: ActorRef => coordinatorRef = r
+        case _ =>
+      }
+      sender() ! "done"
+    }
+
+    case value:RouterRef => {
+      value.ref match {
+        case r: ActorRef => routerRef = r
+        case _ =>
+      }
+      sender() ! "done"
+    }
+
+    case value:Party => {
+      value.list match {
+        case list: List[ActorRef] => {
+          holders = list
+          if (useRouting) {
+            gossipers = List()
+          } else {
+            gossipers = gossipSet(holderId,holders)
+          }
+          if (value.clear) inbox = Map()
+          diffuseSent = false
+        }
+        case _ =>
+      }
       sender() ! "done"
     }
 
@@ -712,6 +750,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case RequestBlockTree => {
       sender() ! GetBlockTree(blocks,chainHistory)
+    }
+
+    case RequestKeys => {
+      sender() ! diffuse(bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes), s"{$holderId}", sk_sig)
     }
 
     case _ => if (!actorStalled) {

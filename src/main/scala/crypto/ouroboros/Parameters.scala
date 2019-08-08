@@ -51,6 +51,10 @@ trait Parameters {
   val numHolders:Int = config.getInt("params.numHolders")
   //duration of slot in milliseconds
   val slotT:Long = config.getInt("params.slotT")
+  //delay in milliseconds per killometer in router model
+  val delay_ms_km:Double = config.getDouble("params.delay_ms_km")
+  //communication method
+  val useRouting:Boolean = config.getBoolean("params.useRouting")
   // checkpoint depth in slots, k parameter in maxValid-bg
   val k_s:Int = config.getInt("params.k_s")
   //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
