@@ -55,8 +55,14 @@ trait Parameters {
   val delay_ms_km:Double = config.getDouble("params.delay_ms_km")
   //communication method
   val useRouting:Boolean = config.getBoolean("params.useRouting")
+  // delta parameter
+  val delta_s:Int = (40075.0*delay_ms_km/slotT+1.0).ceil.toInt
   // checkpoint depth in slots, k parameter in maxValid-bg
-  val k_s:Int = config.getInt("params.k_s")
+  val k_s:Int = if(useRouting) {
+    config.getInt("params.k_s")
+  } else {
+    (192.0*delta_s/(2.0*math.pow(1.0-f_s,delta_s+1)-1.0)).ceil.toInt
+  }
   //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
   val f_s:Double = config.getDouble("params.f_s")
   //simulation runtime in slots
@@ -77,6 +83,8 @@ trait Parameters {
   val transactionFee:Double = config.getDouble("params.transactionFee")
   //number of holders on gossip list for sending new blocks and transactions
   val numGossipers:Int = config.getInt("params.numGossipers")
+  //use gossiper protocol
+  val useGossipProtocol:Boolean = config.getBoolean("params.useGossipProtocol")
   //max number of tries for a tine to ask for parent blocks
   val tineMaxTries:Int = config.getInt("params.tineMaxTries")
   //max depth in multiples of confirmation depth that can be returned from an actor

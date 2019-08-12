@@ -38,6 +38,8 @@ class Coordinator extends Actor
     /**populates the holder list with stakeholder actor refs
       * This is the F_init functionality */
     case Populate => {
+      println(s"Epoch Length = $epochLength")
+      println(s"Delta = $delta_s")
       println("Populating")
       if (randomFlag) {
         routerRef = context.actorOf(Router.props(FastCryptographicHash(newSeed+"router")), "Router")

@@ -13,6 +13,10 @@ trait stakeHolderVars
   var holders: List[ActorRef] = List()
   //list of stakeholders that all new blocks and transactions are sent to
   var gossipers: List[ActorRef] = List()
+  //gossipers offset
+  var gOff = 0
+  //number of tries to issue hello in slots
+  var numHello = 0
   //map of all session IDs and public keys associated with holders in holder list
   var inbox:Map[Sid,(ActorRef,PublicKeys)] = Map()
   //local stakeholder epoch relative stake

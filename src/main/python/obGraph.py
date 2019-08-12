@@ -80,9 +80,9 @@ df
 
 # Build your graph. Note that we use the DiGraph function to create the graph!
 G=nx.from_pandas_edgelist(df, 'from', 'to', create_using=nx.DiGraph() )
-
+nx.spring_layout(G,k=0.5,iterations=50)
 # Make the graph
-nx.draw(G, with_labels=True, node_size=1500, alpha=0.3, arrows=True)
+nx.draw(G, with_labels=True, node_size=1000, alpha=0.3, arrows=True, scale = 2)
 
 # Build your graph
 plt.show()

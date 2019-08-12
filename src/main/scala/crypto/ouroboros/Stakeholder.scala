@@ -30,6 +30,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   val publicKeys:PublicKeys = (pk_sig,pk_vrf,pk_kes)
   val pkw:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
   rng = new Random(BigInt(seed).toLong)
+  val phase:Double = rng.nextDouble
 
   /** Determines eligibility for a stakeholder to be a slot leader */
   /** Calculates a block with epoch variables */
@@ -213,22 +214,38 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   }
 
   def updateSlot = {
-    if (holderIndex == 0 && currentSlot == time) println("Slot = " + currentSlot.toString)
     time(
       updateEpoch
     )
     if (currentSlot == time) {
-      time(if (kes.getKeyTimeStep(sk_kes) < currentSlot) {
-        if (holderIndex == 0 && printFlag) {
-          println("Holder " + holderIndex.toString + " Update KES")
+      time(
+        if (kes.getKeyTimeStep(sk_kes) < currentSlot) {
+          if (holderIndex == 0) println("Slot = " + currentSlot.toString)
+          if (holderIndex == 0 && printFlag) {
+            println("Holder " + holderIndex.toString + " Update KES")
+          }
+          sk_kes = kes.updateKey(sk_kes, currentSlot)
+          if (useGossipProtocol) {
+            val newOff = (numGossipers*math.sin(2.0*math.Pi*(time.toDouble/k_s.toDouble+phase))/2.0).toInt
+            if (newOff != gOff) {
+              if (gOff < newOff) numHello = 0
+              gOff = newOff
+            }
+            if (gossipers.length < numGossipers + gOff && numHello < 1) {
+              send(self,rng.shuffle(holders.filter(_!=self)),Hello(signBox(self, sessionId, sk_sig, pk_sig)))
+              numHello += 1
+            } else if (gossipers.length > numGossipers + gOff) {
+              gossipers = rng.shuffle(gossipers).take(numGossipers + gOff)
+            }
+          }
         }
-        sk_kes = kes.updateKey(sk_kes, currentSlot)
-      })
-
-      time(if (tines.isEmpty) {
-        if (holderIndex == 0 && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
-        forgeBlock
-      })
+      )
+      time(
+        if (tines.isEmpty) {
+          if (holderIndex == 0 && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
+          forgeBlock
+        }
+      )
     }
     localState = updateLocalState(localState, Array(localChain(currentSlot)))
     issueState = localState
@@ -279,9 +296,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           if (time > tMax || sharedData.killFlag) {
             timers.cancelAll
           } else if (diffuseSent) {
-            if (gossipers.length < numGossipers) {
-              send(self,holders.filter(_!=self),Hello(self))
-            }
             coordinatorRef ! GetTime
             if (time > currentSlot) {
               while (time > currentSlot) {
@@ -482,19 +496,28 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
 
-    case value:Hello => {
-      value.id match {
-        case id:Sid => {
-          if (gossipers.length < numGossipers) {
-            if (inbox.keySet.contains(id) && !gossipers.contains(inbox(id)._1)) {
-              gossipers = gossipers ++ List(inbox(id)._1)
+    case value:Hello => if (!actorStalled) {
+      if (gossipers.length < numGossipers + gOff) {
+        value.id match {
+          case id:Box => {
+            id._1 match {
+              case ref:ActorRef => {
+                if (verifyBox(id)) {
+                  if (!gossipers.contains(ref) && inbox.keySet.contains(id._2)) {
+                    if (holderIndex == 0 && printFlag) {
+                      println("Holder " + holderIndex.toString + " Adding Gossiper")
+                    }
+                    if (inbox(id._2)._1 == ref) gossipers = gossipers ++ List(ref)
+                  }
+                  send(self,ref,Hello(signBox(self, sessionId, sk_sig, pk_sig)))
+                }
+              }
+              case _ =>
             }
+
           }
+          case _ =>
         }
-        case id:ActorRef => {
-          send(self,id,Hello(sessionId))
-        }
-        case _ =>
       }
     }
 
@@ -553,7 +576,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** accepts list of other holders from coordinator */
     case list:List[ActorRef] => {
       holders = list
-      if (useRouting) {
+      if (useGossipProtocol) {
         gossipers = List()
       } else {
         gossipers = gossipSet(holderId,holders)
@@ -627,7 +650,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     /** prints stats */
     case Status => {
       println("Holder "+holderIndex.toString + ": t = " + currentSlot.toString + ", alpha = " + alpha.toString + ", blocks forged = "
-        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString+", MemPool Size = "+memPool.size)
+        + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString+", MemPool Size = "+memPool.size+" Num Gossipers = "+gossipers.length.toString)
       var chainBytes:Array[Byte] = Array()
       for (id <- subChain(localChain,0,currentSlot-confirmationDepth)) {
         getBlock(id) match {
@@ -727,8 +750,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.list match {
         case list: List[ActorRef] => {
           holders = list
-          if (useRouting) {
+          if (useGossipProtocol) {
             gossipers = List()
+            numHello = 0
           } else {
             gossipers = gossipSet(holderId,holders)
           }
