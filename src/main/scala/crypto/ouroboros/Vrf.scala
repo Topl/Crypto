@@ -41,7 +41,7 @@ import scorex.crypto.hash.Sha512
 Table 1: Parameters of Ed25519
   */
 
-class obVrf {
+class Vrf {
   val suite: Array[Byte] = Array(0x03.toByte)
   var cofactor: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00.toByte}
   var zeroScalar: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00.toByte}

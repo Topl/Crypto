@@ -22,8 +22,8 @@ import scala.sys.process._
   */
 class Coordinator extends Actor
   with Timers
-  with obMethods
-  with coordinatorVars {
+  with Methods
+  with CoordinatorVariables {
   val coordId = s"${self.path}"
   val sys:SystemLoadMonitor = new SystemLoadMonitor
   var loadAverage = Array.fill(numAverageLoad){0.0}

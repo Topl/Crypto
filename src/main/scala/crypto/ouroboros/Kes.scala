@@ -18,7 +18,7 @@ import scala.math.BigInt
   * Sum compostion is based on underlying Ed25519 signing routine provided by Bouncy Castle
   */
 
-class obKes {
+class Kes {
 
   val seedBytes = 32
   val pkBytes = Ed25519.PUBLIC_KEY_SIZE

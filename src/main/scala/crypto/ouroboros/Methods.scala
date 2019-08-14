@@ -15,10 +15,10 @@ import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
 
-trait obMethods
-  extends obTypes
+trait Methods
+  extends Types
     with Parameters
-    with utils {
+    with Utils {
 
   //tags for identifying ledger entries
   val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
@@ -35,9 +35,9 @@ trait obMethods
   var memPool:MemPool = Map()
   var holderIndex:Int = -1
   var diffuseSent = false
-  val vrf = new obVrf
-  val kes = new obKes
-  val sig = new obSig
+  val vrf = new Vrf
+  val kes = new Kes
+  val sig = new Sig
   var rng:Random = new Random
   var routerRef:ActorRef = _
 

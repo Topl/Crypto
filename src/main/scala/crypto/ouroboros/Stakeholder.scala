@@ -19,8 +19,8 @@ import scala.util.Random
 
 class Stakeholder(seed:Array[Byte]) extends Actor
   with Timers
-  with obMethods
-  with stakeHolderVars {
+  with Methods
+  with StakeholderVariables {
   val (sk_vrf,pk_vrf) = vrf.vrfKeypair(seed)
   var sk_kes:KesKey = kes.generateKey(seed)
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)

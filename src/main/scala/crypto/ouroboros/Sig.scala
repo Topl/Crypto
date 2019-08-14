@@ -5,7 +5,7 @@ import java.security.SecureRandom
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.params.{Ed25519KeyGenerationParameters, Ed25519PrivateKeyParameters, Ed25519PublicKeyParameters}
 
-class obSig {
+class Sig {
 
   val SignatureLength = Ed25519.SIGNATURE_SIZE
   val KeyLength = Ed25519.PUBLIC_KEY_SIZE

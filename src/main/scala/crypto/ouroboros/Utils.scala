@@ -2,7 +2,7 @@ package crypto.ouroboros
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
-object sharedData extends obTypes {
+object sharedData extends Types {
   var counter = 0
   var errorFlag = false
   var killFlag = false
@@ -19,7 +19,7 @@ object sharedData extends obTypes {
   def error:Boolean = {errorFlag}
 }
 
-trait utils {
+trait Utils {
 
   def uuid: String = java.util.UUID.randomUUID.toString
 

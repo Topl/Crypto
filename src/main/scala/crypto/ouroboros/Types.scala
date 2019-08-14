@@ -3,11 +3,11 @@ package crypto.ouroboros
 import scala.math.BigInt
 import io.iohk.iodb.ByteArrayWrapper
 
-trait obTypes {
+trait Types {
   type KesKey = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
   type KesSignature = (Array[Byte],Array[Byte],Array[Byte])
   type Eta = Array[Byte]
-  type Sig = Array[Byte]
+  type Signature = Array[Byte]
   type Slot = Int
   type Rho = Array[Byte]
   type PublicKey = Array[Byte]
@@ -17,8 +17,8 @@ trait obTypes {
   type PrivateKey = Array[Byte]
   type Hash = ByteArrayWrapper
   type Pi = Array[Byte]
-  type Box = (Any,Sid,Sig,PublicKey)
-  type Transaction = (PublicKeyW,PublicKeyW,BigInt,Sid,Int,Sig)
+  type Box = (Any,Sid,Signature,PublicKey)
+  type Transaction = (PublicKeyW,PublicKeyW,BigInt,Sid,Int,Signature)
   type ChainRequest = (Slot,Int)
   type Ledger = List[Any]
   type State = Map[PublicKeyW,(BigInt,Boolean,Int)]
