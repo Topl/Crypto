@@ -2,6 +2,8 @@ package crypto.ouroboros
 
 import akka.actor.ActorSystem
 import scala.io.StdIn
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 object Prosomo extends App {
 
@@ -19,10 +21,15 @@ object Prosomo extends App {
   coordinator ! NewDataFile
   coordinator ! Populate
   coordinator ! Run
-  println("-->Press ENTER to exit<--")
-  try StdIn.readLine()
-  finally {
-    system.terminate()
+
+  if (false) {
+    println("-->Press ENTER to exit<--")
+    try StdIn.readLine()
+    finally {
+      system.terminate()
+    }
   }
+
+  Await.ready(system.whenTerminated, Duration.Inf)
 
 }

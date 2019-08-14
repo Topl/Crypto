@@ -15,7 +15,6 @@ import scorex.crypto.encode.Base58
 import scala.reflect.io.Path
 import scala.util.{Try,Random}
 import scala.sys.process._
-
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
   * sends messages to participants to execute a round
@@ -25,7 +24,7 @@ class Coordinator extends Actor
   with Methods
   with CoordinatorVariables {
   val coordId = s"${self.path}"
-  val sys:SystemLoadMonitor = new SystemLoadMonitor
+  val sysLoad:SystemLoadMonitor = new SystemLoadMonitor
   var loadAverage = Array.fill(numAverageLoad){0.0}
   var genBlock:Block = _
 
@@ -182,7 +181,7 @@ class Coordinator extends Actor
       }
 
       if (performanceFlag) {
-        val newLoad = sys.cpuLoad
+        val newLoad = sysLoad.cpuLoad
         if (newLoad>0.0){
           loadAverage = loadAverage.tail++Array(newLoad)
         }
@@ -206,9 +205,8 @@ class Coordinator extends Actor
         }
       }
 
-      if (sharedData.killFlag || t>L_s+10) {
+      if (sharedData.killFlag || t>L_s+2*delta_s) {
         timers.cancelAll
-        println("exiting")
         fileWriter match {
           case fw:BufferedWriter => fw.close()
           case _ => println("error: file writer close on non writer object")
@@ -351,10 +349,13 @@ class Coordinator extends Actor
       }
 
       case "kill" => {
-        sendAssertDone(holders,StallActor)
-        for (holder<-holders){ holder ! PoisonPill}
         sharedData.killFlag = true
-        self ! CloseDataFile
+        timers.cancelAll
+        fileWriter match {
+          case fw:BufferedWriter => fw.close()
+          case _ => println("error: file writer close on non writer object")
+        }
+        Thread.sleep(2*slotT*delta_s)
         context.system.terminate
       }
 
