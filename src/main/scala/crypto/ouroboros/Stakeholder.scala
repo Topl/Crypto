@@ -47,24 +47,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val pi: Pi = vrf.vrfProof(sk_vrf, eta ++ serialize(slot) ++ serialize("NONCE"))
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
-        var ledger: Ledger = List()
-        var ls: State = localState
-        for (entry<-ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5):_*)) {
-          if (entry._2._5 == ls(entry._2._1)._3) {
-            ls = applyTransaction(ls,entry._2,pkw)
-          }
-          ledger ::= entry._2
-          memPool -= entry._1
-        }
-        ledger = ledger.reverse
-        ledger ::= blockBox
+        val ledger = blockBox::chooseLedger(pkw)
         val cert: Cert = (pk_vrf, y, pi_y, pk_sig, threshold)
         val sig: KesSignature = kes.sign(sk_kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, ledger, slot, cert, rho, pi, sig, pk_kes,bn,ps)
       }
-      if (holderIndex == 0 && printFlag) {
+      if (holderIndex == sharedData.printingHolder && printFlag) {
         println("Holder " + holderIndex.toString + " is slot a leader")
       }
+    } else {
+      roundBlock = -1
+      updateBuffer
     }
     roundBlock match {
       case b: Block => {
@@ -77,7 +70,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       case _ =>
     }
-    roundBlock = 0
   }
 
   def updateChain = {
@@ -130,7 +122,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         trueChain &&= verifySubChain(tine,prefix)
       }
       if (trueChain) {
-        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
+        if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
         collectLedger(subChain(localChain,prefix+1,currentSlot))
         collectLedger(tine)
 
@@ -189,24 +181,24 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       tines = tines.dropRight(1)
     } else {
-      if (counter>tineMaxTries) {
-        if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Dropping Tine")
+      if (counter>2*tineMaxTries) {
+        if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Dropping Tine")
         tines = tines.dropRight(1)
       } else {
         tines.update(tines.length-1,(tine,counter,tine.length,totalTries+1,ref))
-        if (totalTries > k_s/5) {
-          if (holderIndex == 0 && printFlag) println(
+        if (totalTries > tineMaxTries) {
+          if (holderIndex == sharedData.printingHolder && printFlag) println(
             "Holder " + holderIndex.toString + " Looking for Parent Chain C:"+counter.toString+"L:"+tine.length
           )
-          val depth:Int = if (totalTries - k_s/5 < tineMaxDepth) {
-            totalTries - k_s/5
+          val depth:Int = if (totalTries - tineMaxTries < tineMaxDepth) {
+            totalTries - tineMaxTries
           } else {
             tineMaxDepth
           }
           val request:ChainRequest = (tine.head._1-1,depth)
           send(self,ref, RequestChain(signBox(request,sessionId,sk_sig,pk_sig)))
         } else {
-          if (holderIndex == 0 && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block C:"+counter.toString+"L:"+tine.length)
+          if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Looking for Parent Block C:"+counter.toString+"L:"+tine.length)
           send(self,ref, RequestBlock(signBox(tine.head,sessionId,sk_sig,pk_sig)))
         }
       }
@@ -220,8 +212,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     if (currentSlot == time) {
       time(
         if (kes.getKeyTimeStep(sk_kes) < currentSlot) {
-          if (holderIndex == 0) println("Slot = " + currentSlot.toString)
-          if (holderIndex == 0 && printFlag) {
+          roundBlock = 0
+          if (holderIndex == sharedData.printingHolder) println("Slot = " + currentSlot.toString)
+          if (holderIndex == sharedData.printingHolder && printFlag) {
             println("Holder " + holderIndex.toString + " Update KES")
           }
           sk_kes = kes.updateKey(sk_kes, currentSlot)
@@ -240,12 +233,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
       )
-      time(
-        if (tines.isEmpty) {
-          if (holderIndex == 0 && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
-          forgeBlock
-        }
-      )
     }
     localState = updateLocalState(localState, Array(localChain(currentSlot)))
     issueState = localState
@@ -257,7 +244,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   def updateEpoch = {
     if (currentSlot / epochLength > currentEpoch) {
       currentEpoch = currentSlot / epochLength
-      if (holderIndex == 0 && printFlag) println("Current Epoch = " + currentEpoch.toString)
+      if (holderIndex == sharedData.printingHolder && printFlag) println("Current Epoch = " + currentEpoch.toString)
       stakingState = {
         if (currentEpoch > 1) {history_state((currentEpoch-1)*epochLength)} else {history_state(0)}
       }
@@ -276,7 +263,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         history_eta.update(currentEpoch,eta)
       }
 
-      if (holderIndex == 0 && printFlag) {
+      if (holderIndex == sharedData.printingHolder && printFlag) {
         println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
       }
     }
@@ -299,12 +286,15 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             coordinatorRef ! GetTime
             if (time > currentSlot) {
               while (time > currentSlot) {
-                history_state.update(currentSlot,localState)
+                history_state.update(currentSlot, localState)
                 currentSlot += 1
                 updateSlot
               }
+            } else if (tines.isEmpty && roundBlock == 0) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
+              forgeBlock
             } else if (tines.nonEmpty) {
-              if (holderIndex == 0 && printFlag) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
                 println("Holder " + holderIndex.toString + " Update Chain")
               }
               time(
@@ -320,11 +310,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     case value:SendTx => if (!actorStalled) {
       value.s match {
         case trans:Transaction => {
-          if (!memPool.keySet.contains(trans._4)) {
+          if (!memPool.keySet.contains(trans._4) && localState.keySet.contains(trans._1)) {
             val delta:BigInt = trans._3
             val pk_s:PublicKeyW = trans._1
             val net = localState(pk_s)._1
-            if (delta<=net) {
+            if (delta<=net && localState(pk_s)._3 <= trans._5) {
               if (verifyTransaction(trans)) {
                 memPool += (trans._4->trans)
                 send(self,gossipers, SendTx(value.s))
@@ -350,7 +340,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
                   if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
                   if (!foundBlock && bSlot <= time) {
-                    if (holderIndex == 0 && printFlag) {
+                    if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Received Block")
                     }
                     val newId = (bSlot, bHash)
@@ -381,7 +371,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
                   if (!foundBlock) {
                     blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-                    if (holderIndex == 0 && printFlag) {
+                    if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Got Block Back")
                     }
                   }
@@ -389,7 +379,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               }
             }
             case bList: List[(Block,BlockId)] => {
-              if (holderIndex == 0 && printFlag) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
                 println("Holder " + holderIndex.toString + " Got Blocks Back")
               }
               for (bInfo <- bList) {
@@ -418,7 +408,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case s:Box => {
           if (inbox.keySet.contains(s._2)) {
-            if (holderIndex == 0 && printFlag) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {
               println("Holder " + holderIndex.toString + " Was Requested Block")
             }
             val ref = inbox(s._2)._1
@@ -428,7 +418,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                   if (verifyBox(s)) {
                     val returnedBlock = blocks(id._1)(id._2)
                     ref ! ReturnBlock(signBox((returnedBlock,id),sessionId,sk_sig,pk_sig))
-                    if (holderIndex == 0 && printFlag) {
+                    if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Returned Block")
                     }
                   }
@@ -446,7 +436,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       value.s match {
         case s:Box => {
           if (inbox.keySet.contains(s._2)) {
-            if (holderIndex == 0 && printFlag) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {
               println("Holder " + holderIndex.toString + " Was Requested Blocks")
             }
             val ref = inbox(s._2)._1
@@ -464,7 +454,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                       }
                     }
                     send(self,ref,ReturnBlock(signBox(returnedBlockList,sessionId,sk_sig,pk_sig)))
-                    if (holderIndex == 0 && printFlag) {
+                    if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Returned Blocks")
                     }
                   }
@@ -479,18 +469,20 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case value:IssueTx => if (!actorStalled) {
-      value.s match {
-        case data:(PublicKeyW,BigInt) => {
-          val (pk_r,delta) = data
-          val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-          val net = issueState(pkw)._1
-          val txC = issueState(pkw)._3
-          if (delta <= net) {
-            if (holderIndex==0 && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-            val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
-            issueState = applyTransaction(issueState,trans,pk_r)
-            txCounter += 1
-            send(self,gossipers, SendTx(trans))
+      if (issueState.keySet.contains(pkw)) {
+        value.s match {
+          case data:(PublicKeyW,BigInt) => {
+            val (pk_r,delta) = data
+            val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+            val net = issueState(pkw)._1
+            val txC = issueState(pkw)._3
+            if (delta <= net) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
+              val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
+              issueState = applyTransaction(issueState,trans,ByteArrayWrapper(Array()))
+              txCounter += 1
+              send(self,gossipers, SendTx(trans))
+            }
           }
         }
       }
@@ -504,7 +496,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case ref:ActorRef => {
                 if (verifyBox(id)) {
                   if (!gossipers.contains(ref) && inbox.keySet.contains(id._2)) {
-                    if (holderIndex == 0 && printFlag) {
+                    if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Adding Gossiper")
                     }
                     if (inbox(id._2)._1 == ref) gossipers = gossipers ++ List(ref)
@@ -633,7 +625,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      //println("Public Key: "+bytes2hex(pk_sig++pk_vrf++pk_kes))
+      println(localState.keySet.size)
+      println("Public Key: "+bytes2hex(pk_sig++pk_vrf++pk_kes))
+      println("Path: "+self.path)
       println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
       if (sharedData.error){
         for (id <- localChain) {

@@ -27,6 +27,8 @@ class Coordinator extends Actor
   val coordId = s"${self.path}"
   val sys:SystemLoadMonitor = new SystemLoadMonitor
   var loadAverage = Array.fill(numAverageLoad){0.0}
+  var genBlock:Block = _
+
   private case object timerKey
   if (randomFlag) {
     rng = new Random(BigInt(FastCryptographicHash(uuid+"coord")).toLong)
@@ -62,10 +64,10 @@ class Coordinator extends Actor
       sendAssertDone(holders,RouterRef(routerRef))
       sendAssertDone(holders,CoordRef(self))
       println("Getting holder keys")
-      genKeys = collectGenKeys(holders,RequestKeys,genKeys)
+      genKeys = collectKeys(holders,RequestKeys,genKeys)
       assert(!containsDuplicates(genKeys))
       println("Forge Genesis Block")
-      val genBlock:Block = forgeGenBlock
+      genBlock = forgeGenBlock
       println("Send GenBlock")
       sendAssertDone(holders,GenBlock(genBlock))
     }
@@ -156,7 +158,13 @@ class Coordinator extends Actor
             case s:String => {
               if (com.length == 2){
                 com(1).toInt match {
-                  case i:Int => cmdQueue += (i->s)
+                  case i:Int => {
+                    if (s == "print") {
+                      sharedData.printingHolder = i
+                    } else {
+                      cmdQueue += (i->s)
+                    }
+                  }
                   case _ =>
                 }
               } else {
@@ -471,6 +479,30 @@ class Coordinator extends Actor
         sendAssertDone(holders,Diffuse)
         parties ::= holders
         gossipersMap = getGossipers(holders)
+      }
+
+      case "new_holder" => {
+        println("Bootstrapping new holder...")
+        val i = holders.length
+        val newHolder = if (randomFlag) {
+          context.actorOf(Stakeholder.props(FastCryptographicHash(newSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(newSeed+i.toString)))
+        } else {
+          context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
+        }
+        holders = holders++List(newHolder)
+        sendAssertDone(routerRef,holders)
+        sendAssertDone(newHolder,holders)
+        sendAssertDone(newHolder,RouterRef(routerRef))
+        sendAssertDone(newHolder,CoordRef(self))
+        sendAssertDone(newHolder,GenBlock(genBlock))
+        val newHolderKeys = collectKeys(List(newHolder),RequestKeys,Map())
+        val newHolderKeyW = ByteArrayWrapper(hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(0))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(1))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(2)))
+        holderKeys += (newHolder-> newHolderKeyW)
+        sendAssertDone(holders,Party(holders,true))
+        sendAssertDone(holders,Diffuse)
+        sendAssertDone(newHolder,Initialize(L_s))
+        sendAssertDone(newHolder,SetClock(t0))
+        newHolder ! Run
       }
 
       case _ =>

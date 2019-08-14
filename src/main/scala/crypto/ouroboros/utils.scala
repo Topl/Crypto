@@ -7,6 +7,7 @@ object sharedData extends obTypes {
   var errorFlag = false
   var killFlag = false
   var txCounter = 0
+  var printingHolder = 0
   def count:Int = {
     val out = counter
     counter += 1

@@ -10,6 +10,7 @@ import scala.language.postfixOps
 import bifrost.crypto.hash.FastCryptographicHash
 import io.iohk.iodb.ByteArrayWrapper
 
+import scala.collection.immutable.ListMap
 import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
@@ -284,6 +285,13 @@ trait obMethods
     }
   }
 
+  def sendAssertDone(holder:ActorRef, command: Any) = {
+    implicit val timeout:Timeout = Timeout(waitTime)
+    val future = holder ? command
+    val result = Await.result(future, timeout.duration)
+    assert(result == "done")
+  }
+
   def getGossipers(holders:List[ActorRef]):Map[ActorRef,List[ActorRef]] = {
     var gossipersMap:Map[ActorRef,List[ActorRef]] = Map()
     for (holder <- holders){
@@ -347,7 +355,7 @@ trait obMethods
     * @return map of holder data
     */
 
-  def collectGenKeys(holders:List[ActorRef], command: Any, input: Map[String,String]): Map[String,String] = {
+  def collectKeys(holders:List[ActorRef], command: Any, input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
@@ -722,6 +730,16 @@ trait obMethods
             nls -= pk_r
             nls += (pk_s -> (s_new,true,txC_s+1))
             nls += (pk_r -> (r_new,true,r_txC))
+          } else if (!nls.keySet.contains(pk_f)) {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = nls(pk_r)._1
+            val r_txC:Int = nls(pk_r)._3
+            val s_new: BigInt = s_net - delta
+            val r_new: BigInt = r_net + delta - fee
+            nls -= pk_s
+            nls -= pk_r
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,r_txC))
           } else {
             val s_net:BigInt = nls(pk_s)._1
             val r_net:BigInt = nls(pk_r)._1
@@ -743,6 +761,14 @@ trait obMethods
             val s_net:BigInt = nls(pk_s)._1
             val r_net:BigInt = 0
             val s_new: BigInt = s_net - delta + fee
+            val r_new: BigInt = r_net + delta - fee
+            nls -= pk_s
+            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_r -> (r_new,true,0))
+          } else if (!nls.keySet.contains(pk_f)) {
+            val s_net:BigInt = nls(pk_s)._1
+            val r_net:BigInt = 0
+            val s_new: BigInt = s_net - delta
             val r_new: BigInt = r_net + delta - fee
             nls -= pk_s
             nls += (pk_s -> (s_new,true,txC_s+1))
@@ -786,6 +812,31 @@ trait obMethods
         case _ =>
       }
     }
+  }
+
+  def updateBuffer: Unit = {
+    for (state <- localState) {
+      for (entry <- memPool) {
+        if (state._1 == entry._2._1) {
+          if (entry._2._5 < state._2._3) {
+            memPool -= entry._1
+          }
+        }
+      }
+    }
+  }
+
+  def chooseLedger(pkw:PublicKeyW): Ledger = {
+    var ledger: Ledger = List()
+    var ls: State = localState
+    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5):_*)
+    for (entry<-sortedBuffer) {
+      if (entry._2._5 == ls(entry._2._1)._3) {
+        ls = applyTransaction(ls,entry._2,pkw)
+      }
+      ledger ::= entry._2
+    }
+    ledger.reverse
   }
 
   /**
