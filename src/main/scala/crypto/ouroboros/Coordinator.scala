@@ -98,7 +98,8 @@ class Coordinator extends Actor
     //tells actors to print status */
     case Status => {
       sendAssertDone(holders,Status)
-      println("Total Transactions: "+sharedData.txCounter.toString)
+      assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
+      println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
       sharedData.txCounter = 0
     }
 

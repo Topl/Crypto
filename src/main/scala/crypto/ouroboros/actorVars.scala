@@ -57,7 +57,8 @@ trait stakeHolderVars
   var coordinatorRef:ActorRef = _
   //total number of transactions issued
   var txCounter = 0
-  //random holder ordering
+  //set of all txs issued by holder
+  var setOfTxs:Map[Sid,Int] = Map()
 }
 
 trait coordinatorVars

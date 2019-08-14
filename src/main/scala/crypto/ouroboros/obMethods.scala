@@ -694,7 +694,7 @@ trait obMethods
       val pk_r:PublicKeyW = trans._2
       val validSender = nls.keySet.contains(pk_s)
       val txC_s:Int = nls(pk_s)._3
-      if (validSender && trans._5 == txC_s) {
+      if (validSender && trans._5 >= txC_s) {
         val delta:BigInt = trans._3
         val fee = BigDecimal(delta.toDouble*transactionFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
         val validRecip = nls.keySet.contains(pk_r)
@@ -703,12 +703,12 @@ trait obMethods
           if (pk_s == pk_r && pk_s != pk_f) {
             val s_net:BigInt = nls(pk_s)._1
             val f_net:BigInt = nls(pk_f)._1
-            val f_txC:Int =nls(pk_f)._3
+            val f_txC:Int = nls(pk_f)._3
             val s_new: BigInt = s_net - fee
             val f_new: BigInt = f_net + fee
             nls -= pk_s
             nls -= pk_f
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_f -> (f_new,true,f_txC))
           } else if (pk_s == pk_f) {
             val s_net:BigInt = nls(pk_s)._1
@@ -718,7 +718,7 @@ trait obMethods
             val r_new: BigInt = r_net + delta - fee
             nls -= pk_s
             nls -= pk_r
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,r_txC))
           } else if (pk_r == pk_f) {
             val s_net:BigInt = nls(pk_s)._1
@@ -728,7 +728,7 @@ trait obMethods
             val r_new: BigInt = r_net + delta
             nls -= pk_s
             nls -= pk_r
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,r_txC))
           } else if (!nls.keySet.contains(pk_f)) {
             val s_net:BigInt = nls(pk_s)._1
@@ -738,7 +738,7 @@ trait obMethods
             val r_new: BigInt = r_net + delta - fee
             nls -= pk_s
             nls -= pk_r
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,r_txC))
           } else {
             val s_net:BigInt = nls(pk_s)._1
@@ -752,7 +752,7 @@ trait obMethods
             nls -= pk_s
             nls -= pk_r
             nls -= pk_f
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,r_txC))
             nls += (pk_f -> (f_new,true,f_txC))
           }
@@ -763,7 +763,7 @@ trait obMethods
             val s_new: BigInt = s_net - delta + fee
             val r_new: BigInt = r_net + delta - fee
             nls -= pk_s
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,0))
           } else if (!nls.keySet.contains(pk_f)) {
             val s_net:BigInt = nls(pk_s)._1
@@ -771,7 +771,7 @@ trait obMethods
             val s_new: BigInt = s_net - delta
             val r_new: BigInt = r_net + delta - fee
             nls -= pk_s
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,0))
           } else {
             val s_net:BigInt = nls(pk_s)._1
@@ -783,7 +783,7 @@ trait obMethods
             val f_new: BigInt = f_net + fee
             nls -= pk_s
             nls -= pk_f
-            nls += (pk_s -> (s_new,true,txC_s+1))
+            nls += (pk_s -> (s_new,true,trans._5+1))
             nls += (pk_r -> (r_new,true,0))
             nls += (pk_f -> (f_new,true,f_txC))
           }
@@ -831,7 +831,7 @@ trait obMethods
     var ls: State = localState
     val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5):_*)
     for (entry<-sortedBuffer) {
-      if (entry._2._5 == ls(entry._2._1)._3) {
+      if (entry._2._5 >= ls(entry._2._1)._3) {
         ls = applyTransaction(ls,entry._2,pkw)
       }
       ledger ::= entry._2

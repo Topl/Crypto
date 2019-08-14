@@ -57,7 +57,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     } else {
       roundBlock = -1
-      updateBuffer
     }
     roundBlock match {
       case b: Block => {
@@ -67,6 +66,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         chainHistory.update(currentSlot,(currentSlot, hb)::chainHistory(currentSlot))
         send(self,gossipers, SendBlock(signBox((b,(currentSlot, hb)), sessionId, sk_sig, pk_sig)))
         blocksForged += 1
+        localState = updateLocalState(localState, Array(localChain(currentSlot)))
+        issueState = localState
       }
       case _ =>
     }
@@ -212,6 +213,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     if (currentSlot == time) {
       time(
         if (kes.getKeyTimeStep(sk_kes) < currentSlot) {
+          if (holderIndex == sharedData.printingHolder && printFlag && currentSlot%epochLength == 0) {
+            println("Current Epoch = " + currentEpoch.toString)
+            println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
+          }
           roundBlock = 0
           if (holderIndex == sharedData.printingHolder) println("Slot = " + currentSlot.toString)
           if (holderIndex == sharedData.printingHolder && printFlag) {
@@ -244,7 +249,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   def updateEpoch = {
     if (currentSlot / epochLength > currentEpoch) {
       currentEpoch = currentSlot / epochLength
-      if (holderIndex == sharedData.printingHolder && printFlag) println("Current Epoch = " + currentEpoch.toString)
       stakingState = {
         if (currentEpoch > 1) {history_state((currentEpoch-1)*epochLength)} else {history_state(0)}
       }
@@ -261,10 +265,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       if (currentEpoch > 0) {
         eta = eta(localChain, currentEpoch, history_eta(currentEpoch-1))
         history_eta.update(currentEpoch,eta)
-      }
-
-      if (holderIndex == sharedData.printingHolder && printFlag) {
-        println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
       }
     }
   }
@@ -475,12 +475,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             val (pk_r,delta) = data
             val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
             val net = issueState(pkw)._1
-            val txC = issueState(pkw)._3
+            val txC = txCounter//issueState(pkw)._3
             if (delta <= net) {
               if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-              val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
+              val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC+1)
               issueState = applyTransaction(issueState,trans,ByteArrayWrapper(Array()))
               txCounter += 1
+              setOfTxs += (trans._4->trans._5)
               send(self,gossipers, SendTx(trans))
             }
           }
@@ -655,10 +656,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       sharedData.txCounter += txCounter
+      sharedData.setOfTxs ++= setOfTxs
       var txCount = 0
       var allTx:List[Sid] = List()
       var duplicatesFound = false
       var allTxSlots:List[Slot] = List()
+      var holderTxOnChain:List[(Sid,Transaction)] = List()
       for (id <- subChain(localChain,0,currentSlot)) {
         getBlock(id) match {
           case b:Block => {
@@ -667,6 +670,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               entry match {
                 case trans:Transaction => {
                   if (!allTx.contains(trans._4)) {
+                    if (trans._1 == pkw) holderTxOnChain ::= (trans._4,trans)
                     allTx ::= trans._4
                     allTxSlots ::= b._3
                     txCount+=1
@@ -684,7 +688,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      println(s"Transactions on chain: $txCount, duplicates: $duplicatesFound")
+      val holderTxCount = holderTxOnChain.length
+      val holderTxCountTotal = setOfTxs.keySet.size
+      val txCountChain = if (holderTxOnChain.isEmpty) {0} else {holderTxOnChain.head._2._5}
+      val txCountState = math.max(localState(pkw)._3-1,0)
+      println(s"Tx Counts in state and chain: $txCountState, $txCountChain")
+      println(s"Transactions on chain: $holderTxCount / $holderTxCountTotal Total: $txCount Duplicates: $duplicatesFound")
       println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
       if (false){
         for (id <- localChain) {

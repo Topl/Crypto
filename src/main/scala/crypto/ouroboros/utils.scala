@@ -8,6 +8,7 @@ object sharedData extends obTypes {
   var killFlag = false
   var txCounter = 0
   var printingHolder = 0
+  var setOfTxs:Map[Sid,Int] = Map()
   def count:Int = {
     val out = counter
     counter += 1
