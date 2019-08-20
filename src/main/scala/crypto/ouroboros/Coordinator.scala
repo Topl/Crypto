@@ -5,7 +5,7 @@ import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-import akka.actor.{Actor, ActorRef, PoisonPill, Props, Timers}
+import akka.actor.{Actor, ActorRef, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
 import io.circe.Json
 import io.circe.syntax._
@@ -15,10 +15,12 @@ import scorex.crypto.encode.Base58
 import scala.reflect.io.Path
 import scala.util.{Try,Random}
 import scala.sys.process._
+
 /**
   * Coordinator actor that initializes the genesis block and instantiates the staking party,
   * sends messages to participants to execute a round
   */
+
 class Coordinator extends Actor
   with Timers
   with Methods
@@ -36,8 +38,8 @@ class Coordinator extends Actor
   }
 
   def receive: Receive = {
-    /**populates the holder list with stakeholder actor refs
-      * This is the F_init functionality */
+
+      /**populates the holder list with stakeholder actor refs, the F_init functionality */
     case Populate => {
       println(s"Epoch Length = $epochLength")
       println(s"Delta = $delta_s")
@@ -70,9 +72,11 @@ class Coordinator extends Actor
       println("Send GenBlock")
       sendAssertDone(holders,GenBlock(genBlock))
     }
-    /**tells actors to print their inbox */
+
+      /**tells actors to print their inbox */
     case Inbox => sendAssertDone(holders,Inbox)
 
+      /**sends start command to each stakeholder*/
     case Run => {
       println("Diffuse Holder Info")
       sendAssertDone(holders,Diffuse)
@@ -87,14 +91,17 @@ class Coordinator extends Actor
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
 
-    case GetTime => if (!actorStalled) {
-      val t1 = System.currentTimeMillis()-tp
-      sender() ! GetTime(t1)
-    } else {
-      sender() ! GetTime(tp)
+      /**returns offset time to stakholder that issues GetTime to coordinator*/
+    case GetTime => {
+      if (!actorStalled) {
+        val t1 = System.currentTimeMillis()-tp
+        sender() ! GetTime(t1)
+      } else {
+        sender() ! GetTime(tp)
+      }
     }
 
-    //tells actors to print status */
+      /**tells actors to print status */
     case Status => {
       sendAssertDone(holders,Status)
       assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
@@ -102,10 +109,12 @@ class Coordinator extends Actor
       sharedData.txCounter = 0
     }
 
+      /**tells actors to verify chain data from genesis*/
     case Verify => {
       sendAssertDone(holders,Verify)
     }
 
+      /**coordinator creates a file writer object that is passed to stakeholders if data is being written*/
     case NewDataFile => {
       if(dataOutFlag) {
         val dataPath = Path(dataFileDir)
@@ -127,10 +136,12 @@ class Coordinator extends Actor
       }
     }
 
+      /**passes fileWriter to actor who requests it with WriteFile*/
     case WriteFile => {
       sender() ! WriteFile(fileWriter)
     }
 
+      /**closes the writer object to make sure data is written from buffer*/
     case CloseDataFile => if(dataOutFlag) {
       fileWriter match {
         case fw:BufferedWriter => fw.close()
@@ -138,6 +149,7 @@ class Coordinator extends Actor
       }
     }
 
+      /**command interpretation from config and cmd script*/
     case ReadCommand => {
       if (!actorStalled) {
         val t1 = System.currentTimeMillis()-tp
@@ -215,6 +227,7 @@ class Coordinator extends Actor
       }
     }
 
+      /**pauses coordinator*/
     case StallActor => {
       if (!actorPaused) {
         actorPaused = true
@@ -235,6 +248,7 @@ class Coordinator extends Actor
     case _ => println("received unknown message")
   }
 
+  /**randomly picks two holders and creates a transaction between the two*/
   def issueTx: Unit = {
     val holder1 = holders(rng.nextInt(holders.length))
     val holder2 = holders(rng.nextInt(holders.length))
@@ -245,6 +259,7 @@ class Coordinator extends Actor
     }
   }
 
+  /**command string interpreter*/
   def command(s:String): Unit = {
     s.trim match {
 

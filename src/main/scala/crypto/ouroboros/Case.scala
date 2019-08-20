@@ -1,7 +1,5 @@
 package crypto.ouroboros
 
-import io.iohk.iodb.ByteArrayWrapper
-
 // case objects and classes for pattern matching messages between actors
 case object Diffuse
 case object Inbox
