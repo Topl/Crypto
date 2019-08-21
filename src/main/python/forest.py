@@ -4,7 +4,7 @@ import numpy as np
 import os
 import glob
 
-list_of_files = glob.glob('*.tree') # * means all if need specific format then *.csv
+list_of_files = glob.glob('/home/aaron/topl/Crypto/data/*.tree') # * means all if need specific format then *.csv
 
 data = np.empty([])
 allIds = []

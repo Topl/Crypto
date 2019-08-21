@@ -24,6 +24,7 @@ trait Methods
   val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
   val genesisBytes = ByteArrayWrapper("GENESIS".getBytes)
 
+  //vars for chain, blocks, state, history, and locks
   var localChain:Chain = Array()
   var blocks:ChainData = Array()
   var chainHistory:ChainHistory = Array()
@@ -35,12 +36,20 @@ trait Methods
   var memPool:MemPool = Map()
   var holderIndex:Int = -1
   var diffuseSent = false
+
+  //verification and signing objects
   val vrf = new Vrf
   val kes = new Kes
   val sig = new Sig
+
   var rng:Random = new Random
   var routerRef:ActorRef = _
 
+  /**
+    * retrieve a block from database
+    * @param bid
+    * @return block if found, 0 otherwise
+    */
   def getBlock(bid:BlockId): Any = {
     if (bid._1 >= 0 && !bid._2.data.isEmpty) {
       if (blocks(bid._1).contains(bid._2)) {
@@ -53,6 +62,11 @@ trait Methods
     }
   }
 
+  /**
+    * retrieve parent block
+    * @param b
+    * @return parent block if found, 0 otherwise
+    */
   def getParentBlock(b:Block): Any = {
     if (b._10 >= 0 && !b._1.data.isEmpty) {
       if (blocks(b._10).contains(b._1)) {
@@ -65,6 +79,11 @@ trait Methods
     }
   }
 
+  /**
+    * retrieve parent block id
+    * @param bid
+    * @return parent id if found, 0 otherwise
+    */
   def getParentId(bid:BlockId): Any = {
     getBlock(bid) match {
       case b:Block => (b._10,b._1)
@@ -72,10 +91,21 @@ trait Methods
     }
   }
 
+  /**
+    * retrieve parent block id from block
+    * @param b
+    * @return parent id
+    */
   def getParentId(b:Block): BlockId = {
     (b._10,b._1)
   }
 
+  /**
+    * finds the last non-empty slot in a chain
+    * @param c chain of block ids
+    * @param s slot to start search
+    * @return last active slot found on chain c starting at slot s
+    */
   def lastActiveSlot(c:Chain,s:Slot): Slot = {
     var i = s
     while (c(i)._2.data.isEmpty) {
@@ -84,6 +114,11 @@ trait Methods
     i
   }
 
+  /**
+    * returns the total number of active slots on a chain
+    * @param c chain of block ids
+    * @return total active slots
+    */
   def getActiveSlots(c:Chain): Int = {
     var i = 0
     for (id<-c) {
@@ -94,6 +129,11 @@ trait Methods
     i
   }
 
+  /**
+    * main hash routine used in prosomo
+    * @param input any bytes
+    * @return wrapped byte array
+    */
   def hash(input:Any): ByteArrayWrapper = {
     ByteArrayWrapper(FastCryptographicHash(serialize(input)))
   }
@@ -104,7 +144,6 @@ trait Methods
     * @param ep epoch derived from time step
     * @return hash nonce
     */
-
   def eta(c:Chain,ep:Int): Eta = {
     if(ep == 0) {
       getBlock(c(0)) match {
@@ -132,7 +171,6 @@ trait Methods
     * @param etaP previous eta
     * @return hash nonce
     */
-
   def eta(c:Chain,ep:Int,etaP:Eta): Eta = {
     if(ep == 0) {
       getBlock(c(0)) match {
@@ -149,19 +187,17 @@ trait Methods
         }
       }
       val eta_ep = FastCryptographicHash(etaP++serialize(ep)++v)
-      //println("H:"+holderIndex.toString+" in:"+bytes2hex(etaP)+"\nNonce Bytes:\n"+bytes2hex(v)+"\n"+"ot:"+bytes2hex(eta_ep))
       eta_ep
     }
   }
 
   /**
-    * returns a subchain containing all blocks in a given time interval
+    * returns a sub-chain containing all blocks in a given time interval
     * @param c input chain
     * @param t1 slot lower bound
     * @param t2 slot upper bound
     * @return all blocks in the interval t1 to t2, including blocks of t1 and t2
     */
-
   def subChain(c:Chain,t1:Int,t2:Int): Chain = {
     var t_lower:Int = 0
     var t_upper:Int = 0
@@ -170,6 +206,12 @@ trait Methods
     c.slice(t_lower,t_upper+1)
   }
 
+  /**
+    * expands a tine to have empty slots in between active slots
+    * @param c dense chain
+    * @param p prefix slot
+    * @return expanded tine
+    */
   def expand(c:Chain,p:Slot): Chain ={
     val out = Array.fill(c.last._1-p){(-1,ByteArrayWrapper(Array()))}
     for (id <- c) {
@@ -184,7 +226,6 @@ trait Methods
     * @param f active slot coefficient
     * @return probability of being elected slot leader
     */
-
   def phi (a:Double,f:Double): Double = {
     1.0 - scala.math.pow(1.0 - f,a)
   }
@@ -195,7 +236,6 @@ trait Methods
     * @param t threshold between 0.0 and 1.0
     * @return true if y mapped to double between 0.0 and 1.0 is less than threshold
     */
-
   def compare(y: Array[Byte],t: Double):Boolean = {
     var net = 0.0
     var i =0
@@ -215,19 +255,37 @@ trait Methods
     * @param sk_sig holder signature secret key
     * @return string to be diffused
     */
-
   def diffuse(str: String,id: String,sk_sig: PrivateKey): String = {
     str+";"+id+";"+bytes2hex(sig.sign(sk_sig,serialize(str+";"+id)))
   }
 
+  /**
+    * Signed data box for verification between holders
+    * @param data any data
+    * @param id session id
+    * @param sk_sig sig private key
+    * @param pk_sig sig public key
+    * @return signed box
+    */
   def signBox(data: Any, id:Sid, sk_sig: PrivateKey, pk_sig: PublicKey): Box = {
     (data,id,sig.sign(sk_sig,serialize(data)++id.data),pk_sig)
   }
 
+  /**
+    * verify a
+    * @param box
+    * @return
+    */
   def verifyBox(box:Box): Boolean = {
     sig.verify(box._3,serialize(box._1)++box._2.data,box._4)
   }
 
+  /**
+    * picks set of gossipers randomly
+    * @param id self ref not to include
+    * @param h list of holders
+    * @return list of gossipers
+    */
   def gossipSet(id:ActorPath,h:List[ActorRef]):List[ActorRef] = {
     var out:List[ActorRef] = List()
     for (holder <- rng.shuffle(h)) {
@@ -243,7 +301,6 @@ trait Methods
     * @param holder actor list
     * @param command object to be sent
     */
-
   def send(sender:ActorRef,holder:ActorRef,command: Any) = {
     if (useRouting) {
       routerRef ! (sender,holder,command)
@@ -252,13 +309,11 @@ trait Methods
     }
   }
 
-
   /**
     * Sends commands one by one to list of stakeholders
     * @param holders actor list
     * @param command object to be sent
     */
-
   def send(sender:ActorRef,holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
       if (useRouting) {
@@ -269,13 +324,11 @@ trait Methods
     }
   }
 
-
   /**
     * Sends commands one by one to list of stakeholders
     * @param holders actor list
     * @param command object to be sent
     */
-
   def sendAssertDone(holders:List[ActorRef], command: Any) = {
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
@@ -285,6 +338,11 @@ trait Methods
     }
   }
 
+  /**
+    * Sends command to stakeholder and waits for response
+    * @param holder
+    * @param command
+    */
   def sendAssertDone(holder:ActorRef, command: Any) = {
     implicit val timeout:Timeout = Timeout(waitTime)
     val future = holder ? command
@@ -292,6 +350,11 @@ trait Methods
     assert(result == "done")
   }
 
+  /**
+    * returns map of gossipers to coordinator
+    * @param holders
+    * @return map of actor ref to its list of gossipers
+    */
   def getGossipers(holders:List[ActorRef]):Map[ActorRef,List[ActorRef]] = {
     var gossipersMap:Map[ActorRef,List[ActorRef]] = Map()
     for (holder <- holders){
@@ -311,6 +374,11 @@ trait Methods
     gossipersMap
   }
 
+  /**
+    * returns the staking state to the coordinator
+    * @param holder
+    * @return
+    */
   def getStakingState(holder:ActorRef):State = {
     var state:State = Map()
       implicit val timeout:Timeout = Timeout(waitTime)
@@ -328,6 +396,10 @@ trait Methods
     state
   }
 
+  /**
+    * sets the local chain history and block data to the holders
+    * @param holder actor to get data from
+    */
   def getBlockTree(holder:ActorRef) = {
     implicit val timeout:Timeout = Timeout(waitTime)
     val future = holder ? RequestBlockTree
@@ -354,7 +426,6 @@ trait Methods
     * @param input map of holder data
     * @return map of holder data
     */
-
   def collectKeys(holders:List[ActorRef], command: Any, input: Map[String,String]): Map[String,String] = {
     var list:Map[String,String] = input
     for (holder <- holders){
@@ -370,6 +441,12 @@ trait Methods
     list
   }
 
+  /**
+    * send diffuse message between holders, used for populating inbox
+    * @param holderId
+    * @param holders
+    * @param command
+    */
   def sendDiffuse(holderId:ActorPath, holders:List[ActorRef], command: Box) = {
     for (holder <- holders){
       implicit val timeout:Timeout = Timeout(waitTime)
@@ -387,19 +464,17 @@ trait Methods
     * @param b input block
     * @returnt true if signature is valid, false otherwise
     */
-
   def verifyBlock(b:Block): Boolean = {
     val (hash, state, slot, cert, rho, pi, sig, pk_kes, bn,ps) = b
     kes.verify(pk_kes,hash.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps),sig,slot)
   }
 
   /**
-    * Verify chain using key evolving siganture, VRF proofs, and hash rule
+    * Verify chain using key evolving signature, VRF proofs, and hash id
     * @param c chain to be verified
     * @param gh genesis block hash
     * @return true if chain is valid, false otherwise
     */
-
   def verifyChain(c:Chain, gh:Hash): Boolean = {
     var bool = true
     var ep = -1
@@ -482,7 +557,6 @@ trait Methods
     * @param tine chain to be verified
     * @return true if chain is valid, false otherwise
     */
-
   def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
     val ep0 = prefix/epochLength
     var eta_Ep:Eta = history_eta(ep0)
@@ -579,6 +653,12 @@ trait Methods
     bool
   }
 
+  /**
+    * calculates alpha, the epoch relative stake, from the staking state
+    * @param holderKeys
+    * @param ls
+    * @return
+    */
   def relativeStake(holderKeys:PublicKeys,ls:State): Double = {
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
@@ -598,16 +678,36 @@ trait Methods
     }
   }
 
+  /**
+    * verify a signed issued transaction
+    * @param t transaction
+    * @return true if valid, false otherwise
+    */
   def verifyTransaction(t:Transaction):Boolean = {
     sig.verify(t._6,t._2.data++t._3.toByteArray++t._4.data++serialize(t._5),t._1.data.take(sig.KeyLength))
   }
 
+  /**
+    * sign a transaction to be issued
+    * @param sk_s sig private key
+    * @param pk_s sig public key
+    * @param pk_r sig public key of recipient
+    * @param delta transfer amount
+    * @param txCounter transaction number
+    * @return signed transaction
+    */
   def signTransaction(sk_s:PrivateKey, pk_s:PublicKeyW, pk_r:PublicKeyW, delta:BigInt, txCounter:Int): Transaction = {
     val sid:Sid = hash(rng.nextString(64))
     val trans:Transaction = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
     trans
   }
 
+  /**
+    * apply each block in chain to passed local state
+    * @param ls old local state to be updated
+    * @param c chain of block ids
+    * @return updated localstate
+    */
   def updateLocalState(ls:State, c:Chain): State = {
     var nls:State = ls
     for (id <- c) {
@@ -687,6 +787,13 @@ trait Methods
     nls
   }
 
+  /**
+    * applies an individual transaction to local state
+    * @param ls old local state to be updated
+    * @param trans transaction to be applied
+    * @param pk_f sig public key of the forger
+    * @return updated localstate
+    */
   def applyTransaction(ls:State, trans:Transaction, pk_f:PublicKeyW): State = {
     var nls:State = ls
     if (verifyTransaction(trans)) {
@@ -793,6 +900,10 @@ trait Methods
     nls
   }
 
+  /**
+    * collects all transaction on the ledger of each block in the passed chain and adds them to the buffer
+    * @param c chain to collect transactions
+    */
   def collectLedger(c:Chain): Unit = {
     for (id <- c) {
       getBlock(id) match {
@@ -814,6 +925,9 @@ trait Methods
     }
   }
 
+  /**
+    * removes transactions from the buffer that have a tx counter lower than the localstate tx counter
+    */
   def updateBuffer: Unit = {
     for (state <- localState) {
       for (entry <- memPool) {
@@ -826,6 +940,11 @@ trait Methods
     }
   }
 
+  /**
+    * sorts buffer and adds transaction to ledger during block forging
+    * @param pkw public key triad of forger
+    * @return list of transactions
+    */
   def chooseLedger(pkw:PublicKeyW): Ledger = {
     var ledger: Ledger = List()
     var ls: State = localState
@@ -844,7 +963,6 @@ trait Methods
     * @param value string to be checked
     * @return true if signature is valid, false otherwise
     */
-
   def verifyStamp(value: String): Boolean = {
     val values: Array[String] = value.split(";")
     val m = values(0) + ";" + values(1) + ";" + values(2) + ";" + values(3)
@@ -852,21 +970,11 @@ trait Methods
   }
 
   /**
-    * Return Id String from stamp
-    * @param value stamp to be parsed
-    * @return string containing unique info
+    * utility for timing execution of methods
+    * @param block any execution block
+    * @tparam R
+    * @return
     */
-
-  def idInfo(value: String): String = {
-    val values: Array[String] = value.split(";")
-    values(0)+";"+values(1)+";"+values(2)+";"+values(3)
-  }
-
-  def idPath(value: String): String = {
-    val values: Array[String] = value.split(";")
-    values(3)
-  }
-
   def time[R](block: => R): R = {
     if (timingFlag && holderIndex == 0) {
       val t0 = System.nanoTime()
