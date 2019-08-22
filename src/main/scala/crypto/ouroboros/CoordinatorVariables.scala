@@ -26,18 +26,9 @@ trait CoordinatorVariables
   //queue of commands to be processed in a given slot
   var cmdQueue:Map[Slot,String] = inputCommands
   //set of keys so genesis block can be signed and verified by verifyBlock
-  val newSeed:String = uuid
-  val seed:Array[Byte] = if(randomFlag){
-    FastCryptographicHash(uuid)
-  }else{
-    FastCryptographicHash(inputSeed+"seed")
-  }
+  val seed:Array[Byte] = FastCryptographicHash(inputSeed+"seed")
   //initial nonce for genesis block
-  val eta0:Eta = if(randomFlag){
-    FastCryptographicHash(uuid)
-  }else{
-    FastCryptographicHash(inputSeed+"eta0")
-  }
+  val eta0:Eta = FastCryptographicHash(inputSeed+"eta0")
   val (sk_sig,pk_sig) = sig.createKeyPair(seed)
   val (sk_vrf,pk_vrf) = vrf.vrfKeypair(seed)
   var sk_kes = kes.generateKey(seed)

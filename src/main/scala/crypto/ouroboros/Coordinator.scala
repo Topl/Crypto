@@ -31,11 +31,8 @@ class Coordinator extends Actor
   var genBlock:Block = _
 
   private case object timerKey
-  if (randomFlag) {
-    rng = new Random(BigInt(FastCryptographicHash(uuid+"coord")).toLong)
-  } else {
-    rng = new Random(BigInt(FastCryptographicHash(inputSeed+"coord")).toLong)
-  }
+
+  rng = new Random(BigInt(FastCryptographicHash(inputSeed+"coord")).toLong)
 
   def receive: Receive = {
 
@@ -44,19 +41,11 @@ class Coordinator extends Actor
       println(s"Epoch Length = $epochLength")
       println(s"Delta = $delta_s")
       println("Populating")
-      if (randomFlag) {
-        routerRef = context.actorOf(Router.props(FastCryptographicHash(newSeed+"router")), "Router")
-      } else {
-        routerRef = context.actorOf(Router.props(FastCryptographicHash(inputSeed+"router")), "Router")
-      }
+      routerRef = context.actorOf(Router.props(FastCryptographicHash(inputSeed+"router")), "Router")
       var i = -1
       holders = List.fill(numHolders){
         i+=1
-        if (randomFlag) {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(newSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(newSeed+i.toString)))
-        } else {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
-        }
+        context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
       }
       println("Sending holders list")
       sendAssertDone(List(routerRef),holders)
@@ -501,11 +490,7 @@ class Coordinator extends Actor
       case "new_holder" => {
         println("Bootstrapping new holder...")
         val i = holders.length
-        val newHolder = if (randomFlag) {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(newSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(newSeed+i.toString)))
-        } else {
-          context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
-        }
+        val newHolder = context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
         holders = holders++List(newHolder)
         sendAssertDone(routerRef,holders)
         sendAssertDone(newHolder,holders)

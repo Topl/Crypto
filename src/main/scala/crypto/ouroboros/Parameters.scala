@@ -5,7 +5,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import java.io.File
 import collection.JavaConverters._
 
-trait Parameters {
+trait Parameters extends Utils {
 
   def getConfig:Config = {
     import Prosomo.input
@@ -45,8 +45,6 @@ trait Parameters {
     Map()
   }
 
-  //seed for pseudo random runs
-  val inputSeed:String = config.getString("params.inputSeed")
   //number of stakeholders
   val numHolders:Int = config.getInt("params.numHolders")
   //duration of slot in milliseconds
@@ -117,4 +115,15 @@ trait Parameters {
   val dataOutFlag:Boolean = config.getBoolean("params.dataOutFlag")
   //path for data output files
   val dataFileDir:String = config.getString("params.dataFileDir")
+  //toggle for action based round execution
+  val useFencing = config.getBoolean("params.useFencing")
+  //seed for pseudo random runs
+  val inputSeed:String = {
+    if (randomFlag) {
+      uuid
+    } else {
+      config.getString("params.inputSeed")
+    }
+  }
+
 }

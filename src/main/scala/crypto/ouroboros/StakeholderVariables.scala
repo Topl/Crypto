@@ -22,7 +22,7 @@ trait StakeholderVariables
   //total number of times this stakeholder was elected slot leader
   var blocksForged = 0
   //slot time as determined from coordinator clock
-  var time = 0
+  var globalSlot = 0
   //all tines that are pending built from new blocks that are received
   var tines:Array[(Chain,Int,Int,Int,ActorRef)] = Array()
   //placeholder for genesis block
@@ -44,7 +44,7 @@ trait StakeholderVariables
   //start system time set by coordinator
   var t0:Long = 0
   //current slot that is being processed by stakeholder
-  var currentSlot = 0
+  var localSlot = 0
   //current epoch that is being processed by stakeholder
   var currentEpoch = -1
   //lock for update message
