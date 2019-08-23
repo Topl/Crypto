@@ -1,9 +1,7 @@
 package crypto.ouroboros
 
 import java.security.SecureRandom
-
-//import org.bouncycastle.math.ec.rfc8032.Ed25519
-import crypto.ouroboros.Ed25519.{PointAccum, PointExt}
+import crypto.ouroboros.Ed25519VRF.{PointAccum, PointExt}
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.params.{Ed25519KeyGenerationParameters, Ed25519PrivateKeyParameters, Ed25519PublicKeyParameters}
 import scorex.crypto.hash.Sha512
@@ -43,26 +41,21 @@ Table 1: Parameters of Ed25519
   */
 
 class Vrf {
-  val suite: Array[Byte] = Array(0x03.toByte)
-  var cofactor: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00.toByte}
-  var zeroScalar: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00.toByte}
-  var oneScalar: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00.toByte}
+  private val suite: Array[Byte] = Array(0x03.toByte)
+  private val cofactor: Array[Byte] = Array.fill(Ed25519VRF.SCALAR_BYTES){0x00.toByte}
+  private val zeroScalar: Array[Byte] = Array.fill(Ed25519VRF.SCALAR_BYTES){0x00.toByte}
+  private val oneScalar: Array[Byte] = Array.fill(Ed25519VRF.SCALAR_BYTES){0x00.toByte}
+  private val np: Array[Int] = Array.fill(Ed25519VRF.SCALAR_INTS){0}
+  private val nb: Array[Int] = Array.fill(Ed25519VRF.SCALAR_INTS){0}
+  private val C_BYTES = 16
+  private val PI_BYTES = Ed25519VRF.POINT_BYTES+Ed25519VRF.SCALAR_BYTES+C_BYTES
+  private val neutralPointBytes: Array[Byte] = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+  private val NP = new PointAccum
   cofactor.update(0,0x08.toByte)
   oneScalar.update(0,0x01.toByte)
-  var np: Array[Int] = Array.fill(Ed25519.SCALAR_INTS){0}
-  var nb: Array[Int] = Array.fill(Ed25519.SCALAR_INTS){0}
-  val C_BYTES = 16
-  val PI_BYTES = Ed25519.POINT_BYTES+Ed25519.SCALAR_BYTES+C_BYTES
-  var neutralPointBytes: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-  var NP = new PointAccum
-  val KeyLength = Ed25519.PUBLIC_KEY_SIZE
-  Ed25519.pointSetNeutral(NP)
-  Ed25519.encodePoint(NP,neutralPointBytes,0)
+  Ed25519VRF.pointSetNeutral(NP)
+  Ed25519VRF.encodePoint(NP,neutralPointBytes,0)
 
-  /**
-    * Generate a random keypair for Ed25519
-    * @return
-    */
   def vrfKeypair: (Array[Byte],Array[Byte]) = {
     val kpg = new Ed25519KeyPairGenerator
     kpg.init(new Ed25519KeyGenerationParameters(new SecureRandom()))
@@ -72,11 +65,6 @@ class Vrf {
     (sk,pk)
   }
 
-  /**
-    * Generate a keypair from seed for Ed25519
-    * @param seed
-    * @return
-    */
   def vrfKeypair(seed: Array[Byte]): (Array[Byte],Array[Byte]) = {
     //This algorithm uses SHA-1 as the foundation of the PRNG. It computes the SHA-1 hash over a true-random seed value
     // concatenated with a 64-bit counter which is incremented by 1 for each operation.
@@ -91,16 +79,10 @@ class Vrf {
     (sk,pk)
   }
 
-  /**
-    * verify an Ed25519 keypair
-    * @param sk
-    * @param pk
-    * @return
-    */
   def verifyKeyPair(sk:Array[Byte],pk: Array[Byte]): Boolean = {
-    if (pk.length == Ed25519.PUBLIC_KEY_SIZE && sk.length == Ed25519.SECRET_KEY_SIZE) {
-      var pkt: Array[Byte] = Array.fill[Byte](Ed25519.PUBLIC_KEY_SIZE)(0)
-      Ed25519.generatePublicKey(sk,0,pkt,0)
+    if (pk.length == Ed25519VRF.PUBLIC_KEY_SIZE && sk.length == Ed25519VRF.SECRET_KEY_SIZE) {
+      val pkt: Array[Byte] = Array.fill[Byte](Ed25519VRF.PUBLIC_KEY_SIZE)(0)
+      Ed25519VRF.generatePublicKey(sk,0,pkt,0)
       if (pkt.deep == pk.deep){
         true
       }else {
@@ -111,37 +93,33 @@ class Vrf {
     }
   }
 
-  def isNeutralPoint(p: PointAccum): Boolean = {
-    var pBytes: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-    Ed25519.encodePoint(p,pBytes,0)
+  private def isNeutralPoint(p: PointAccum): Boolean = {
+    val pBytes: Array[Byte] = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+    Ed25519VRF.encodePoint(p,pBytes,0)
     pBytes.deep == neutralPointBytes.deep
   }
 
-  def isNeutralPoint(p: PointExt): Boolean = {
-    var pBytes: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-    var pA = new PointAccum
-    Ed25519.decodeScalar(oneScalar,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,p,pA)
-    Ed25519.encodePoint(pA,pBytes,0)
+  private def isNeutralPoint(p: PointExt): Boolean = {
+    val pBytes: Array[Byte] = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+    val pA = new PointAccum
+    Ed25519VRF.decodeScalar(oneScalar,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,p,pA)
+    Ed25519VRF.encodePoint(pA,pBytes,0)
     pBytes.deep == neutralPointBytes.deep
   }
 
-  def binaryArrayToHex(b: Array[Byte]): String = {
-    b.map("%02x" format _).mkString
-  }
-
-  def pruneHash(s: Array[Byte]): Array[Byte] = {
-    val h: Array[Byte] = Sha512(s).take(Ed25519.SCALAR_BYTES)
+  private def pruneHash(s: Array[Byte]): Array[Byte] = {
+    val h: Array[Byte] = Sha512(s).take(Ed25519VRF.SCALAR_BYTES)
     h.update(0,(h(0) & 0xF8).toByte)
-    h.update(Ed25519.SCALAR_BYTES-1,(h(Ed25519.SCALAR_BYTES-1) & 0x7F).toByte)
-    h.update(Ed25519.SCALAR_BYTES-1,(h(Ed25519.SCALAR_BYTES-1) | 0x40).toByte)
+    h.update(Ed25519VRF.SCALAR_BYTES-1,(h(Ed25519VRF.SCALAR_BYTES-1) & 0x7F).toByte)
+    h.update(Ed25519VRF.SCALAR_BYTES-1,(h(Ed25519VRF.SCALAR_BYTES-1) | 0x40).toByte)
     h
   }
 
-  def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
-    var r: Array[Byte] = Array.fill(Ed25519.SCALAR_BYTES){0x00}
-    Ed25519.scalarMultBaseEncoded(s,r,0)
+  private def scalarMultBaseEncoded(s: Array[Byte]): Array[Byte] = {
+    val r: Array[Byte] = Array.fill(Ed25519VRF.SCALAR_BYTES){0x00}
+    Ed25519VRF.scalarMultBaseEncoded(s,r,0)
     r
   }
 
@@ -160,16 +138,15 @@ class Vrf {
   4. Output Y
   */
 
-  def verifyPublicKey(pk: Array[Byte]): Boolean = {
-    if (pk.length == Ed25519.PUBLIC_KEY_SIZE) {
-      var pkt: Array[Byte] = Array.fill[Byte](Ed25519.PUBLIC_KEY_SIZE)(0x00.toByte)
-      var Y = new PointExt
-      var CY = new PointAccum
-      val decoded = Ed25519.decodePointVar(pk,0,false,Y)
+  private def verifyPublicKey(pk: Array[Byte]): Boolean = {
+    if (pk.length == Ed25519VRF.PUBLIC_KEY_SIZE) {
+      val Y = new PointExt
+      val CY = new PointAccum
+      val decoded = Ed25519VRF.decodePointVar(pk,0,false,Y)
       if (decoded) {
-        Ed25519.decodeScalar(cofactor, 0, np)
-        Ed25519.decodeScalar(zeroScalar, 0, nb)
-        Ed25519.scalarMultStraussVar(nb, np, Y, CY)
+        Ed25519VRF.decodeScalar(cofactor, 0, np)
+        Ed25519VRF.decodeScalar(zeroScalar, 0, nb)
+        Ed25519VRF.scalarMultStraussVar(nb, np, Y, CY)
         !isNeutralPoint(CY)
       } else {
         false
@@ -206,26 +183,26 @@ class Vrf {
 
   //This leads to side channel attack (timing attack) if alpha is a secret
 
-  def ECVRF_hash_to_curve_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
+  private def ECVRF_hash_to_curve_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
     var ctr = 0
     val one = Array(0x01.toByte)
     var hash: Array[Byte] = Array()
-    var H = new PointExt
-    var HR = new PointAccum
-    var Hlogic = false
-    while (!Hlogic) {
+    val H = new PointExt
+    val HR = new PointAccum
+    var isPoint = false
+    while (!isPoint) {
       val ctr_byte = Array(ctr.toByte)
-      hash = Sha512(suite++one++Y++a++ctr_byte).take(Ed25519.POINT_BYTES)
-      Hlogic = Ed25519.decodePointVar(hash,0,false,H)
-      if (Hlogic){
-        Hlogic != isNeutralPoint(H)
+      hash = Sha512(suite++one++Y++a++ctr_byte).take(Ed25519VRF.POINT_BYTES)
+      isPoint = Ed25519VRF.decodePointVar(hash,0,false,H)
+      if (isPoint){
+        isPoint != isNeutralPoint(H)
       }
       ctr += 1
     }
-    Ed25519.decodeScalar(cofactor,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,H,HR)
-    Ed25519.encodePoint(HR,hash,0)
+    Ed25519VRF.decodeScalar(cofactor,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,H,HR)
+    Ed25519VRF.encodePoint(HR,hash,0)
     (HR, hash)
   }
 
@@ -247,19 +224,19 @@ class Vrf {
   7. Output c
   */
 
-  def ECVRF_hash_points(p1: PointAccum, p2: PointAccum, p3: PointAccum, p4: PointAccum): Array[Byte] ={
+  private def ECVRF_hash_points(p1: PointAccum, p2: PointAccum, p3: PointAccum, p4: PointAccum): Array[Byte] ={
     val two: Array[Byte] = Array(0x02.toByte)
     var str: Array[Byte] = suite++two
-    var r: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-    Ed25519.encodePoint(p1,r,0)
+    val r: Array[Byte] = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+    Ed25519VRF.encodePoint(p1,r,0)
     str = str++r
-    Ed25519.encodePoint(p2,r,0)
+    Ed25519VRF.encodePoint(p2,r,0)
     str = str++r
-    Ed25519.encodePoint(p3,r,0)
+    Ed25519VRF.encodePoint(p3,r,0)
     str = str++r
-    Ed25519.encodePoint(p4,r,0)
+    Ed25519VRF.encodePoint(p4,r,0)
     str = str++r
-    Sha512(str).take(C_BYTES)++Array.fill(Ed25519.SCALAR_BYTES-C_BYTES){0x00.toByte}
+    Sha512(str).take(C_BYTES)++Array.fill(Ed25519VRF.SCALAR_BYTES-C_BYTES){0x00.toByte}
   }
 
   /*
@@ -277,10 +254,10 @@ class Vrf {
   4. k = string_to_int(k_string) mod q
   */
 
-  def ECVRF_nonce_generation_RFC8032(sk: Array[Byte],h: Array[Byte]): Array[Byte] = {
-    val trunc_hashed_sk = Sha512(sk).drop(Ed25519.SCALAR_BYTES)
+  private def ECVRF_nonce_generation_RFC8032(sk: Array[Byte],h: Array[Byte]): Array[Byte] = {
+    val trunc_hashed_sk = Sha512(sk).drop(Ed25519VRF.SCALAR_BYTES)
     val k_string = Sha512(trunc_hashed_sk++h)
-    Ed25519.reduceScalar(k_string)
+    Ed25519VRF.reduceScalar(k_string)
   }
 
   /*
@@ -308,7 +285,7 @@ class Vrf {
   */
 
   def vrfProof(sk: Array[Byte], alpha: Array[Byte]): Array[Byte] = {
-    assert(sk.length == Ed25519.SECRET_KEY_SIZE)
+    assert(sk.length == Ed25519VRF.SECRET_KEY_SIZE)
     // secret scalar
     val x = pruneHash(sk)
     // public key
@@ -316,23 +293,23 @@ class Vrf {
     assert(verifyKeyPair(sk,pk))
     val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_curve_try_and_increment(pk,alpha)
     val nonce = ECVRF_nonce_generation_RFC8032(sk,H._2)
-    assert(Ed25519.checkScalarVar(nonce))
+    assert(Ed25519VRF.checkScalarVar(nonce))
     val gamma = new PointAccum
-    Ed25519.decodeScalar(x,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,Ed25519.pointCopy(H._1),gamma)
+    Ed25519VRF.decodeScalar(x,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,Ed25519VRF.pointCopy(H._1),gamma)
     val k = ECVRF_nonce_generation_RFC8032(sk,H._2)
-    assert(Ed25519.checkScalarVar(k))
+    assert(Ed25519VRF.checkScalarVar(k))
     val kB = new PointAccum
     val kH = new PointAccum
-    Ed25519.scalarMultBase(k,kB)
-    Ed25519.decodeScalar(k,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,Ed25519.pointCopy(H._1),kH)
+    Ed25519VRF.scalarMultBase(k,kB)
+    Ed25519VRF.decodeScalar(k,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,Ed25519VRF.pointCopy(H._1),kH)
     val c = ECVRF_hash_points(H._1,gamma,kB,kH)
-    val s = Ed25519.calculateS(k,c,x)
-    var gamma_str: Array[Byte] = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-    Ed25519.encodePoint(gamma,gamma_str,0)
+    val s = Ed25519VRF.calculateS(k,c,x)
+    val gamma_str: Array[Byte] = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+    Ed25519VRF.encodePoint(gamma,gamma_str,0)
     val pi = gamma_str++c.take(C_BYTES)++s
     assert(pi.length == PI_BYTES)
     pi
@@ -362,43 +339,43 @@ class Vrf {
 
   def vrfVerify(pk: Array[Byte], alpha: Array[Byte], pi: Array[Byte]): Boolean = {
     assert(pi.length == PI_BYTES)
-    val gamma_str = pi.take(Ed25519.POINT_BYTES)
-    val c = pi.slice(Ed25519.POINT_BYTES,Ed25519.POINT_BYTES+C_BYTES)++Array.fill(Ed25519.SCALAR_BYTES-C_BYTES){0x00.toByte}
-    val s = pi.drop(Ed25519.POINT_BYTES+C_BYTES)
-    assert(Ed25519.checkPointVar(gamma_str))
-    assert(Ed25519.checkScalarVar(c))
-    assert(Ed25519.checkScalarVar(s))
+    val gamma_str = pi.take(Ed25519VRF.POINT_BYTES)
+    val c = pi.slice(Ed25519VRF.POINT_BYTES,Ed25519VRF.POINT_BYTES+C_BYTES)++Array.fill(Ed25519VRF.SCALAR_BYTES-C_BYTES){0x00.toByte}
+    val s = pi.drop(Ed25519VRF.POINT_BYTES+C_BYTES)
+    assert(Ed25519VRF.checkPointVar(gamma_str))
+    assert(Ed25519VRF.checkScalarVar(c))
+    assert(Ed25519VRF.checkScalarVar(s))
     assert(verifyPublicKey(pk))
     val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_curve_try_and_increment(pk,alpha)
-    var gamma = new PointExt
-    var Y = new PointExt
-    Ed25519.decodePointVar(gamma_str,0,false,gamma)
-    Ed25519.decodePointVar(pk,0,false,Y)
-    var A = new PointAccum //s*B
-    var B = new PointAccum //c*Y
-    var C = new PointAccum //s*H
-    var D = new PointAccum //c*Gamma
-    var U = new PointAccum
-    var V = new PointAccum
-    var g = new PointAccum
-    var t = new PointExt
-    Ed25519.scalarMultBase(s,A)
-    Ed25519.decodeScalar(c,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,Y,B)
-    Ed25519.decodeScalar(s,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,Ed25519.pointCopy(H._1),C)
-    Ed25519.decodeScalar(c,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,gamma,D)
-    Ed25519.decodeScalar(oneScalar,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.pointAddVar(true,Ed25519.pointCopy(A),Ed25519.pointCopy(B),t)
-    Ed25519.scalarMultStraussVar(nb,np,t,U)
-    Ed25519.pointAddVar(true,Ed25519.pointCopy(C),Ed25519.pointCopy(D),t)
-    Ed25519.scalarMultStraussVar(nb,np,t,V)
-    Ed25519.scalarMultStraussVar(nb,np,gamma,g)
+    val gamma = new PointExt
+    val Y = new PointExt
+    Ed25519VRF.decodePointVar(gamma_str,0,false,gamma)
+    Ed25519VRF.decodePointVar(pk,0,false,Y)
+    val A = new PointAccum //s*B
+    val B = new PointAccum //c*Y
+    val C = new PointAccum //s*H
+    val D = new PointAccum //c*Gamma
+    val U = new PointAccum
+    val V = new PointAccum
+    val g = new PointAccum
+    val t = new PointExt
+    Ed25519VRF.scalarMultBase(s,A)
+    Ed25519VRF.decodeScalar(c,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,Y,B)
+    Ed25519VRF.decodeScalar(s,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,Ed25519VRF.pointCopy(H._1),C)
+    Ed25519VRF.decodeScalar(c,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,gamma,D)
+    Ed25519VRF.decodeScalar(oneScalar,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.pointAddVar(true,Ed25519VRF.pointCopy(A),Ed25519VRF.pointCopy(B),t)
+    Ed25519VRF.scalarMultStraussVar(nb,np,t,U)
+    Ed25519VRF.pointAddVar(true,Ed25519VRF.pointCopy(C),Ed25519VRF.pointCopy(D),t)
+    Ed25519VRF.scalarMultStraussVar(nb,np,t,V)
+    Ed25519VRF.scalarMultStraussVar(nb,np,gamma,g)
     val cp = ECVRF_hash_points(H._1,g,U,V)
     c.deep == cp.deep
   }
@@ -427,21 +404,21 @@ class Vrf {
 
   def vrfProofToHash(pi: Array[Byte]): Array[Byte] = {
     assert(pi.length == PI_BYTES)
-    val gamma_str = pi.take(Ed25519.POINT_BYTES)
-    val c = pi.slice(Ed25519.POINT_BYTES,Ed25519.POINT_BYTES+C_BYTES)++Array.fill(Ed25519.SCALAR_BYTES-C_BYTES){0x00.toByte}
-    val s = pi.drop(Ed25519.POINT_BYTES+C_BYTES)
+    val gamma_str = pi.take(Ed25519VRF.POINT_BYTES)
+    val c = pi.slice(Ed25519VRF.POINT_BYTES,Ed25519VRF.POINT_BYTES+C_BYTES)++Array.fill(Ed25519VRF.SCALAR_BYTES-C_BYTES){0x00.toByte}
+    val s = pi.drop(Ed25519VRF.POINT_BYTES+C_BYTES)
     val three = Array(0x03.toByte)
-    assert(Ed25519.checkPointVar(gamma_str))
-    assert(Ed25519.checkScalarVar(c))
-    assert(Ed25519.checkScalarVar(s))
+    assert(Ed25519VRF.checkPointVar(gamma_str))
+    assert(Ed25519VRF.checkScalarVar(c))
+    assert(Ed25519VRF.checkScalarVar(s))
     val gamma = new PointExt
     val cg = new PointAccum
-    Ed25519.decodePointVar(gamma_str,0,false,gamma)
-    Ed25519.decodeScalar(cofactor,0,np)
-    Ed25519.decodeScalar(zeroScalar,0,nb)
-    Ed25519.scalarMultStraussVar(nb,np,gamma,cg)
-    var cg_enc = Array.fill(Ed25519.POINT_BYTES){0x00.toByte}
-    Ed25519.encodePoint(cg,cg_enc,0)
+    Ed25519VRF.decodePointVar(gamma_str,0,false,gamma)
+    Ed25519VRF.decodeScalar(cofactor,0,np)
+    Ed25519VRF.decodeScalar(zeroScalar,0,nb)
+    Ed25519VRF.scalarMultStraussVar(nb,np,gamma,cg)
+    val cg_enc = Array.fill(Ed25519VRF.POINT_BYTES){0x00.toByte}
+    Ed25519VRF.encodePoint(cg,cg_enc,0)
     Sha512(suite++three++cg_enc)
   }
 

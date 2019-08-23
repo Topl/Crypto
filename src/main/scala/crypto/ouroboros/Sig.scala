@@ -4,6 +4,7 @@ import java.security.SecureRandom
 
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.params.{Ed25519KeyGenerationParameters, Ed25519PrivateKeyParameters, Ed25519PublicKeyParameters}
+import org.bouncycastle.math.ec.rfc8032.Ed25519
 
 class Sig {
 
