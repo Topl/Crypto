@@ -12,8 +12,9 @@ import io.circe.syntax._
 import io.iohk.iodb.ByteArrayWrapper
 import scorex.crypto.encode.Base58
 
+import scala.math.BigInt
 import scala.reflect.io.Path
-import scala.util.{Try,Random}
+import scala.util.{Random, Try}
 import scala.sys.process._
 
 /**
@@ -325,11 +326,54 @@ class Coordinator extends Actor
               case i:Int => Map(
                 "slot" -> i.asJson,
                 "blocks" -> blocks(i).map{
-                  case value:(ByteArrayWrapper,Block) => Map(
-                    "id" -> Base58.encode(value._1.data).asJson,
-                    "pid" -> Base58.encode(getParentId(value._2)._2.data).asJson,
-                    "ps" -> getParentId(value._2)._1.asJson
-                  ).asJson
+                  case value:(ByteArrayWrapper,Block) => {
+                    val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
+                    val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
+                    val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
+                    Map(
+                      "id" -> Base58.encode(value._1.data).asJson,
+                      "bn" -> bn.asJson,
+                      "bs" -> bs.asJson,
+                      "pid" -> Base58.encode(pid.data).asJson,
+                      "ps" -> ps.asJson,
+                      "nonce" -> Base58.encode(vrfNonce).asJson,
+                      "npi" -> Base58.encode(noncePi).asJson,
+                      "y" -> Base58.encode(y).asJson,
+                      "ypi" -> Base58.encode(ypi).asJson,
+                      "thr" -> thr.asJson,
+                      "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
+                      "ledger" -> ledger.toArray.map{
+                        case box:Box => {
+                        box._1 match {
+                          case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
+                            val delta = entry._3
+                            val pk_g:PublicKeyW = entry._2
+                            Map(
+                              "genesis" -> Base58.encode(pk_g.data).asJson,
+                              "amount" -> delta.toLong.asJson
+                            ).asJson
+                          }
+                          case entry:(ByteArrayWrapper,BigInt) => {
+                            val delta = entry._2
+                            Map(
+                              "forger" -> Base58.encode(pk_f.data).asJson,
+                              "amount" -> delta.toLong.asJson
+                            ).asJson
+                          }
+                        }
+                      }
+                        case trans:Transaction => {
+                        Map(
+                          "txid" -> Base58.encode(trans._4.data).asJson,
+                          "count" -> trans._5.asJson,
+                          "sender" -> Base58.encode(trans._1.data).asJson,
+                          "recipient" -> Base58.encode(trans._2.data).asJson,
+                          "amount" -> trans._3.toLong.asJson
+                        ).asJson
+                      }
+                      }.asJson
+                    ).asJson
+                  }
                 }.asJson,
                 "history" -> chainHistory(i).map{
                   case value:BlockId => Map(
