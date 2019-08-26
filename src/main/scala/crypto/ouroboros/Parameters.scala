@@ -23,8 +23,8 @@ trait Parameters extends Utils {
 
   val config:Config = getConfig
 
-  val inputCommands:Map[Int,String] = if (config.hasPath("command")) {
-    var out:Map[Int,String] = Map()
+  val inputCommands:Map[Int,List[String]] = if (config.hasPath("command")) {
+    var out:Map[Int,List[String]] = Map()
     val cmdList = config.getStringList("command.cmd").asScala.toList
     for (line<-cmdList) {
       val com = line.trim.split(" ")
@@ -32,7 +32,15 @@ trait Parameters extends Utils {
         case s:String => {
           if (com.length == 2){
             com(1).toInt match {
-              case i:Int => out += (i->s)
+              case i:Int => {
+                if (out.keySet.contains(i)) {
+                  val nl = s::out(i)
+                  out -= i
+                  out += (i->nl)
+                } else {
+                  out += (i->List(s))
+                }
+              }
               case _ =>
             }
           }

@@ -164,19 +164,32 @@ class Coordinator extends Actor
                     if (s == "print") {
                       sharedData.printingHolder = i
                     } else {
-                      cmdQueue += (i->s)
+                      if (cmdQueue.keySet.contains(i)) {
+                        val nl = s::cmdQueue(i)
+                        cmdQueue -= i
+                        cmdQueue += (i->nl)
+                      } else {
+                        cmdQueue += (i->List(s))
+                      }
                     }
                   }
                   case _ =>
                 }
               } else {
-                cmdQueue += (t->s)
+                if (cmdQueue.keySet.contains(t)){
+                  val nl = s::cmdQueue(t)
+                  cmdQueue -= t
+                  cmdQueue += (t->nl)
+                } else {
+                  cmdQueue += (t->List(s))
+                }
               }
             }
             case _ =>
           }
         }
       }
+
       if (cmdQueue.keySet.contains(t)) {
         command(cmdQueue(t))
         cmdQueue -= t
@@ -250,352 +263,353 @@ class Coordinator extends Actor
   }
 
   /**command string interpreter*/
-  def command(s:String): Unit = {
-    s.trim match {
+  def command(sl:List[String]): Unit = {
+    for (s<-sl.reverse){
+      s.trim match {
 
-      case "status" => {
-        self ! Status
-      }
+        case "status" => {
+          self ! Status
+        }
 
-      case "verify" => self ! Verify
+        case "verify" => self ! Verify
 
-      case "stall" => sendAssertDone(holders,StallActor)
+        case "stall" => sendAssertDone(holders,StallActor)
 
-      case "pause" => self ! StallActor
+        case "pause" => self ! StallActor
 
-      case "inbox" => sendAssertDone(holders,Inbox)
+        case "inbox" => sendAssertDone(holders,Inbox)
 
-      case "stall0" => holders(0) ! StallActor
+        case "stall0" => holders(0) ! StallActor
 
-      case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
+        case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
 
-      case "write" => fileWriter match {
-        case fw:BufferedWriter => fw.flush()
-        case _ => println("File writer not initialized")
-      }
+        case "write" => fileWriter match {
+          case fw:BufferedWriter => fw.flush()
+          case _ => println("File writer not initialized")
+        }
 
-      case "graph" => {
-        println("Getting Gossipers")
-        gossipersMap = getGossipers(holders)
-        val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
-        graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
-        graphWriter match {
-          case fw:BufferedWriter => {
-            var line:String = ""
-            for (holder<-holders) {
-              line = ""
-              for (ref<-holders) {
-                if (gossipersMap(holder).contains(ref)) {
-                  line = line + "1"
-                } else {
-                  line = line + "0"
+        case "graph" => {
+          println("Getting Gossipers")
+          gossipersMap = getGossipers(holders)
+          val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
+          graphWriter match {
+            case fw:BufferedWriter => {
+              var line:String = ""
+              for (holder<-holders) {
+                line = ""
+                for (ref<-holders) {
+                  if (gossipersMap(holder).contains(ref)) {
+                    line = line + "1"
+                  } else {
+                    line = line + "0"
+                  }
+                  if (holders.indexOf(ref)!=holders.length-1) {
+                    line = line + " "
+                  }
                 }
-                if (holders.indexOf(ref)!=holders.length-1) {
-                  line = line + " "
-                }
+                fw.write(line+"\n")
               }
-              fw.write(line+"\n")
+              fw.flush()
             }
-            fw.flush()
+            case _ =>
           }
-          case _ =>
-        }
-        graphWriter match {
-          case fw:BufferedWriter => {
-            fw.close()
+          graphWriter match {
+            case fw:BufferedWriter => {
+              fw.close()
+            }
+            case _ =>
           }
-          case _ =>
         }
-      }
 
-      case "tree" => {
-        var tn = 0
-        if (!actorStalled) {
-          val t1 = System.currentTimeMillis()-tp
-          tn = ((t1 - t0) / slotT).toInt
-        } else {
-          val t1 = tp
-          tn = ((t1 - t0) / slotT).toInt
-        }
-        getBlockTree(holders(0))
-        val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
-        graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
-        val configString = {
-          import Prosomo.input
-          if (input.length > 0) { input.head.stripSuffix(".conf")+".conf"} else {""}
-        }
-        graphWriter match {
-          case fw:BufferedWriter => {
-            val json:Json = Map(
-              "info" -> Map(
-                "config"-> configString.asJson,
-                "numHolders"-> numHolders.asJson,
-                "slotT" -> slotT.asJson,
-                "delay_ms_km" -> delay_ms_km.asJson,
-                "useRouting" -> useRouting.asJson,
-                "delta_s" -> delta_s.asJson,
-                "k_s" -> k_s.asJson,
-                "f_s" -> f_s.asJson,
-                "L_s" -> L_s.asJson,
-                "epochLength" -> epochLength.asJson,
-                "slotWindow" -> slotWindow.asJson,
-                "confirmationDepth" -> confirmationDepth.asJson,
-                "initStakeMax" -> initStakeMax.asJson,
-                "maxTransfer" -> maxTransfer.asJson,
-                "forgerReward" -> forgerReward.asJson,
-                "transactionFee" -> transactionFee.asJson,
-                "numGossipers" -> numGossipers.asJson,
-                "useGossipProtocol" -> useGossipProtocol.asJson,
-                "tineMaxTries" -> tineMaxTries.asJson,
-                "tineMaxDepth" -> tineMaxDepth.asJson,
-                "dataOutInterval" -> dataOutInterval.asJson,
-                "waitTime" -> waitTime.toMillis.asJson,
-                "updateTime" -> updateTime.toMillis.asJson,
-                "commandUpdateTime" -> commandUpdateTime.toMillis.asJson,
-                "transactionFlag" -> transactionFlag.asJson,
-                "txDenominator" -> txDenominator.asJson,
-                "randomFlag" -> randomFlag.asJson,
-                "performanceFlag" -> performanceFlag.asJson,
-                "systemLoadThreshold" -> systemLoadThreshold.asJson,
-                "numAverageLoad" -> numAverageLoad.asJson,
-                "printFlag" -> printFlag.asJson,
-                "timingFlag" -> timingFlag.asJson,
-                "dataOutFlag" -> dataOutFlag.asJson,
-                "dataFileDir" -> dataFileDir.asJson,
-                "useFencing" -> useFencing.asJson,
-                "inputSeed" -> inputSeed.asJson
-              ).asJson,
-              "data" -> (0 to tn).toArray.map{
-                case i:Int => Map(
-                  "slot" -> i.asJson,
-                  "blocks" -> blocks(i).map{
-                    case value:(ByteArrayWrapper,Block) => {
-                      val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
-                      val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
-                      val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
-                      Map(
-                        "id" -> Base58.encode(value._1.data).asJson,
-                        "bn" -> bn.asJson,
-                        "bs" -> bs.asJson,
-                        "pid" -> Base58.encode(pid.data).asJson,
-                        "ps" -> ps.asJson,
-                        "nonce" -> Base58.encode(vrfNonce).asJson,
-                        "npi" -> Base58.encode(noncePi).asJson,
-                        "y" -> Base58.encode(y).asJson,
-                        "ypi" -> Base58.encode(ypi).asJson,
-                        "thr" -> thr.asJson,
-                        "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
-                        "ledger" -> ledger.toArray.map{
-                          case box:Box => {
-                            box._1 match {
-                              case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
-                                val delta = entry._3
-                                val pk_g:PublicKeyW = entry._2
-                                Map(
-                                  "genesis" -> Base58.encode(pk_g.data).asJson,
-                                  "amount" -> delta.toLong.asJson
-                                ).asJson
-                              }
-                              case entry:(ByteArrayWrapper,BigInt) => {
-                                val delta = entry._2
-                                Map(
-                                  "forger" -> Base58.encode(pk_f.data).asJson,
-                                  "amount" -> delta.toLong.asJson
-                                ).asJson
+        case "tree" => {
+          var tn = 0
+          if (!actorStalled) {
+            val t1 = System.currentTimeMillis()-tp
+            tn = ((t1 - t0) / slotT).toInt
+          } else {
+            val t1 = tp
+            tn = ((t1 - t0) / slotT).toInt
+          }
+          getBlockTree(holders(0))
+          val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
+          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
+          val configString = {
+            import Prosomo.input
+            if (input.length > 0) { input.head.stripSuffix(".conf")+".conf"} else {""}
+          }
+          graphWriter match {
+            case fw:BufferedWriter => {
+              val json:Json = Map(
+                "info" -> Map(
+                  "config"-> configString.asJson,
+                  "numHolders"-> numHolders.asJson,
+                  "slotT" -> slotT.asJson,
+                  "delay_ms_km" -> delay_ms_km.asJson,
+                  "useRouting" -> useRouting.asJson,
+                  "delta_s" -> delta_s.asJson,
+                  "k_s" -> k_s.asJson,
+                  "f_s" -> f_s.asJson,
+                  "L_s" -> L_s.asJson,
+                  "epochLength" -> epochLength.asJson,
+                  "slotWindow" -> slotWindow.asJson,
+                  "confirmationDepth" -> confirmationDepth.asJson,
+                  "initStakeMax" -> initStakeMax.asJson,
+                  "maxTransfer" -> maxTransfer.asJson,
+                  "forgerReward" -> forgerReward.asJson,
+                  "transactionFee" -> transactionFee.asJson,
+                  "numGossipers" -> numGossipers.asJson,
+                  "useGossipProtocol" -> useGossipProtocol.asJson,
+                  "tineMaxTries" -> tineMaxTries.asJson,
+                  "tineMaxDepth" -> tineMaxDepth.asJson,
+                  "dataOutInterval" -> dataOutInterval.asJson,
+                  "waitTime" -> waitTime.toMillis.asJson,
+                  "updateTime" -> updateTime.toMillis.asJson,
+                  "commandUpdateTime" -> commandUpdateTime.toMillis.asJson,
+                  "transactionFlag" -> transactionFlag.asJson,
+                  "txDenominator" -> txDenominator.asJson,
+                  "randomFlag" -> randomFlag.asJson,
+                  "performanceFlag" -> performanceFlag.asJson,
+                  "systemLoadThreshold" -> systemLoadThreshold.asJson,
+                  "numAverageLoad" -> numAverageLoad.asJson,
+                  "printFlag" -> printFlag.asJson,
+                  "timingFlag" -> timingFlag.asJson,
+                  "dataOutFlag" -> dataOutFlag.asJson,
+                  "dataFileDir" -> dataFileDir.asJson,
+                  "useFencing" -> useFencing.asJson,
+                  "inputSeed" -> inputSeed.asJson
+                ).asJson,
+                "data" -> (0 to tn).toArray.map{
+                  case i:Int => Map(
+                    "slot" -> i.asJson,
+                    "blocks" -> blocks(i).map{
+                      case value:(ByteArrayWrapper,Block) => {
+                        val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
+                        val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
+                        val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
+                        Map(
+                          "id" -> Base58.encode(value._1.data).asJson,
+                          "bn" -> bn.asJson,
+                          "bs" -> bs.asJson,
+                          "pid" -> Base58.encode(pid.data).asJson,
+                          "ps" -> ps.asJson,
+                          "nonce" -> Base58.encode(vrfNonce).asJson,
+                          "npi" -> Base58.encode(noncePi).asJson,
+                          "y" -> Base58.encode(y).asJson,
+                          "ypi" -> Base58.encode(ypi).asJson,
+                          "thr" -> thr.asJson,
+                          "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
+                          "ledger" -> ledger.toArray.map{
+                            case box:Box => {
+                              box._1 match {
+                                case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
+                                  val delta = entry._3
+                                  val pk_g:PublicKeyW = entry._2
+                                  Map(
+                                    "genesis" -> Base58.encode(pk_g.data).asJson,
+                                    "amount" -> delta.toLong.asJson
+                                  ).asJson
+                                }
+                                case entry:(ByteArrayWrapper,BigInt) => {
+                                  val delta = entry._2
+                                  Map(
+                                    "forger" -> Base58.encode(pk_f.data).asJson,
+                                    "amount" -> delta.toLong.asJson
+                                  ).asJson
+                                }
                               }
                             }
-                          }
-                          case trans:Transaction => {
-                            Map(
-                              "txid" -> Base58.encode(trans._4.data).asJson,
-                              "count" -> trans._5.asJson,
-                              "sender" -> Base58.encode(trans._1.data).asJson,
-                              "recipient" -> Base58.encode(trans._2.data).asJson,
-                              "amount" -> trans._3.toLong.asJson
-                            ).asJson
-                          }
-                        }.asJson
+                            case trans:Transaction => {
+                              Map(
+                                "txid" -> Base58.encode(trans._4.data).asJson,
+                                "count" -> trans._5.asJson,
+                                "sender" -> Base58.encode(trans._1.data).asJson,
+                                "recipient" -> Base58.encode(trans._2.data).asJson,
+                                "amount" -> trans._3.toLong.asJson
+                              ).asJson
+                            }
+                          }.asJson
+                        ).asJson
+                      }
+                    }.asJson,
+                    "history" -> chainHistory(i).map{
+                      case value:BlockId => Map(
+                        "id" -> Base58.encode(value._2.data).asJson
                       ).asJson
-                    }
-                  }.asJson,
-                  "history" -> chainHistory(i).map{
-                    case value:BlockId => Map(
-                      "id" -> Base58.encode(value._2.data).asJson
-                    ).asJson
-                  }.asJson
-                ).asJson
-              }.asJson
-            ).asJson
-            fw.write(json.toString)
-            fw.flush()
-
+                    }.asJson
+                  ).asJson
+                }.asJson
+              ).asJson
+              fw.write(json.toString)
+              fw.flush()
+            }
+            case _ =>
           }
-          case _ =>
-        }
-        graphWriter match {
-          case fw:BufferedWriter => {
-            fw.close()
-          }
-          case _ =>
-        }
-      }
-
-      case "kill" => {
-        sharedData.killFlag = true
-        timers.cancelAll
-        fileWriter match {
-          case fw:BufferedWriter => fw.close()
-          case _ => println("error: file writer close on non writer object")
-        }
-        Thread.sleep(2*slotT*delta_s)
-        context.system.terminate
-      }
-
-      case "split" => {
-        parties = List()
-        val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-2)+1)
-        println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
-        sendAssertDone(holders1,Party(holders1,true))
-        sendAssertDone(holders1,Diffuse)
-        sendAssertDone(holders2,Party(holders2,true))
-        sendAssertDone(holders2,Diffuse)
-        parties ::= holders1
-        parties ::= holders2
-        gossipersMap = getGossipers(holders)
-      }
-
-      case "split_stake" => {
-        val stakingState:State = getStakingState(holders(0))
-        val netStake:BigInt = {
-          var out:BigInt = 0
-          for (holder<-holders){
-            out += stakingState(holderKeys(holder))._1
-          }
-          out
-        }
-        var holders1:List[ActorRef] = List()
-        var net1:BigInt = 0
-        var holders2:List[ActorRef] = List()
-        var net2:BigInt = 0
-        for (holder <- rng.shuffle(holders)) {
-          val holderStake = stakingState(holderKeys(holder))._1
-          if (net1<net2) {
-            net1 += holderStake
-            holders1 ::= holder
-          } else {
-            net2 += holderStake
-            holders2 ::= holder
+          graphWriter match {
+            case fw:BufferedWriter => {
+              fw.close()
+            }
+            case _ =>
           }
         }
-        val alpha1 = net1.toDouble/netStake.toDouble
-        val alpha2 = net2.toDouble/netStake.toDouble
-        val numh1 = holders1.length
-        val numh2 = holders2.length
 
-        parties = List()
-
-        println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
-        sendAssertDone(holders1,Party(holders1,true))
-        sendAssertDone(holders1,Diffuse)
-        sendAssertDone(holders2,Party(holders2,true))
-        sendAssertDone(holders2,Diffuse)
-        parties ::= holders1
-        parties ::= holders2
-        gossipersMap = getGossipers(holders)
-      }
-
-      case "bridge" => {
-        parties = List()
-        val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-3)+2)
-        println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
-        val commonRef = holders1.head
-        sendAssertDone(holders,Party(List(),true))
-        sendAssertDone(List(commonRef),Party(holders,false))
-        sendAssertDone(List(commonRef),Diffuse)
-        sendAssertDone(holders1.tail,Party(holders1,false))
-        sendAssertDone(holders1.tail,Diffuse)
-        sendAssertDone(holders2,Party(commonRef::holders2,false))
-        sendAssertDone(holders2,Diffuse)
-        parties ::= holders1
-        parties ::= holders2
-        gossipersMap = getGossipers(holders)
-      }
-
-      case "bridge_stake" => {
-        parties = List()
-        val stakingState:State = getStakingState(holders(0))
-        val netStake:BigInt = {
-          var out:BigInt = 0
-          for (holder<-holders){
-            out += stakingState(holderKeys(holder))._1
+        case "kill" => {
+          sharedData.killFlag = true
+          timers.cancelAll
+          fileWriter match {
+            case fw:BufferedWriter => fw.close()
+            case _ => println("error: file writer close on non writer object")
           }
-          out
+          Thread.sleep(2*slotT*delta_s)
+          context.system.terminate
         }
-        var holders1:List[ActorRef] = List()
-        var net1:BigInt = 0
-        var holders2:List[ActorRef] = List()
-        var net2:BigInt = 0
-        for (holder <- rng.shuffle(holders)) {
-          val holderStake = stakingState(holderKeys(holder))._1
-          if (net1<net2) {
-            net1 += holderStake
-            holders1 ::= holder
-          } else {
-            net2 += holderStake
-            holders2 ::= holder
+
+        case "split" => {
+          parties = List()
+          val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-2)+1)
+          println("Splitting Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
+          sendAssertDone(holders1,Party(holders1,true))
+          sendAssertDone(holders1,Diffuse)
+          sendAssertDone(holders2,Party(holders2,true))
+          sendAssertDone(holders2,Diffuse)
+          parties ::= holders1
+          parties ::= holders2
+          gossipersMap = getGossipers(holders)
+        }
+
+        case "split_stake" => {
+          val stakingState:State = getStakingState(holders(0))
+          val netStake:BigInt = {
+            var out:BigInt = 0
+            for (holder<-holders){
+              out += stakingState(holderKeys(holder))._1
+            }
+            out
           }
+          var holders1:List[ActorRef] = List()
+          var net1:BigInt = 0
+          var holders2:List[ActorRef] = List()
+          var net2:BigInt = 0
+          for (holder <- rng.shuffle(holders)) {
+            val holderStake = stakingState(holderKeys(holder))._1
+            if (net1<net2) {
+              net1 += holderStake
+              holders1 ::= holder
+            } else {
+              net2 += holderStake
+              holders2 ::= holder
+            }
+          }
+          val alpha1 = net1.toDouble/netStake.toDouble
+          val alpha2 = net2.toDouble/netStake.toDouble
+          val numh1 = holders1.length
+          val numh2 = holders2.length
+
+          parties = List()
+
+          println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+          sendAssertDone(holders1,Party(holders1,true))
+          sendAssertDone(holders1,Diffuse)
+          sendAssertDone(holders2,Party(holders2,true))
+          sendAssertDone(holders2,Diffuse)
+          parties ::= holders1
+          parties ::= holders2
+          gossipersMap = getGossipers(holders)
         }
-        val alpha1 = net1.toDouble/netStake.toDouble
-        val alpha2 = net2.toDouble/netStake.toDouble
-        val numh1 = holders1.length
-        val numh2 = holders2.length
 
-        parties = List()
+        case "bridge" => {
+          parties = List()
+          val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-3)+2)
+          println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
+          val commonRef = holders1.head
+          sendAssertDone(holders,Party(List(),true))
+          sendAssertDone(List(commonRef),Party(holders,false))
+          sendAssertDone(List(commonRef),Diffuse)
+          sendAssertDone(holders1.tail,Party(holders1,false))
+          sendAssertDone(holders1.tail,Diffuse)
+          sendAssertDone(holders2,Party(commonRef::holders2,false))
+          sendAssertDone(holders2,Diffuse)
+          parties ::= holders1
+          parties ::= holders2
+          gossipersMap = getGossipers(holders)
+        }
 
-        println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
-        val commonRef = holders1.head
-        sendAssertDone(holders,Party(List(),true))
-        sendAssertDone(List(commonRef),Party(holders,false))
-        sendAssertDone(List(commonRef),Diffuse)
-        sendAssertDone(holders1.tail,Party(holders1,false))
-        sendAssertDone(holders1.tail,Diffuse)
-        sendAssertDone(holders2,Party(commonRef::holders2,false))
-        sendAssertDone(holders2,Diffuse)
-        parties ::= holders1
-        parties ::= holders2
-        gossipersMap = getGossipers(holders)
+        case "bridge_stake" => {
+          parties = List()
+          val stakingState:State = getStakingState(holders(0))
+          val netStake:BigInt = {
+            var out:BigInt = 0
+            for (holder<-holders){
+              out += stakingState(holderKeys(holder))._1
+            }
+            out
+          }
+          var holders1:List[ActorRef] = List()
+          var net1:BigInt = 0
+          var holders2:List[ActorRef] = List()
+          var net2:BigInt = 0
+          for (holder <- rng.shuffle(holders)) {
+            val holderStake = stakingState(holderKeys(holder))._1
+            if (net1<net2) {
+              net1 += holderStake
+              holders1 ::= holder
+            } else {
+              net2 += holderStake
+              holders2 ::= holder
+            }
+          }
+          val alpha1 = net1.toDouble/netStake.toDouble
+          val alpha2 = net2.toDouble/netStake.toDouble
+          val numh1 = holders1.length
+          val numh2 = holders2.length
+
+          parties = List()
+
+          println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+          val commonRef = holders1.head
+          sendAssertDone(holders,Party(List(),true))
+          sendAssertDone(List(commonRef),Party(holders,false))
+          sendAssertDone(List(commonRef),Diffuse)
+          sendAssertDone(holders1.tail,Party(holders1,false))
+          sendAssertDone(holders1.tail,Diffuse)
+          sendAssertDone(holders2,Party(commonRef::holders2,false))
+          sendAssertDone(holders2,Diffuse)
+          parties ::= holders1
+          parties ::= holders2
+          gossipersMap = getGossipers(holders)
+        }
+
+        case "join" => {
+          parties = List()
+          println("Joining Parties")
+          sendAssertDone(holders,Party(holders,true))
+          sendAssertDone(holders,Diffuse)
+          parties ::= holders
+          gossipersMap = getGossipers(holders)
+        }
+
+        case "new_holder" => {
+          println("Bootstrapping new holder...")
+          val i = holders.length
+          val newHolder = context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
+          holders = holders++List(newHolder)
+          sendAssertDone(routerRef,holders)
+          sendAssertDone(newHolder,holders)
+          sendAssertDone(newHolder,RouterRef(routerRef))
+          sendAssertDone(newHolder,CoordRef(self))
+          sendAssertDone(newHolder,GenBlock(genBlock))
+          val newHolderKeys = collectKeys(List(newHolder),RequestKeys,Map())
+          val newHolderKeyW = ByteArrayWrapper(hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(0))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(1))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(2)))
+          holderKeys += (newHolder-> newHolderKeyW)
+          sendAssertDone(holders,Party(holders,true))
+          sendAssertDone(holders,Diffuse)
+          sendAssertDone(newHolder,Initialize(L_s))
+          sendAssertDone(newHolder,SetClock(t0))
+          newHolder ! Run
+        }
+
+        case _ =>
       }
-
-      case "join" => {
-        parties = List()
-        println("Joining Parties")
-        sendAssertDone(holders,Party(holders,true))
-        sendAssertDone(holders,Diffuse)
-        parties ::= holders
-        gossipersMap = getGossipers(holders)
-      }
-
-      case "new_holder" => {
-        println("Bootstrapping new holder...")
-        val i = holders.length
-        val newHolder = context.actorOf(Stakeholder.props(FastCryptographicHash(inputSeed+i.toString)), "Holder:" + bytes2hex(FastCryptographicHash(inputSeed+i.toString)))
-        holders = holders++List(newHolder)
-        sendAssertDone(routerRef,holders)
-        sendAssertDone(newHolder,holders)
-        sendAssertDone(newHolder,RouterRef(routerRef))
-        sendAssertDone(newHolder,CoordRef(self))
-        sendAssertDone(newHolder,GenBlock(genBlock))
-        val newHolderKeys = collectKeys(List(newHolder),RequestKeys,Map())
-        val newHolderKeyW = ByteArrayWrapper(hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(0))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(1))++hex2bytes(newHolderKeys(s"${newHolder.path}").split(";")(2)))
-        holderKeys += (newHolder-> newHolderKeyW)
-        sendAssertDone(holders,Party(holders,true))
-        sendAssertDone(holders,Diffuse)
-        sendAssertDone(newHolder,Initialize(L_s))
-        sendAssertDone(newHolder,SetClock(t0))
-        newHolder ! Run
-      }
-
-      case _ =>
     }
   }
 
