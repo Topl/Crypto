@@ -320,68 +320,112 @@ class Coordinator extends Actor
         getBlockTree(holders(0))
         val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
         graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
+        val configString = {
+          import Prosomo.input
+          if (input.length > 0) { input.head.stripSuffix(".conf")+".conf"} else {""}
+        }
         graphWriter match {
           case fw:BufferedWriter => {
-            val json:Json = (0 to tn).toArray.map{
-              case i:Int => Map(
-                "slot" -> i.asJson,
-                "blocks" -> blocks(i).map{
-                  case value:(ByteArrayWrapper,Block) => {
-                    val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
-                    val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
-                    val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
-                    Map(
-                      "id" -> Base58.encode(value._1.data).asJson,
-                      "bn" -> bn.asJson,
-                      "bs" -> bs.asJson,
-                      "pid" -> Base58.encode(pid.data).asJson,
-                      "ps" -> ps.asJson,
-                      "nonce" -> Base58.encode(vrfNonce).asJson,
-                      "npi" -> Base58.encode(noncePi).asJson,
-                      "y" -> Base58.encode(y).asJson,
-                      "ypi" -> Base58.encode(ypi).asJson,
-                      "thr" -> thr.asJson,
-                      "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
-                      "ledger" -> ledger.toArray.map{
-                        case box:Box => {
-                        box._1 match {
-                          case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
-                            val delta = entry._3
-                            val pk_g:PublicKeyW = entry._2
+            val json:Json = Map(
+              "info" -> Map(
+                "config"-> configString.asJson,
+                "numHolders"-> numHolders.asJson,
+                "slotT" -> slotT.asJson,
+                "delay_ms_km" -> delay_ms_km.asJson,
+                "useRouting" -> useRouting.asJson,
+                "delta_s" -> delta_s.asJson,
+                "k_s" -> k_s.asJson,
+                "f_s" -> f_s.asJson,
+                "L_s" -> L_s.asJson,
+                "epochLength" -> epochLength.asJson,
+                "slotWindow" -> slotWindow.asJson,
+                "confirmationDepth" -> confirmationDepth.asJson,
+                "initStakeMax" -> initStakeMax.asJson,
+                "maxTransfer" -> maxTransfer.asJson,
+                "forgerReward" -> forgerReward.asJson,
+                "transactionFee" -> transactionFee.asJson,
+                "numGossipers" -> numGossipers.asJson,
+                "useGossipProtocol" -> useGossipProtocol.asJson,
+                "tineMaxTries" -> tineMaxTries.asJson,
+                "tineMaxDepth" -> tineMaxDepth.asJson,
+                "dataOutInterval" -> dataOutInterval.asJson,
+                "waitTime" -> waitTime.toMillis.asJson,
+                "updateTime" -> updateTime.toMillis.asJson,
+                "commandUpdateTime" -> commandUpdateTime.toMillis.asJson,
+                "transactionFlag" -> transactionFlag.asJson,
+                "txDenominator" -> txDenominator.asJson,
+                "randomFlag" -> randomFlag.asJson,
+                "performanceFlag" -> performanceFlag.asJson,
+                "systemLoadThreshold" -> systemLoadThreshold.asJson,
+                "numAverageLoad" -> numAverageLoad.asJson,
+                "printFlag" -> printFlag.asJson,
+                "timingFlag" -> timingFlag.asJson,
+                "dataOutFlag" -> dataOutFlag.asJson,
+                "dataFileDir" -> dataFileDir.asJson,
+                "useFencing" -> useFencing.asJson,
+                "inputSeed" -> inputSeed.asJson
+              ).asJson,
+              "data" -> (0 to tn).toArray.map{
+                case i:Int => Map(
+                  "slot" -> i.asJson,
+                  "blocks" -> blocks(i).map{
+                    case value:(ByteArrayWrapper,Block) => {
+                      val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
+                      val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
+                      val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
+                      Map(
+                        "id" -> Base58.encode(value._1.data).asJson,
+                        "bn" -> bn.asJson,
+                        "bs" -> bs.asJson,
+                        "pid" -> Base58.encode(pid.data).asJson,
+                        "ps" -> ps.asJson,
+                        "nonce" -> Base58.encode(vrfNonce).asJson,
+                        "npi" -> Base58.encode(noncePi).asJson,
+                        "y" -> Base58.encode(y).asJson,
+                        "ypi" -> Base58.encode(ypi).asJson,
+                        "thr" -> thr.asJson,
+                        "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
+                        "ledger" -> ledger.toArray.map{
+                          case box:Box => {
+                            box._1 match {
+                              case entry:(ByteArrayWrapper,PublicKeyW,BigInt) => {
+                                val delta = entry._3
+                                val pk_g:PublicKeyW = entry._2
+                                Map(
+                                  "genesis" -> Base58.encode(pk_g.data).asJson,
+                                  "amount" -> delta.toLong.asJson
+                                ).asJson
+                              }
+                              case entry:(ByteArrayWrapper,BigInt) => {
+                                val delta = entry._2
+                                Map(
+                                  "forger" -> Base58.encode(pk_f.data).asJson,
+                                  "amount" -> delta.toLong.asJson
+                                ).asJson
+                              }
+                            }
+                          }
+                          case trans:Transaction => {
                             Map(
-                              "genesis" -> Base58.encode(pk_g.data).asJson,
-                              "amount" -> delta.toLong.asJson
+                              "txid" -> Base58.encode(trans._4.data).asJson,
+                              "count" -> trans._5.asJson,
+                              "sender" -> Base58.encode(trans._1.data).asJson,
+                              "recipient" -> Base58.encode(trans._2.data).asJson,
+                              "amount" -> trans._3.toLong.asJson
                             ).asJson
                           }
-                          case entry:(ByteArrayWrapper,BigInt) => {
-                            val delta = entry._2
-                            Map(
-                              "forger" -> Base58.encode(pk_f.data).asJson,
-                              "amount" -> delta.toLong.asJson
-                            ).asJson
-                          }
-                        }
-                      }
-                        case trans:Transaction => {
-                        Map(
-                          "txid" -> Base58.encode(trans._4.data).asJson,
-                          "count" -> trans._5.asJson,
-                          "sender" -> Base58.encode(trans._1.data).asJson,
-                          "recipient" -> Base58.encode(trans._2.data).asJson,
-                          "amount" -> trans._3.toLong.asJson
-                        ).asJson
-                      }
-                      }.asJson
+                        }.asJson
+                      ).asJson
+                    }
+                  }.asJson,
+                  "history" -> chainHistory(i).map{
+                    case value:BlockId => Map(
+                      "id" -> Base58.encode(value._2.data).asJson
                     ).asJson
-                  }
-                }.asJson,
-                "history" -> chainHistory(i).map{
-                  case value:BlockId => Map(
-                    "id" -> Base58.encode(value._2.data).asJson
-                  ).asJson
-                }.asJson
-              ).asJson
-            }.asJson
+                  }.asJson
+                ).asJson
+              }.asJson
+            ).asJson
             fw.write(json.toString)
             fw.flush()
 
