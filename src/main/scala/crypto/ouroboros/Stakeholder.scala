@@ -276,60 +276,32 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       /**updates time, the kes key, and resets variables */
     case Update => { if (sharedData.error) {actorStalled = true}
       if (!actorStalled) {
-        if (useFencing) {
-          if (!updating) {
-            updating = true
-            if (globalSlot > tMax || sharedData.killFlag) {
-              timers.cancelAll
-            } else if (diffuseSent) {
-              coordinatorRef ! GetTime
-              if (globalSlot > localSlot) {
-                while (globalSlot > localSlot) {
-                  history_state.update(localSlot, localState)
-                  localSlot += 1
-                  updateSlot
-                }
-              } else if (tines.isEmpty && roundBlock == 0) {
-                if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
-                forgeBlock
-              } else if (tines.nonEmpty) {
-                if (holderIndex == sharedData.printingHolder && printFlag) {
-                  println("Holder " + holderIndex.toString + " Update Chain")
-                }
-                time(
-                  updateChain
-                )
+        if (!updating) {
+          updating = true
+          if (globalSlot > tMax || sharedData.killFlag) {
+            timers.cancelAll
+          } else if (diffuseSent) {
+            coordinatorRef ! GetTime
+            if (globalSlot > localSlot) {
+              while (globalSlot > localSlot) {
+                history_state.update(localSlot, localState)
+                localSlot += 1
+                updateSlot
               }
-            }
-            updating = false
-          }
-        } else {
-          if (!updating) {
-            updating = true
-            if (globalSlot > tMax || sharedData.killFlag) {
-              timers.cancelAll
-            } else if (diffuseSent) {
-              coordinatorRef ! GetTime
-              if (globalSlot > localSlot) {
-                while (globalSlot > localSlot) {
-                  history_state.update(localSlot, localState)
-                  localSlot += 1
-                  updateSlot
-                }
-              } else if (tines.isEmpty && roundBlock == 0) {
-                if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
-                forgeBlock
-              } else if (tines.nonEmpty) {
-                if (holderIndex == sharedData.printingHolder && printFlag) {
-                  println("Holder " + holderIndex.toString + " Update Chain")
-                }
-                time(
-                  updateChain
-                )
+            } else if (tines.isEmpty && roundBlock == 0) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
+              forgeBlock
+              if (useFencing) {routerRef ! "updateSlot"}
+            } else if (tines.nonEmpty) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Update Chain")
               }
+              time(
+                updateChain
+              )
             }
-            updating = false
           }
+          updating = false
         }
       }
     }
@@ -516,7 +488,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               txCounter += 1
               setOfTxs += (trans._4->trans._5)
               send(self,gossipers, SendTx(trans))
+              if (useFencing) routerRef ! "issueTx"
             }
+          }
+          case "noTx" => {
+            if (useFencing) routerRef ! "issueTx"
           }
         }
       }

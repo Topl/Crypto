@@ -72,16 +72,19 @@ class Coordinator extends Actor
       sendAssertDone(holders,Diffuse)
       println("Starting")
       sendAssertDone(holders,Initialize(L_s))
+      if (useFencing) sendAssertDone(routerRef,CoordRef(self))
       println("Run")
       t0 = System.currentTimeMillis()
       sendAssertDone(holders,SetClock(t0))
+      if (useFencing) sendAssertDone(routerRef,SetClock(t0))
+      if (useFencing) routerRef ! Run
       for (holder<-rng.shuffle(holders)) {
         holder ! Run
       }
       timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
 
-      /**returns offset time to stakholder that issues GetTime to coordinator*/
+      /**returns offset time to stakeholder that issues GetTime to coordinator*/
     case GetTime => {
       if (!actorStalled) {
         val t1 = System.currentTimeMillis()-tp
@@ -136,6 +139,19 @@ class Coordinator extends Actor
       fileWriter match {
         case fw:BufferedWriter => fw.close()
         case _ => println("error: file writer close on non writer object")
+      }
+    }
+
+    case value:IssueTx => {
+      value.s match {
+        case "randTx" => {
+          if (transactionFlag && useFencing && t>1 && t<L_s) {
+            for (holder <- holders){
+              val r = rng.nextInt(txDenominator)
+              if (r==0) {issueTx(holder)} else {holder ! IssueTx("noTx")}
+            }
+          }
+        }
       }
     }
 
@@ -213,7 +229,7 @@ class Coordinator extends Actor
         }
       }
 
-      if (!actorStalled && transactionFlag && t>1 && t<L_s) {
+      if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s) {
         for (i <- 1 to holders.length){
           val r = rng.nextInt(txDenominator)
           if (r==0) issueTx
@@ -259,6 +275,17 @@ class Coordinator extends Actor
     if (holder1 != holder2) {
       delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
       holder1 ! IssueTx((holderKeys(holder2),delta))
+    }
+  }
+
+  def issueTx(holder1:ActorRef): Unit = {
+    val holder2 = holders(rng.nextInt(holders.length))
+    var delta:BigInt = 0
+    if (holder1 != holder2) {
+      delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+      holder1 ! IssueTx((holderKeys(holder2),delta))
+    } else {
+      holder1 ! IssueTx("noTx")
     }
   }
 
