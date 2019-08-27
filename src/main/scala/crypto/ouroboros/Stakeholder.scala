@@ -27,6 +27,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   val pkw:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
   rng = new Random(BigInt(seed).toLong)
   val phase:Double = rng.nextDouble
+  var chainUpdateLock = false
 
   private case object timerKey
 
@@ -70,8 +71,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
-  /**main chain selection routine, maxvalid-bg*/
-  def updateChain = {
+  def buildTines = {
     var foundAncestor = true
     var tine:Chain = tines.last._1
     var counter:Int = tines.last._2
@@ -103,81 +103,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
     if (foundAncestor) {
-      tine = expand(tine,prefix)
-      var trueChain = false
-      val s1 = tine.last._1
-      val bnt = {getBlock(tine.last) match {case b:Block => b._9}}
-      val bnl = {getBlock(localChain(lastActiveSlot(localChain,localSlot))) match {case b:Block => b._9}}
-      if(s1 - prefix < k_s && bnl < bnt) {
-        trueChain = true
-      } else {
-        val slotsTine = getActiveSlots(subChain(tine,0,slotWindow))
-        val slotsLocal = getActiveSlots(subChain(localChain,prefix+1,prefix+1+slotWindow))
-        if (slotsLocal < slotsTine) {
-          trueChain = true
-        }
-      }
-      if (trueChain) {
-        trueChain &&= verifySubChain(tine,prefix)
-      }
-      if (trueChain) {
-        if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
-        collectLedger(subChain(localChain,prefix+1,localSlot))
-        collectLedger(tine)
-
-        for (i <- prefix+1 to localSlot) {
-          localChain.update(i,(-1,ByteArrayWrapper(Array())))
-          chainHistory.update(i,(-1,ByteArrayWrapper(Array()))::chainHistory(i))
-        }
-        for (id <- tine) {
-          if (id._1 > -1) {
-            localChain.update(id._1,id)
-            chainHistory.update(id._1,id::{chainHistory(id._1).tail})
-            getBlock(id) match {
-              case b:Block => {
-                val blockState = b._2
-                for (entry<-blockState.tail) {
-                  entry match {
-                    case trans:Transaction => {
-                      if (memPool.keySet.contains(trans._4)) {
-                        memPool -= trans._4
-                      }
-                    }
-                    case _ =>
-                  }
-                }
-              }
-              case _ =>
-            }
-          }
-        }
-        localState = history_state(prefix)
-        eta = history_eta(prefix/epochLength)
-        localSlot = prefix
-        currentEpoch = localSlot/epochLength
-      } else {
-        collectLedger(tine)
-        for (id <- subChain(localChain,prefix+1,localSlot)) {
-          if (id._1 > -1) {
-            getBlock(id) match {
-              case b: Block => {
-                val blockState = b._2
-                for (entry <- blockState.tail) {
-                  entry match {
-                    case trans: Transaction =>  {
-                      if (memPool.keySet.contains(trans._4)){
-                        memPool -= trans._4
-                      }
-                    }
-                    case _ =>
-                  }
-                }
-              }
-              case _ =>
-            }
-          }
-        }
-      }
+      candidateTines = Array((tine,prefix)) ++ candidateTines
       tines = tines.dropRight(1)
     } else {
       if (counter>2*tineMaxTries) {
@@ -202,6 +128,87 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
     }
+  }
+
+  /**main chain selection routine, maxvalid-bg*/
+  def maxValidBG = {
+    val prefix:Slot = candidateTines.last._2
+    val tine:Chain = expand(candidateTines.last._1,prefix)
+    var trueChain = false
+    val s1 = tine.last._1
+    val bnt = {getBlock(tine.last) match {case b:Block => b._9}}
+    val bnl = {getBlock(localChain(lastActiveSlot(localChain,localSlot))) match {case b:Block => b._9}}
+    if(s1 - prefix < k_s && bnl < bnt) {
+      trueChain = true
+    } else {
+      val slotsTine = getActiveSlots(subChain(tine,0,slotWindow))
+      val slotsLocal = getActiveSlots(subChain(localChain,prefix+1,prefix+1+slotWindow))
+      if (slotsLocal < slotsTine) {
+        trueChain = true
+      }
+    }
+    if (trueChain) {
+      trueChain &&= verifySubChain(tine,prefix)
+    }
+    if (trueChain) {
+      if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Adopting Tine")
+      collectLedger(subChain(localChain,prefix+1,localSlot))
+      collectLedger(tine)
+
+      for (i <- prefix+1 to localSlot) {
+        localChain.update(i,(-1,ByteArrayWrapper(Array())))
+        chainHistory.update(i,(-1,ByteArrayWrapper(Array()))::chainHistory(i))
+      }
+      for (id <- tine) {
+        if (id._1 > -1) {
+          localChain.update(id._1,id)
+          chainHistory.update(id._1,id::{chainHistory(id._1).tail})
+          getBlock(id) match {
+            case b:Block => {
+              val blockState = b._2
+              for (entry<-blockState.tail) {
+                entry match {
+                  case trans:Transaction => {
+                    if (memPool.keySet.contains(trans._4)) {
+                      memPool -= trans._4
+                    }
+                  }
+                  case _ =>
+                }
+              }
+            }
+            case _ =>
+          }
+        }
+      }
+      localState = history_state(prefix)
+      eta = history_eta(prefix/epochLength)
+      localSlot = prefix
+      currentEpoch = localSlot/epochLength
+    } else {
+      collectLedger(tine)
+      for (id <- subChain(localChain,prefix+1,localSlot)) {
+        if (id._1 > -1) {
+          getBlock(id) match {
+            case b: Block => {
+              val blockState = b._2
+              for (entry <- blockState.tail) {
+                entry match {
+                  case trans: Transaction =>  {
+                    if (memPool.keySet.contains(trans._4)){
+                      memPool -= trans._4
+                    }
+                  }
+                  case _ =>
+                }
+              }
+            }
+            case _ =>
+          }
+        }
+      }
+    }
+    candidateTines = candidateTines.dropRight(1)
   }
 
   /**slot routine, called every time currentSlot increments*/
@@ -288,17 +295,29 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 localSlot += 1
                 updateSlot
               }
-            } else if (tines.isEmpty && roundBlock == 0) {
+            } else if (roundBlock == 0) {
               if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " ForgeBlocks")}
               forgeBlock
               if (useFencing) {routerRef ! "updateSlot"}
-            } else if (tines.nonEmpty) {
+            } else if (!useFencing) {
+              if (tines.nonEmpty) buildTines
+              if (candidateTines.nonEmpty) {
+                if (holderIndex == sharedData.printingHolder && printFlag) {
+                  println("Holder " + holderIndex.toString + " Update Chain")
+                }
+                maxValidBG
+              }
+            } else if (candidateTines.nonEmpty && useFencing && chainUpdateLock) {
               if (holderIndex == sharedData.printingHolder && printFlag) {
                 println("Holder " + holderIndex.toString + " Update Chain")
               }
               time(
-                updateChain
+                maxValidBG
               )
+              if (candidateTines.isEmpty) {
+                chainUpdateLock = false
+                routerRef ! "updateChain"
+              }
             }
           }
           updating = false
@@ -306,56 +325,70 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
 
-      /**adds confirmed transactions to buffer and sends new ones to gossipers*/
-    case value:SendTx => if (!actorStalled) {
-      value.s match {
-        case trans:Transaction => {
-          if (!memPool.keySet.contains(trans._4) && localState.keySet.contains(trans._1)) {
-            val delta:BigInt = trans._3
-            val pk_s:PublicKeyW = trans._1
-            val net = localState(pk_s)._1
-            if (delta<=net && localState(pk_s)._3 <= trans._5) {
-              if (verifyTransaction(trans)) {
-                memPool += (trans._4->trans)
-                send(self,gossipers, SendTx(value.s))
-              }
-            }
-          }
-        }
-        case _ =>
+    case "updateChain" => if (useFencing) {
+      if (!actorStalled) {
+        chainUpdateLock = true
+      } else {
+        routerRef ! "updateChain"
       }
     }
 
-      /**block passing, new blocks delivered are added to list of tines and then sent to gossipers*/
-    case value:SendBlock => if (!actorStalled) {
-      value.s match {
-        case s:Box => if (inbox.keySet.contains(s._2)) {
-          s._1 match {
-            case bInfo: (Block,BlockId) => {
-              val bid:BlockId = bInfo._2
-              val foundBlock = blocks(bid._1).contains(bid._2)
-              if (!foundBlock) {
-                val b:Block = bInfo._1
-                val bHash = hash(b)
-                val bSlot = b._3
-                if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
-                  if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
-                  if (!foundBlock && bSlot <= globalSlot) {
-                    if (holderIndex == sharedData.printingHolder && printFlag) {
-                      println("Holder " + holderIndex.toString + " Received Block")
-                    }
-                    val newId = (bSlot, bHash)
-                    send(self,gossipers, SendBlock(signBox((b,newId), sessionId, sk_sig, pk_sig)))
-                    tines = Array((Array(newId),0,0,0,inbox(s._2)._1))++tines
-                  }
+      /**adds confirmed transactions to buffer and sends new ones to gossipers*/
+    case value:SendTx => {
+      if (!actorStalled) {
+        value.s match {
+          case trans:Transaction => {
+            if (!memPool.keySet.contains(trans._4) && localState.keySet.contains(trans._1)) {
+              val delta:BigInt = trans._3
+              val pk_s:PublicKeyW = trans._1
+              val net = localState(pk_s)._1
+              if (delta<=net && localState(pk_s)._3 <= trans._5) {
+                if (verifyTransaction(trans)) {
+                  memPool += (trans._4->trans)
+                  send(self,gossipers, SendTx(value.s))
                 }
               }
             }
-            case _ =>
           }
+          case _ =>
         }
-        case _ =>
       }
+      if (useFencing) routerRef ! "passData"
+    }
+
+      /**block passing, new blocks delivered are added to list of tines and then sent to gossipers*/
+    case value:SendBlock => {
+      if (!actorStalled) {
+        value.s match {
+          case s:Box => if (inbox.keySet.contains(s._2)) {
+            s._1 match {
+              case bInfo: (Block,BlockId) => {
+                val bid:BlockId = bInfo._2
+                val foundBlock = blocks(bid._1).contains(bid._2)
+                if (!foundBlock) {
+                  val b:Block = bInfo._1
+                  val bHash = hash(b)
+                  val bSlot = b._3
+                  if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
+                    if (!foundBlock) blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                    if (!foundBlock && bSlot <= globalSlot) {
+                      if (holderIndex == sharedData.printingHolder && printFlag) {
+                        println("Holder " + holderIndex.toString + " Received Block")
+                      }
+                      val newId = (bSlot, bHash)
+                      send(self,gossipers, SendBlock(signBox((b,newId), sessionId, sk_sig, pk_sig)))
+                      tines = Array((Array(newId),0,0,0,inbox(s._2)._1))++tines
+                    }
+                  }
+                }
+              }
+              case _ =>
+            }
+          }
+          case _ =>
+        }
+      }
+      if (useFencing) routerRef ! "passData"
     }
 
       /**block passing, returned blocks are added to block database*/

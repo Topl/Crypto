@@ -25,6 +25,8 @@ trait StakeholderVariables
   var globalSlot = 0
   //all tines that are pending built from new blocks that are received
   var tines:Array[(Chain,Int,Int,Int,ActorRef)] = Array()
+  //completed tines waiting to be selected with maxvalid-bg
+  var candidateTines:Array[(Chain,Slot)] = Array()
   //placeholder for genesis block
   var genBlock: Any = 0
   //placeholder for genesis block ID

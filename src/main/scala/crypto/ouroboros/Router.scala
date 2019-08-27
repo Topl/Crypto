@@ -15,7 +15,7 @@ class Router(seed:Array[Byte]) extends Actor
   val rng = new Random(BigInt(seed).toLong)
   var holdersPosition:Map[ActorRef,(Double,Double)] = Map()
   var distanceMap:Map[(ActorRef,ActorRef),Long] = Map()
-  var holderMessages:Map[Int,Map[ActorRef,List[(ActorRef,ActorRef,Any)]]] = Map()
+  var holderMessages:Map[Slot,Map[ActorRef,Map[Long,List[(ActorRef,ActorRef,Any)]]]] = Map()
   var holderReady:Map[ActorRef,Boolean] = Map()
   var globalSlot:Slot = -1
   var localSlot:Slot = -1
@@ -73,10 +73,38 @@ class Router(seed:Array[Byte]) extends Actor
     }
 
     /** adds delay to routed message*/
-    case value:(ActorRef,ActorRef,Any) => if (useFencing) {
-      //process message here
+    case newMessage:(ActorRef,ActorRef,Any) => if (useFencing) {
+      val (s,r,_) = newMessage
+      val nsDelay = delay(s,r)
+      val messageDelta:Slot = (nsDelay.toMillis/slotT).toInt
+      val priority:Long = nsDelay.toNanos%(slotT*1000000)
+      val offsetSlot = globalSlot+messageDelta
+      val messages:Map[ActorRef,Map[Long,List[(ActorRef,ActorRef,Any)]]] = if (holderMessages.keySet.contains(offsetSlot)) {
+        var m = holderMessages(offsetSlot)
+        holderMessages -= offsetSlot
+        if (m.keySet.contains(s)) {
+          var l = m(s)
+          m -= s
+          if (l.keySet.contains(priority)) {
+            var q = l(priority)
+            l -= priority
+            q ::= newMessage
+            l += (priority -> q)
+          } else {
+            l += (priority -> List(newMessage))
+          }
+          m += (s -> l)
+          m
+        } else {
+          m += (s -> Map(priority -> List(newMessage)))
+          m
+        }
+      } else {
+        Map(s -> Map(priority -> List(newMessage)))
+      }
+      holderMessages += (offsetSlot-> messages)
     } else {
-      val (s,r,c) = value
+      val (s,r,c) = newMessage
       context.system.scheduler.scheduleOnce(delay(s,r),r,c)(context.system.dispatcher,sender())
     }
 
@@ -127,7 +155,14 @@ class Router(seed:Array[Byte]) extends Actor
             case "passData" => {
               if (holdersReady) {
                 roundStep = "updateChain"
+                for (holder<-holders) {
+                  holder ! "updateChain"
+                }
                 reset
+              } else {
+                if (holderMessages.keySet.contains(globalSlot)) {
+                  //holderMessages(globalSlot)
+                }
               }
             }
             case "updateChain" => {
