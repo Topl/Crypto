@@ -150,6 +150,10 @@ class Coordinator extends Actor
               val r = rng.nextInt(txDenominator)
               if (r==0) {issueTx(holder)} else {holder ! IssueTx("noTx")}
             }
+          } else if (useFencing) {
+            for (holder <- holders){
+              holder ! IssueTx("noTx")
+            }
           }
         }
       }

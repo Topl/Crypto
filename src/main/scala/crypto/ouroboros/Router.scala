@@ -1,7 +1,10 @@
 package crypto.ouroboros
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
+import bifrost.crypto.hash.FastCryptographicHash
+import io.iohk.iodb.ByteArrayWrapper
 
+import scala.collection.immutable.ListMap
 import scala.math.BigInt
 import scala.util.Random
 import scala.concurrent.duration._
@@ -22,7 +25,7 @@ class Router(seed:Array[Byte]) extends Actor
   var coordinatorRef:ActorRef = _
   var t0:Long = 0
   var roundDone = true
-  var roundStep = ""
+  var roundStep = "updateSlot"
 
   private case object timerKey
 
@@ -39,6 +42,11 @@ class Router(seed:Array[Byte]) extends Actor
       if (holderReady.keySet.contains(holder)) holderReady -= holder
       holderReady += (holder->false)
     }
+  }
+
+  def reset(holder:ActorRef):Unit = {
+    if (holderReady.keySet.contains(holder)) holderReady -= holder
+    holderReady += (holder->false)
   }
 
   def delay(sender:ActorRef,recip:ActorRef):FiniteDuration = {
@@ -153,7 +161,7 @@ class Router(seed:Array[Byte]) extends Actor
               }
             }
             case "passData" => {
-              if (holdersReady) {
+              if (holdersReady && !holderMessages.keySet.contains(globalSlot)) {
                 roundStep = "updateChain"
                 for (holder<-holders) {
                   holder ! "updateChain"
@@ -161,7 +169,75 @@ class Router(seed:Array[Byte]) extends Actor
                 reset
               } else {
                 if (holderMessages.keySet.contains(globalSlot)) {
-                  //holderMessages(globalSlot)
+                  val slotMessages = holderMessages(globalSlot)
+                  for (holder<-rng.shuffle(holders)) {
+                    if (slotMessages.keySet.contains(holder)) {
+                      reset(holder)
+                      val queue = slotMessages(holder)
+                      for (entry <- ListMap(queue.toSeq.sortBy(_._1):_*)) {
+                        if (entry._2.length > 1) {
+                          var mMap:Map[BigInt,(ActorRef,ActorRef,Any)] = Map()
+                          var mList:List[(ActorRef,ActorRef,Any)] = List()
+                          for (m<-entry._2){
+                            m._3 match {
+                              case value:SendTx => {
+                                value.s match {
+                                  case trans:Transaction => {
+                                    val nid = BigInt(FastCryptographicHash(serialize(trans)))
+                                    if (!mMap.keySet.contains(nid)) {
+                                      mMap += (nid -> m)
+                                    } else {
+                                      println("router error: duplicate message")
+                                    }
+                                  }
+                                  case _ =>
+                                }
+                              }
+                              case value:SendBlock => {
+                                value.s match {
+                                  case s:Box => {
+                                    s._1 match {
+                                      case bInfo: (Block,BlockId) => {
+                                        val b:Block = bInfo._1
+                                        val bid:BlockId = bInfo._2
+                                        val nid = BigInt(FastCryptographicHash(serialize(b)++serialize(bid)))
+                                        if (!mMap.keySet.contains(nid)) {
+                                          mMap += (nid -> m)
+                                        } else {
+                                          println("router error: duplicate message")
+                                        }
+                                      }
+                                      case _ =>
+                                    }
+                                  }
+                                  case _ =>
+                                }
+                              }
+                              case _ => mList ::= m
+                            }
+                          }
+                          for (m<-ListMap(mMap.toSeq.sortBy(_._1):_*)) {
+                            val (s,r,c) = entry._2.head
+                            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+                          }
+                          for (m<-mList) {
+                            val (s,r,c) = entry._2.head
+                            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+                          }
+                        } else {
+                          val (s,r,c) = entry._2.head
+                          context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+                        }
+                      }
+                    } else {
+                      holder ! "passData"
+                    }
+                  }
+                  holderMessages -= globalSlot
+                } else {
+                  for (holder <- holders) {
+                    holder ! "passData"
+                  }
                 }
               }
             }
@@ -169,12 +245,16 @@ class Router(seed:Array[Byte]) extends Actor
               if (holdersReady) {
                 roundStep = "endStep"
                 reset
+                for (holder<-holders) {
+                  holder ! "endStep"
+                }
               }
             }
             case "endStep" => if (holdersReady) {
               roundDone = true
               reset
             }
+            case _ =>
           }
         }
         if (roundDone) {coordinatorRef !  StallActor}
