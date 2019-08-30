@@ -24,7 +24,9 @@ trait StakeholderVariables
   //slot time as determined from coordinator clock
   var globalSlot = 0
   //all tines that are pending built from new blocks that are received
-  var tines:Array[(Chain,Int,Int,Int,ActorRef)] = Array()
+  var tines:Map[Int,(Chain,Int,Int,Int,ActorRef)] = Map()
+  //counter for identifying tines
+  var tineCounter = 0
   //completed tines waiting to be selected with maxvalid-bg
   var candidateTines:Array[(Chain,Slot)] = Array()
   //placeholder for genesis block

@@ -302,6 +302,8 @@ class Coordinator extends Actor
           self ! Status
         }
 
+        case "fence_step" => routerRef ! "fence_step"
+
         case "verify" => self ! Verify
 
         case "stall" => sendAssertDone(holders,StallActor)

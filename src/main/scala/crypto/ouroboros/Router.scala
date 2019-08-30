@@ -133,6 +133,7 @@ class Router(seed:Array[Byte]) extends Actor
         holderReady -= sender()
         holderReady += (sender() -> true)
       }
+      if (value == "fence_step") println(roundStep)
     }
 
     case Update => {

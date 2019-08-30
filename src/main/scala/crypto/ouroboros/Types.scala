@@ -19,7 +19,8 @@ trait Types {
   type Pi = Array[Byte]
   type Box = (Any,Sid,Signature,PublicKey)
   type Transaction = (PublicKeyW,PublicKeyW,BigInt,Sid,Int,Signature)
-  type ChainRequest = (Slot,Int)
+  type ChainRequest = (BlockId,Int,Int)
+  type BlockRequest = (BlockId,Int)
   type Ledger = List[Any]
   type State = Map[PublicKeyW,(BigInt,Boolean,Int)]
   type MemPool = Map[Sid,Transaction]
