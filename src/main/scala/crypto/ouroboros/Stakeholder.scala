@@ -72,11 +72,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
-  def buildTines:Unit = {
-    for (job <- ListMap(tines.toSeq.sortBy(_._1):_*)) {
-      buildTine(job)
-    }
-  }
+//  def buildTines:Unit = {
+//    for (job <- ListMap(tines.toSeq.sortBy(_._1):_*)) {
+//      buildTine(job)
+//    }
+//  }
 
   def buildTine(job:(Int,(Chain,Int,Int,Int,ActorRef))): Unit = {
     val entry = job._2
@@ -436,6 +436,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               }
               if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
             }
+            case nullBlock:NullBlock => {
+              val jobNumber = nullBlock.job
+              if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
+            }
             case _ =>
           }
         }
@@ -464,6 +468,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                       println("Holder " + holderIndex.toString + " Returned Block")
                     }
                   }
+                } else {
+                  send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
                 }
               }
               case _ =>
@@ -488,10 +494,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 val startId:BlockId = request._1
                 val depth:Int = request._2
                 val job:Int = request._3
-                if (depth <= tineMaxDepth) {
+                var parentFound = blocks(startId._1).contains(startId._2)
+                var returnedBlockList:List[(Block,BlockId)] = List()
+                if (depth <= tineMaxDepth && parentFound) {
                   if (verifyBox(s)) {
-                    var returnedBlockList:List[(Block,BlockId)] = List()
-                    var parentFound = true
                     var id = startId
                     while (parentFound && returnedBlockList.length < k_s*depth) {
                       parentFound = getBlock(id) match {
@@ -503,12 +509,16 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                         case _ => false
                       }
                     }
-                    send(self,ref,ReturnBlock(signBox((job,returnedBlockList),sessionId,sk_sig,pk_sig)))
                     if (holderIndex == sharedData.printingHolder && printFlag) {
                       println("Holder " + holderIndex.toString + " Returned Blocks")
                     }
                   }
-                } else {println("error: request for chain deeper than max depth")}
+                }
+                if (returnedBlockList.nonEmpty) {
+                  send(self,ref,ReturnBlock(signBox((job,returnedBlockList),sessionId,sk_sig,pk_sig)))
+                } else {
+                  send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
+                }
               }
               case _ =>
             }

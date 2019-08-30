@@ -18,6 +18,7 @@ case object RequestState
 case object RequestBlockTree
 case object Populate
 case object NewDataFile
+case class NullBlock(job:Int)
 case class Hello(id: Any)
 case class CoordRef(ref: Any)
 case class RouterRef(ref: Any)
