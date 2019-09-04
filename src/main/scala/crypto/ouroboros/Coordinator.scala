@@ -81,7 +81,7 @@ class Coordinator extends Actor
       for (holder<-rng.shuffle(holders)) {
         holder ! Run
       }
-      timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
+      if (!useFencing) timers.startPeriodicTimer(timerKey, ReadCommand, commandUpdateTime)
     }
 
       /**returns offset time to stakeholder that issues GetTime to coordinator*/
@@ -159,13 +159,22 @@ class Coordinator extends Actor
       }
     }
 
+    case NextSlot => {
+      t += 1
+      ReadCommand
+      routerRef ! NextSlot
+    }
+
       /**command interpretation from config and cmd script*/
     case ReadCommand => {
-      if (!actorStalled) {
-        val t1 = System.currentTimeMillis()-tp
-        t = ((t1 - t0) / slotT).toInt
-      } else {
-        t = ((tp - t0) / slotT).toInt
+
+      if (!useFencing) {
+        if (!actorStalled) {
+          val t1 = System.currentTimeMillis()-tp
+          t = ((t1 - t0) / slotT).toInt
+        } else {
+          t = ((tp - t0) / slotT).toInt
+        }
       }
 
       if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
@@ -215,7 +224,7 @@ class Coordinator extends Actor
         cmdQueue -= t
       }
 
-      if (performanceFlag) {
+      if (performanceFlag && !useFencing) {
         val newLoad = sysLoad.cpuLoad
         if (newLoad>0.0){
           loadAverage = loadAverage.tail++Array(newLoad)

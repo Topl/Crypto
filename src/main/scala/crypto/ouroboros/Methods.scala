@@ -302,8 +302,10 @@ trait Methods
     * @param command object to be sent
     */
   def send(sender:ActorRef,holder:ActorRef,command: Any) = {
-    if (useRouting) {
+    if (useRouting && !useFencing) {
       routerRef ! (sender,holder,command)
+    } else if (useFencing) {
+      routerRef ! (BigInt(FastCryptographicHash(rng.nextString(64))),sender,holder,command)
     } else {
       holder ! command
     }
@@ -316,8 +318,10 @@ trait Methods
     */
   def send(sender:ActorRef,holders:List[ActorRef],command: Any) = {
     for (holder <- holders){
-      if (useRouting) {
-        routerRef ! (sender,holder,command)
+      if (useRouting && !useFencing) {
+        routerRef ! (sender, holder, command)
+      } else if (useFencing) {
+        routerRef ! (BigInt(FastCryptographicHash(rng.nextString(64))),sender,holder,command)
       } else {
         holder ! command
       }

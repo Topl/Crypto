@@ -18,13 +18,14 @@ class Router(seed:Array[Byte]) extends Actor
   val rng = new Random(BigInt(seed).toLong)
   var holdersPosition:Map[ActorRef,(Double,Double)] = Map()
   var distanceMap:Map[(ActorRef,ActorRef),Long] = Map()
-  var holderMessages:Map[Slot,Map[ActorRef,Map[Long,List[(ActorRef,ActorRef,Any)]]]] = Map()
+  var holderMessages:Map[Slot,Map[ActorRef,Map[Long,Map[BigInt,(ActorRef,ActorRef,Any)]]]] = Map()
   var holderReady:Map[ActorRef,Boolean] = Map()
-  var globalSlot:Slot = -1
+  var globalSlot:Slot = 0
   var localSlot:Slot = -1
   var coordinatorRef:ActorRef = _
   var t0:Long = 0
   var roundDone = true
+  var firstDataPass = true
   var roundStep = "updateSlot"
 
   private case object timerKey
@@ -61,7 +62,108 @@ class Router(seed:Array[Byte]) extends Actor
     distanceMap((sender,recip)).nano
   }
 
+  def deliver = {
+    for (holder<-rng.shuffle(holders)) {
+      val slotMessages = holderMessages(globalSlot)
+      if (slotMessages.keySet.contains(holder)) {
+        val queue = slotMessages(holder)
+        for (entry <- ListMap(queue.toSeq.sortBy(_._1):_*)) {
+          for (message<-ListMap(entry._2.toSeq.sortBy(_._1):_*)) {
+            val (s,r,c) = message._2
+            reset(r)
+            //println(holders.indexOf(s),holders.indexOf(r),c.getClass,message._1)
+            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+          }
+        }
+      }
+    }
+    holderMessages -= globalSlot
+  }
+
+  def update = {
+    if (globalSlot > L_s || sharedData.killFlag) {
+      timers.cancelAll
+    } else {
+      if (globalSlot > localSlot && roundDone) {
+        roundDone = false
+        localSlot = globalSlot
+        roundStep = "updateSlot"
+        reset
+        for (holder<-holders) {
+          holder ! GetSlot(globalSlot)
+        }
+      } else {
+        roundStep match {
+          case "updateSlot" => {
+            if (holdersReady) {
+              roundStep = "issueTx"
+              coordinatorRef ! IssueTx("randTx")
+              reset
+            }
+          }
+          case "issueTx" => {
+            if (holdersReady) {
+              roundStep = "passData"
+              reset
+            }
+          }
+          case "passData" => {
+            if (holdersReady) {
+              if (holderMessages.keySet.contains(globalSlot)) {
+                deliver
+              } else {
+                roundStep = "updateChain"
+                reset
+                for (holder<-holders) {
+                  holder ! "updateChain"
+                }
+              }
+            } else {
+              if (firstDataPass) {
+                for (holder<-holders) {
+                  holder ! "passData"
+                }
+                firstDataPass = false
+              }
+            }
+          }
+          case "updateChain" => {
+            if (holdersReady) {
+              roundStep = "endStep"
+              reset
+              for (holder<-holders) {
+                holder ! "endStep"
+              }
+            }
+          }
+          case "endStep" => if (holdersReady) {
+            roundDone = true
+            firstDataPass = true
+            coordinatorRef ! NextSlot
+          }
+          case _ =>
+        }
+      }
+    }
+  }
+
   def receive: Receive = {
+
+    case flag:(ActorRef,String) => {
+      val (ref,value) = flag
+//      if (value == "updateChain" || value == "passData") {println(value+" "+holders.indexOf(sender).toString)
+//        for (holder<-holders) {
+//          println(holders.indexOf(holder).toString+" "+holderReady(holder))
+//        }
+//        println(holderMessages.keySet.contains(globalSlot))
+//      }
+      if (value == roundStep && holderReady.keySet.contains(ref)) {
+        holderReady -= ref
+        holderReady += (ref -> true)
+      }
+    }
+
+
     /** accepts list of other holders from coordinator */
     case list:List[ActorRef] => {
       holders = list
@@ -80,14 +182,24 @@ class Router(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
+    case NextSlot => {
+      globalSlot += 1
+    }
+
     /** adds delay to routed message*/
-    case newMessage:(ActorRef,ActorRef,Any) => if (useFencing) {
-      val (s,r,_) = newMessage
+    case newMessage:(ActorRef,ActorRef,Any) => {
+      val (s,r,c) = newMessage
+      context.system.scheduler.scheduleOnce(delay(s,r),r,c)(context.system.dispatcher,sender())
+    }
+
+    case newIdMessage:(BigInt,ActorRef,ActorRef,Any) => {
+      val (uid,s,r,c) = newIdMessage
+      val newMessage = (s,r,c)
       val nsDelay = delay(s,r)
-      val messageDelta:Slot = (nsDelay.toMillis/slotT).toInt
+      val messageDelta:Slot = (nsDelay.toNanos/(slotT*1000000)).toInt
       val priority:Long = nsDelay.toNanos%(slotT*1000000)
       val offsetSlot = globalSlot+messageDelta
-      val messages:Map[ActorRef,Map[Long,List[(ActorRef,ActorRef,Any)]]] = if (holderMessages.keySet.contains(offsetSlot)) {
+      val messages:Map[ActorRef,Map[Long,Map[BigInt,(ActorRef,ActorRef,Any)]]] = if (holderMessages.keySet.contains(offsetSlot)) {
         var m = holderMessages(offsetSlot)
         holderMessages -= offsetSlot
         if (m.keySet.contains(s)) {
@@ -96,28 +208,26 @@ class Router(seed:Array[Byte]) extends Actor
           if (l.keySet.contains(priority)) {
             var q = l(priority)
             l -= priority
-            q ::= newMessage
+            q += (uid -> newMessage)
             l += (priority -> q)
           } else {
-            l += (priority -> List(newMessage))
+            l += (priority -> Map(uid->newMessage))
           }
           m += (s -> l)
           m
         } else {
-          m += (s -> Map(priority -> List(newMessage)))
+          m += (s -> Map(priority -> Map(uid -> newMessage)))
           m
         }
       } else {
-        Map(s -> Map(priority -> List(newMessage)))
+        Map(s -> Map(priority -> Map(uid -> newMessage)))
       }
       holderMessages += (offsetSlot-> messages)
-    } else {
-      val (s,r,c) = newMessage
-      context.system.scheduler.scheduleOnce(delay(s,r),r,c)(context.system.dispatcher,sender())
     }
 
     case Run => {
       timers.startPeriodicTimer(timerKey, Update, updateTime)
+      coordinatorRef ! NextSlot
     }
 
     case value:CoordRef => {
@@ -128,139 +238,9 @@ class Router(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
-    case value:String => {
-      if (value == roundStep && holderReady.keySet.contains(sender())) {
-        holderReady -= sender()
-        holderReady += (sender() -> true)
-      }
-      if (value == "fence_step") println(roundStep)
-    }
+    case value:String => if (value == "fence_step") println(roundStep)
 
-    case Update => {
-      if (globalSlot > L_s || sharedData.killFlag) {
-        timers.cancelAll
-      } else {
-        coordinatorRef ! GetTime
-        if (globalSlot > localSlot) {
-          coordinatorRef ! StallActor
-          roundDone = false
-          localSlot = globalSlot
-          roundStep = "updateSlot"
-        } else {
-          roundStep match {
-            case "updateSlot" => {
-              if (holdersReady) {
-                roundStep = "issueTx"
-                coordinatorRef ! IssueTx("randTx")
-                reset
-              }
-            }
-            case "issueTx" => {
-              if (holdersReady) {
-                roundStep = "passData"
-                reset
-              }
-            }
-            case "passData" => {
-              if (holdersReady && !holderMessages.keySet.contains(globalSlot)) {
-                roundStep = "updateChain"
-                for (holder<-holders) {
-                  holder ! "updateChain"
-                }
-                reset
-              } else {
-                if (holderMessages.keySet.contains(globalSlot)) {
-                  val slotMessages = holderMessages(globalSlot)
-                  for (holder<-rng.shuffle(holders)) {
-                    if (slotMessages.keySet.contains(holder)) {
-                      reset(holder)
-                      val queue = slotMessages(holder)
-                      for (entry <- ListMap(queue.toSeq.sortBy(_._1):_*)) {
-                        if (entry._2.length > 1) {
-                          var mMap:Map[BigInt,(ActorRef,ActorRef,Any)] = Map()
-                          var mList:List[(ActorRef,ActorRef,Any)] = List()
-                          for (m<-entry._2){
-                            m._3 match {
-                              case value:SendTx => {
-                                value.s match {
-                                  case trans:Transaction => {
-                                    val nid = BigInt(FastCryptographicHash(serialize(trans)))
-                                    if (!mMap.keySet.contains(nid)) {
-                                      mMap += (nid -> m)
-                                    } else {
-                                      println("router error: duplicate message")
-                                    }
-                                  }
-                                  case _ =>
-                                }
-                              }
-                              case value:SendBlock => {
-                                value.s match {
-                                  case s:Box => {
-                                    s._1 match {
-                                      case bInfo: (Block,BlockId) => {
-                                        val b:Block = bInfo._1
-                                        val bid:BlockId = bInfo._2
-                                        val nid = BigInt(FastCryptographicHash(serialize(b)++serialize(bid)))
-                                        if (!mMap.keySet.contains(nid)) {
-                                          mMap += (nid -> m)
-                                        } else {
-                                          println("router error: duplicate message")
-                                        }
-                                      }
-                                      case _ =>
-                                    }
-                                  }
-                                  case _ =>
-                                }
-                              }
-                              case _ => mList ::= m
-                            }
-                          }
-                          for (m<-ListMap(mMap.toSeq.sortBy(_._1):_*)) {
-                            val (s,r,c) = entry._2.head
-                            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-                          }
-                          for (m<-mList) {
-                            val (s,r,c) = entry._2.head
-                            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-                          }
-                        } else {
-                          val (s,r,c) = entry._2.head
-                          context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-                        }
-                      }
-                    } else {
-                      holder ! "passData"
-                    }
-                  }
-                  holderMessages -= globalSlot
-                } else {
-                  for (holder <- holders) {
-                    holder ! "passData"
-                  }
-                }
-              }
-            }
-            case "updateChain" => {
-              if (holdersReady) {
-                roundStep = "endStep"
-                reset
-                for (holder<-holders) {
-                  holder ! "endStep"
-                }
-              }
-            }
-            case "endStep" => if (holdersReady) {
-              roundDone = true
-              reset
-            }
-            case _ =>
-          }
-        }
-        if (roundDone) {coordinatorRef !  StallActor}
-      }
-    }
+    case Update => update
 
     case value:SetClock => {
       t0 = value.t0

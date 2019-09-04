@@ -234,7 +234,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
           }
           roundBlock = 0
-          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString)
+          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " Last Bid = " + bytes2hex(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
           if (holderIndex == sharedData.printingHolder && printFlag) {
             println("Holder " + holderIndex.toString + " Update KES")
           }
@@ -286,68 +286,80 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
+  def update = { if (sharedData.error) {actorStalled = true}
+    if (!actorStalled) {
+      if (!updating) {
+        updating = true
+        if (globalSlot > tMax || sharedData.killFlag) {
+          timers.cancelAll
+        } else if (diffuseSent) {
+          if (!useFencing) coordinatorRef ! GetTime
+          if (globalSlot > localSlot) {
+            while (globalSlot > localSlot) {
+              history_state.update(localSlot, localState)
+              localSlot += 1
+              updateSlot
+            }
+          }
+
+          if (roundBlock == 0) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " Forging")}
+            forgeBlock
+            if (useFencing) {routerRef ! (self,"updateSlot")}
+          } else if (!useFencing) {
+            if (candidateTines.nonEmpty) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Checking Tine")
+              }
+              time(maxValidBG)
+            }
+          }
+
+          if (useFencing && chainUpdateLock) {
+            if (candidateTines.isEmpty) {
+              chainUpdateLock = false
+            } else {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Checking Tine")
+              }
+              time(maxValidBG)
+            }
+          }
+
+        }
+        updating = false
+      }
+    }
+  }
+
   def receive: Receive = {
 
 /**************************************************** Holders *********************************************************/
 
       /**updates time, the kes key, and resets variables */
-    case Update => { if (sharedData.error) {actorStalled = true}
-      if (!actorStalled) {
-        if (!updating) {
-          updating = true
-          if (globalSlot > tMax || sharedData.killFlag) {
-            timers.cancelAll
-          } else if (diffuseSent) {
-            coordinatorRef ! GetTime
-            if (globalSlot > localSlot) {
-              while (globalSlot > localSlot) {
-                history_state.update(localSlot, localState)
-                localSlot += 1
-                updateSlot
-              }
-            } else if (roundBlock == 0) {
-              if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " Forging")}
-              forgeBlock
-              if (useFencing) {routerRef ! "updateSlot"}
-            } else if (!useFencing) {
-              if (candidateTines.nonEmpty) {
-                if (holderIndex == sharedData.printingHolder && printFlag) {
-                  println("Holder " + holderIndex.toString + " Checking Tine")
-                }
-                time(maxValidBG)
-              }
-            }
-            if (useFencing && chainUpdateLock) {
-              if (candidateTines.isEmpty) {
-                chainUpdateLock = false
-                routerRef ! "updateChain"
-              } else {
-                if (holderIndex == sharedData.printingHolder && printFlag) {
-                  println("Holder " + holderIndex.toString + " Checking Tine")
-                }
-                time(maxValidBG)
-              }
-            }
-          }
-          updating = false
-        }
-      }
+    case Update => {
+      update
     }
 
     case "updateChain" => if (useFencing) {
       if (!actorStalled) {
         chainUpdateLock = true
+        while (chainUpdateLock) {
+          update
+        }
+        routerRef ! (self,"updateChain")
       } else {
-        routerRef ! "updateChain"
+        routerRef ! (self,"updateChain")
       }
     }
 
     case "endStep" => if (useFencing) {
-      routerRef ! "endStep"
+      update
+      routerRef ! (self,"endStep")
     }
 
     case "passData" => if (useFencing) {
-      routerRef ! "passData"
+      routerRef ! (self,"passData")
     }
 
       /**adds confirmed transactions to buffer and sends new ones to gossipers*/
@@ -370,7 +382,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      if (useFencing) routerRef ! "passData"
+      if (useFencing) {
+        routerRef ! (self,"passData")
+      }
     }
 
       /**block passing, new blocks delivered are added to list of tines and then sent to gossipers*/
@@ -408,174 +422,196 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      if (useFencing) routerRef ! "passData"
+      if (useFencing) {
+        routerRef ! (self,"passData")
+      }
     }
 
       /**block passing, returned blocks are added to block database*/
-    case value:ReturnBlock => if (!actorStalled) {
-      value.s match {
-        case s:Box => if (inbox.keySet.contains(s._2)) {
-          s._1 match {
-            case returnedBlocks: (Int,List[(Block,BlockId)]) => {
-              if (holderIndex == sharedData.printingHolder && printFlag) {
-                println("Holder " + holderIndex.toString + " Got Blocks")
-              }
-              val jobNumber:Int = returnedBlocks._1
-              val bList = returnedBlocks._2
-              for (bInfo <- bList) {
-                val bid:BlockId = bInfo._2
-                val foundBlock = blocks(bid._1).contains(bid._2)
-                if (!foundBlock) {
-                  val b:Block = bInfo._1
-                  val bHash = hash(b)
-                  val bSlot = b._3
-                  if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
-                    blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+    case value:ReturnBlock => {
+      if (!actorStalled) {
+        value.s match {
+          case s:Box => if (inbox.keySet.contains(s._2)) {
+            s._1 match {
+              case returnedBlocks: (Int,List[(Block,BlockId)]) => {
+                if (holderIndex == sharedData.printingHolder && printFlag) {
+                  println("Holder " + holderIndex.toString + " Got Blocks")
+                }
+                val jobNumber:Int = returnedBlocks._1
+                val bList = returnedBlocks._2
+                for (bInfo <- bList) {
+                  val bid:BlockId = bInfo._2
+                  val foundBlock = blocks(bid._1).contains(bid._2)
+                  if (!foundBlock) {
+                    val b:Block = bInfo._1
+                    val bHash = hash(b)
+                    val bSlot = b._3
+                    if (verifyBox(s) && verifyBlock(b) && bHash == bid._2 && bSlot == bid._1) {
+                      blocks.update(bSlot, blocks(bSlot) + (bHash -> b))
+                    }
                   }
                 }
+                if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
               }
-              if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
+              case nullBlock:NullBlock => {
+                val jobNumber = nullBlock.job
+                if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
+              }
+              case _ =>
             }
-            case nullBlock:NullBlock => {
-              val jobNumber = nullBlock.job
-              if (tines.keySet.contains(jobNumber)) buildTine((jobNumber,tines(jobNumber)))
-            }
-            case _ =>
           }
+          case _ =>
         }
-        case _ =>
+      }
+      if (useFencing) {
+        routerRef ! (self,"passData")
       }
     }
 
       /**block passing, parent ids that are not found are requested*/
-    case value:RequestBlock => if (!actorStalled) {
-      value.s match {
-        case s:Box => {
-          if (inbox.keySet.contains(s._2)) {
-            if (holderIndex == sharedData.printingHolder && printFlag) {
-              println("Holder " + holderIndex.toString + " Was Requested Block")
-            }
-            val ref = inbox(s._2)._1
-            s._1 match {
-              case request:BlockRequest => {
-                val id:BlockId = request._1
-                val job:Int = request._2
-                if (blocks(id._1).contains(id._2)) {
-                  if (verifyBox(s)) {
-                    val returnedBlock = blocks(id._1)(id._2)
-                    send(self,ref,ReturnBlock(signBox((job,List((returnedBlock,id))),sessionId,sk_sig,pk_sig)))
-                    if (holderIndex == sharedData.printingHolder && printFlag) {
-                      println("Holder " + holderIndex.toString + " Returned Block")
-                    }
-                  }
-                } else {
-                  send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
-                }
+    case value:RequestBlock => {
+      if (!actorStalled) {
+        value.s match {
+          case s:Box => {
+            if (inbox.keySet.contains(s._2)) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Was Requested Block")
               }
-              case _ =>
+              val ref = inbox(s._2)._1
+              s._1 match {
+                case request:BlockRequest => {
+                  val id:BlockId = request._1
+                  val job:Int = request._2
+                  if (blocks(id._1).contains(id._2)) {
+                    if (verifyBox(s)) {
+                      val returnedBlock = blocks(id._1)(id._2)
+                      send(self,ref,ReturnBlock(signBox((job,List((returnedBlock,id))),sessionId,sk_sig,pk_sig)))
+                      if (holderIndex == sharedData.printingHolder && printFlag) {
+                        println("Holder " + holderIndex.toString + " Returned Block")
+                      }
+                    }
+                  } else {
+                    send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
+                  }
+                }
+                case _ =>
+              }
             }
           }
+          case _ =>
         }
-        case _ =>
+      }
+      if (useFencing) {
+        routerRef ! (self,"passData")
       }
     }
 
       /**block passing, parent ids are requested with increasing depth of chain upto a finite number of attempts*/
-    case value:RequestChain => if (!actorStalled) {
-      value.s match {
-        case s:Box => {
-          if (inbox.keySet.contains(s._2)) {
-            if (holderIndex == sharedData.printingHolder && printFlag) {
-              println("Holder " + holderIndex.toString + " Was Requested Blocks")
-            }
-            val ref = inbox(s._2)._1
-            s._1 match {
-              case request:ChainRequest => {
-                val startId:BlockId = request._1
-                val depth:Int = request._2
-                val job:Int = request._3
-                var parentFound = blocks(startId._1).contains(startId._2)
-                var returnedBlockList:List[(Block,BlockId)] = List()
-                if (depth <= tineMaxDepth && parentFound) {
-                  if (verifyBox(s)) {
-                    var id = startId
-                    while (parentFound && returnedBlockList.length < k_s*depth) {
-                      parentFound = getBlock(id) match {
-                        case b:Block => {
-                          returnedBlockList ::= (b,id)
-                          id = getParentId(b)
-                          true
+    case value:RequestChain => {
+      if (!actorStalled) {
+        value.s match {
+          case s:Box => {
+            if (inbox.keySet.contains(s._2)) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Was Requested Blocks")
+              }
+              val ref = inbox(s._2)._1
+              s._1 match {
+                case request:ChainRequest => {
+                  val startId:BlockId = request._1
+                  val depth:Int = request._2
+                  val job:Int = request._3
+                  var parentFound = blocks(startId._1).contains(startId._2)
+                  var returnedBlockList:List[(Block,BlockId)] = List()
+                  if (depth <= tineMaxDepth && parentFound) {
+                    if (verifyBox(s)) {
+                      var id = startId
+                      while (parentFound && returnedBlockList.length < k_s*depth) {
+                        parentFound = getBlock(id) match {
+                          case b:Block => {
+                            returnedBlockList ::= (b,id)
+                            id = getParentId(b)
+                            true
+                          }
+                          case _ => false
                         }
-                        case _ => false
+                      }
+                      if (holderIndex == sharedData.printingHolder && printFlag) {
+                        println("Holder " + holderIndex.toString + " Returned Blocks")
                       }
                     }
-                    if (holderIndex == sharedData.printingHolder && printFlag) {
-                      println("Holder " + holderIndex.toString + " Returned Blocks")
-                    }
+                  }
+                  if (returnedBlockList.nonEmpty) {
+                    send(self,ref,ReturnBlock(signBox((job,returnedBlockList),sessionId,sk_sig,pk_sig)))
+                  } else {
+                    send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
                   }
                 }
-                if (returnedBlockList.nonEmpty) {
-                  send(self,ref,ReturnBlock(signBox((job,returnedBlockList),sessionId,sk_sig,pk_sig)))
-                } else {
-                  send(self,ref,ReturnBlock(signBox(NullBlock(job),sessionId,sk_sig,pk_sig)))
-                }
+                case _ =>
               }
-              case _ =>
             }
           }
+          case _ =>
         }
-        case _ =>
+      }
+      if (useFencing) {
+        routerRef ! (self,"passData")
       }
     }
 
       /**issue a transaction generated by the coordinator and send it to the list of gossipers*/
-    case value:IssueTx => if (!actorStalled) {
-      value.s match {
-        case data:(PublicKeyW,BigInt) => if (issueState.keySet.contains(pkw)) {
-          val (pk_r,delta) = data
-          val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-          val net = issueState(pkw)._1
-          val txC = txCounter//issueState(pkw)._3
-          if (delta <= net) {
-            if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-            val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC+1)
-            issueState = applyTransaction(issueState,trans,ByteArrayWrapper(Array()))
-            txCounter += 1
-            setOfTxs += (trans._4->trans._5)
-            send(self,gossipers, SendTx(trans))
-            if (useFencing) routerRef ! "issueTx"
-          }
-        }
-        case "noTx" => {
-          if (useFencing) routerRef ! "issueTx"
-        }
-        case _ =>
-      }
-    }
-
-      /**gossip protocol greeting message for populating inbox*/
-    case value:Hello => if (!actorStalled) {
-      if (gossipers.length < numGossipers + gOff) {
-        value.id match {
-          case id:Box => {
-            id._1 match {
-              case ref:ActorRef => {
-                if (verifyBox(id)) {
-                  if (!gossipers.contains(ref) && inbox.keySet.contains(id._2)) {
-                    if (holderIndex == sharedData.printingHolder && printFlag) {
-                      println("Holder " + holderIndex.toString + " Adding Gossiper")
-                    }
-                    if (inbox(id._2)._1 == ref) gossipers = gossipers ++ List(ref)
-                  }
-                  send(self,ref,Hello(signBox(self, sessionId, sk_sig, pk_sig)))
-                }
-              }
-              case _ =>
+    case value:IssueTx => {
+      if (!actorStalled) {
+        value.s match {
+          case data:(PublicKeyW,BigInt) => if (issueState.keySet.contains(pkw)) {
+            val (pk_r,delta) = data
+            val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+            val net = issueState(pkw)._1
+            val txC = txCounter//issueState(pkw)._3
+            if (delta <= net) {
+              if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
+              val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC+1)
+              issueState = applyTransaction(issueState,trans,ByteArrayWrapper(Array()))
+              txCounter += 1
+              setOfTxs += (trans._4->trans._5)
+              send(self,gossipers, SendTx(trans))
             }
-
           }
           case _ =>
         }
+      }
+      if (useFencing) routerRef ! (self,"issueTx")
+    }
+
+      /**gossip protocol greeting message for populating inbox*/
+    case value:Hello => {
+      //println(gossipers.length, numGossipers + gOff)
+      if (!actorStalled) {
+        if (gossipers.length < numGossipers + gOff) {
+          value.id match {
+            case id:Box => {
+              id._1 match {
+                case ref:ActorRef => {
+                  if (verifyBox(id)) {
+                    if (!gossipers.contains(ref) && inbox.keySet.contains(id._2)) {
+                      if (holderIndex == sharedData.printingHolder && printFlag) {
+                        println("Holder " + holderIndex.toString + " Adding Gossiper")
+                      }
+                      if (inbox(id._2)._1 == ref) gossipers = gossipers ++ List(ref)
+                      send(self,ref,Hello(signBox(self, sessionId, sk_sig, pk_sig)))
+                    }
+                  }
+                }
+                case _ =>
+              }
+
+            }
+            case _ =>
+          }
+        }
+      }
+      if (useFencing) {
+        routerRef ! (self,"passData")
       }
     }
 
@@ -622,7 +658,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
       /**starts the timer that repeats the update command*/
     case Run => {
-      timers.startPeriodicTimer(timerKey, Update, updateTime)
+      if (!useFencing) timers.startPeriodicTimer(timerKey, Update, updateTime)
     }
 
       /**sets the initial time*/
@@ -634,6 +670,15 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       /**sets the slot from coordinator time*/
     case value:GetTime => if (!actorStalled) {
       globalSlot = ((value.t1 - t0) / slotT).toInt
+    }
+
+    case value:GetSlot => {
+      if (!actorStalled) {
+        globalSlot = value.s
+        update
+      } else {
+        if (useFencing) {routerRef ! (self,"updateSlot")}
+      }
     }
 
       /**accepts list of other holders from coordinator */
