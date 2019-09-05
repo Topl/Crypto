@@ -18,12 +18,13 @@ class Router(seed:Array[Byte]) extends Actor
   val rng = new Random(BigInt(seed).toLong)
   var holdersPosition:Map[ActorRef,(Double,Double)] = Map()
   var distanceMap:Map[(ActorRef,ActorRef),Long] = Map()
-  var holderMessages:Map[Slot,Map[ActorRef,Map[Long,Map[BigInt,(ActorRef,ActorRef,Any)]]]] = Map()
+  var holderMessages:Map[Slot,Map[Long,Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]]]] = Map()
   var holderReady:Map[ActorRef,Boolean] = Map()
   var globalSlot:Slot = 0
   var localSlot:Slot = -1
   var coordinatorRef:ActorRef = _
   var t0:Long = 0
+  var ts:Long = 0
   var roundDone = true
   var firstDataPass = true
   var roundStep = "updateSlot"
@@ -63,21 +64,23 @@ class Router(seed:Array[Byte]) extends Actor
   }
 
   def deliver = {
-    for (holder<-rng.shuffle(holders)) {
-      val slotMessages = holderMessages(globalSlot)
-      if (slotMessages.keySet.contains(holder)) {
-        val queue = slotMessages(holder)
-        for (entry <- ListMap(queue.toSeq.sortBy(_._1):_*)) {
-          for (message<-ListMap(entry._2.toSeq.sortBy(_._1):_*)) {
-            val (s,r,c) = message._2
-            reset(r)
-            //println(holders.indexOf(s),holders.indexOf(r),c.getClass,message._1)
-            context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-          }
+    var slotMessages = holderMessages(globalSlot)
+    ts = slotMessages.keySet.min
+    val queue = slotMessages(ts)
+    slotMessages -= ts
+    for (holder <- rng.shuffle(holders)) {
+      if (queue.keySet.contains(holder)) {
+        val messageMap:Map[BigInt,(ActorRef,ActorRef,Any)] = queue(holder)
+        for (message<-ListMap(messageMap.toSeq.sortBy(_._1):_*)) {
+          val (s,r,c) = message._2
+          reset(r)
+          //println(holders.indexOf(s),holders.indexOf(r),c.getClass,message._1)
+          context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
         }
       }
     }
     holderMessages -= globalSlot
+    if (slotMessages.nonEmpty) holderMessages += (globalSlot -> slotMessages)
   }
 
   def update = {
@@ -87,6 +90,7 @@ class Router(seed:Array[Byte]) extends Actor
       if (globalSlot > localSlot && roundDone) {
         roundDone = false
         localSlot = globalSlot
+        ts = 0
         roundStep = "updateSlot"
         reset
         for (holder<-holders) {
@@ -110,6 +114,7 @@ class Router(seed:Array[Byte]) extends Actor
           case "passData" => {
             if (holdersReady) {
               if (holderMessages.keySet.contains(globalSlot)) {
+                //println("-------deliver---------")
                 deliver
               } else {
                 roundStep = "updateChain"
@@ -196,31 +201,31 @@ class Router(seed:Array[Byte]) extends Actor
       val (uid,s,r,c) = newIdMessage
       val newMessage = (s,r,c)
       val nsDelay = delay(s,r)
-      val messageDelta:Slot = (nsDelay.toNanos/(slotT*1000000)).toInt
-      val priority:Long = nsDelay.toNanos%(slotT*1000000)
+      val messageDelta:Slot = ((nsDelay.toNanos+ts)/(slotT*1000000)).toInt
+      val priority:Long = (nsDelay.toNanos+ts)%(slotT*1000000)
       val offsetSlot = globalSlot+messageDelta
-      val messages:Map[ActorRef,Map[Long,Map[BigInt,(ActorRef,ActorRef,Any)]]] = if (holderMessages.keySet.contains(offsetSlot)) {
+      val messages:Map[Long,Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]]] = if (holderMessages.keySet.contains(offsetSlot)) {
         var m = holderMessages(offsetSlot)
         holderMessages -= offsetSlot
-        if (m.keySet.contains(s)) {
-          var l = m(s)
-          m -= s
-          if (l.keySet.contains(priority)) {
-            var q = l(priority)
-            l -= priority
+        if (m.keySet.contains(priority)) {
+          var l = m(priority)
+          m -= priority
+          if (l.keySet.contains(s)) {
+            var q = l(s)
+            l -= s
             q += (uid -> newMessage)
-            l += (priority -> q)
+            l += (s -> q)
           } else {
-            l += (priority -> Map(uid->newMessage))
+            l += (s -> Map(uid->newMessage))
           }
-          m += (s -> l)
+          m += (priority -> l)
           m
         } else {
-          m += (s -> Map(priority -> Map(uid -> newMessage)))
+          m += (priority -> Map(s -> Map(uid -> newMessage)))
           m
         }
       } else {
-        Map(s -> Map(priority -> Map(uid -> newMessage)))
+        Map(priority -> Map(s -> Map(uid -> newMessage)))
       }
       holderMessages += (offsetSlot-> messages)
     }
