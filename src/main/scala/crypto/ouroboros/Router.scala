@@ -1,10 +1,13 @@
 package crypto.ouroboros
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
+import akka.util.Timeout
+import akka.pattern.ask
 import bifrost.crypto.hash.FastCryptographicHash
 import io.iohk.iodb.ByteArrayWrapper
 
 import scala.collection.immutable.ListMap
+import scala.concurrent.Await
 import scala.math.BigInt
 import scala.util.Random
 import scala.concurrent.duration._
@@ -30,6 +33,33 @@ class Router(seed:Array[Byte]) extends Actor
   var roundStep = "updateSlot"
 
   private case object timerKey
+
+  /**
+    * Sends commands one by one to list of stakeholders
+    * @param holders actor list
+    * @param command object to be sent
+    */
+  def sendAssertDone(holders:List[ActorRef], command: Any) = {
+    for (holder <- holders){
+      implicit val timeout:Timeout = Timeout(waitTime)
+      val future = holder ? command
+      val result = Await.result(future, timeout.duration)
+      assert(result == "done")
+    }
+  }
+
+  /**
+    * Sends command to stakeholder and waits for response
+    * @param holder
+    * @param command
+    */
+  def sendAssertDone(holder:ActorRef, command: Any) = {
+    implicit val timeout:Timeout = Timeout(waitTime)
+    val future = holder ? command
+    val result = Await.result(future, timeout.duration)
+    assert(result == "done")
+  }
+
 
   def holdersReady:Boolean = {
     var bool = true
@@ -87,8 +117,11 @@ class Router(seed:Array[Byte]) extends Actor
     if (globalSlot > L_s || sharedData.killFlag) {
       timers.cancelAll
     } else {
-      if (globalSlot > localSlot && roundDone) {
-        roundDone = false
+      if (roundDone) {
+        sendAssertDone(coordinatorRef,NextSlot)
+        sendAssertDone(coordinatorRef,ReadCommand)
+      }
+      if (globalSlot > localSlot) {
         localSlot = globalSlot
         ts = 0
         roundStep = "updateSlot"
@@ -141,10 +174,10 @@ class Router(seed:Array[Byte]) extends Actor
               }
             }
           }
-          case "endStep" => if (holdersReady) {
+          case "endStep" => if (holdersReady && !roundDone) {
             roundDone = true
             firstDataPass = true
-            coordinatorRef ! NextSlot
+            sendAssertDone(coordinatorRef,EndStep)
           }
           case _ =>
         }
@@ -188,7 +221,8 @@ class Router(seed:Array[Byte]) extends Actor
     }
 
     case NextSlot => {
-      globalSlot += 1
+      if (roundDone) globalSlot += 1
+      roundDone = false
     }
 
     /** adds delay to routed message*/
@@ -243,7 +277,10 @@ class Router(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
-    case value:String => if (value == "fence_step") println(roundStep)
+    case value:String => if (value == "fence_step") {
+      println(roundStep)
+      sender() ! "done"
+    }
 
     case Update => update
 

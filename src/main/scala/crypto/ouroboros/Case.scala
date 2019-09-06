@@ -19,6 +19,7 @@ case object RequestBlockTree
 case object Populate
 case object NewDataFile
 case object NextSlot
+case object EndStep
 case class NullBlock(job:Int)
 case class GetSlot(s:Int)
 case class Hello(id: Any)

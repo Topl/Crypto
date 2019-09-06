@@ -30,6 +30,7 @@ class Coordinator extends Actor
   val sysLoad:SystemLoadMonitor = new SystemLoadMonitor
   var loadAverage = Array.fill(numAverageLoad){0.0}
   var genBlock:Block = _
+  var roundDone = true
 
   private case object timerKey
 
@@ -94,19 +95,6 @@ class Coordinator extends Actor
       }
     }
 
-      /**tells actors to print status */
-    case Status => {
-      sendAssertDone(holders,Status)
-      assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
-      println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
-      sharedData.txCounter = 0
-    }
-
-      /**tells actors to verify chain data from genesis*/
-    case Verify => {
-      sendAssertDone(holders,Verify)
-    }
-
       /**coordinator creates a file writer object that is passed to stakeholders if data is being written*/
     case NewDataFile => {
       if(dataOutFlag) {
@@ -160,121 +148,25 @@ class Coordinator extends Actor
     }
 
     case NextSlot => {
-      t += 1
-      ReadCommand
-      routerRef ! NextSlot
+      if (!actorPaused && !actorStalled) {
+        if (roundDone) {
+          t += 1
+          roundDone = false
+          routerRef ! NextSlot
+        }
+      }
+      sender() ! "done"
+    }
+
+    case EndStep => {
+      roundDone = true
+      sender() ! "done"
     }
 
       /**command interpretation from config and cmd script*/
     case ReadCommand => {
-
-      if (!useFencing) {
-        if (!actorStalled) {
-          val t1 = System.currentTimeMillis()-tp
-          t = ((t1 - t0) / slotT).toInt
-        } else {
-          t = ((tp - t0) / slotT).toInt
-        }
-      }
-
-      if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
-        println("-----------------------------------------------------------")
-        val f = new File("/tmp/scorex/test-data/crypto/cmd")
-        val cmd: String = ("cat" #< f).!!
-        f.delete
-        val cmdList = cmd.split("\n")
-        for (line<-cmdList) {
-          val com = line.trim.split(" ")
-          com(0) match {
-            case s:String => {
-              if (com.length == 2){
-                com(1).toInt match {
-                  case i:Int => {
-                    if (s == "print") {
-                      sharedData.printingHolder = i
-                    } else {
-                      if (cmdQueue.keySet.contains(i)) {
-                        val nl = s::cmdQueue(i)
-                        cmdQueue -= i
-                        cmdQueue += (i->nl)
-                      } else {
-                        cmdQueue += (i->List(s))
-                      }
-                    }
-                  }
-                  case _ =>
-                }
-              } else {
-                if (cmdQueue.keySet.contains(t)){
-                  val nl = s::cmdQueue(t)
-                  cmdQueue -= t
-                  cmdQueue += (t->nl)
-                } else {
-                  cmdQueue += (t->List(s))
-                }
-              }
-            }
-            case _ =>
-          }
-        }
-      }
-
-      if (cmdQueue.keySet.contains(t)) {
-        command(cmdQueue(t))
-        cmdQueue -= t
-      }
-
-      if (performanceFlag && !useFencing) {
-        val newLoad = sysLoad.cpuLoad
-        if (newLoad>0.0){
-          loadAverage = loadAverage.tail++Array(newLoad)
-        }
-
-        if (!actorPaused) {
-          val cpuLoad = (0.0 /: loadAverage){_ + _}/loadAverage.length
-          if (cpuLoad >= systemLoadThreshold && !actorStalled) {
-            tp = System.currentTimeMillis()-tp
-            actorStalled = true
-          } else if (cpuLoad < systemLoadThreshold && actorStalled) {
-            tp = System.currentTimeMillis()-tp
-            actorStalled = false
-          }
-        }
-      }
-
-      if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s) {
-        for (i <- 1 to holders.length){
-          val r = rng.nextInt(txDenominator)
-          if (r==0) issueTx
-        }
-      }
-
-      if (sharedData.killFlag || t>L_s+2*delta_s) {
-        timers.cancelAll
-        fileWriter match {
-          case fw:BufferedWriter => fw.close()
-          case _ => println("error: file writer close on non writer object")
-        }
-        context.system.terminate
-      }
-    }
-
-      /**pauses coordinator*/
-    case StallActor => {
-      if (!actorPaused) {
-        actorPaused = true
-        if (!actorStalled) {
-          actorStalled = true
-          tp = System.currentTimeMillis()-tp
-        }
-      }
-      else {
-        actorPaused = false
-        if (actorStalled) {
-          actorStalled = false
-          tp = System.currentTimeMillis()-tp
-        }
-      }
+      readCommand
+      if (useFencing) sender() ! "done"
     }
 
     case _ => println("received unknown message")
@@ -308,20 +200,37 @@ class Coordinator extends Actor
       s.trim match {
 
         case "status" => {
-          self ! Status
+          sendAssertDone(holders,Status)
+          assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
+          println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
+          sharedData.txCounter = 0
         }
 
-        case "fence_step" => routerRef ! "fence_step"
+        case "fence_step" => sendAssertDone(routerRef,"fence_step")
 
-        case "verify" => self ! Verify
+        case "verify" => sendAssertDone(holders,Verify)
 
         case "stall" => sendAssertDone(holders,StallActor)
 
-        case "pause" => self ! StallActor
+        case "pause" => {
+          if (!actorPaused) {
+            actorPaused = true
+            if (!actorStalled) {
+              actorStalled = true
+              tp = System.currentTimeMillis()-tp
+            }
+          } else {
+            actorPaused = false
+            if (actorStalled) {
+              actorStalled = false
+              tp = System.currentTimeMillis()-tp
+            }
+          }
+        }
 
         case "inbox" => sendAssertDone(holders,Inbox)
 
-        case "stall0" => holders(0) ! StallActor
+        case "stall0" => sendAssertDone(holders(0),StallActor)
 
         case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
 
@@ -331,7 +240,7 @@ class Coordinator extends Actor
         }
 
         case "graph" => {
-          println("Getting Gossipers")
+          println("Writing network graph matrix...")
           gossipersMap = getGossipers(holders)
           val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
           graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
@@ -366,14 +275,18 @@ class Coordinator extends Actor
 
         case "tree" => {
           var tn = 0
-          if (!actorStalled) {
-            val t1 = System.currentTimeMillis()-tp
-            tn = ((t1 - t0) / slotT).toInt
+          if (useFencing) {
+            tn = t
           } else {
-            val t1 = tp
-            tn = ((t1 - t0) / slotT).toInt
+            if (!actorStalled) {
+              val t1 = System.currentTimeMillis()-tp
+              tn = ((t1 - t0) / slotT).toInt
+            } else {
+              val t1 = tp
+              tn = ((t1 - t0) / slotT).toInt
+            }
           }
-          getBlockTree(holders(0))
+          getBlockTree(holders.head)
           val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
           graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
           val configString = {
@@ -652,6 +565,99 @@ class Coordinator extends Actor
 
         case _ =>
       }
+    }
+  }
+
+  def readCommand = {
+
+    if (!useFencing) {
+      if (!actorStalled) {
+        val t1 = System.currentTimeMillis()-tp
+        t = ((t1 - t0) / slotT).toInt
+      } else {
+        t = ((tp - t0) / slotT).toInt
+      }
+    }
+
+    if (new File("/tmp/scorex/test-data/crypto/cmd").exists) {
+      println("-----------------------------------------------------------")
+      val f = new File("/tmp/scorex/test-data/crypto/cmd")
+      val cmd: String = ("cat" #< f).!!
+      f.delete
+      val cmdList = cmd.split("\n")
+      for (line<-cmdList) {
+        val com = line.trim.split(" ")
+        com(0) match {
+          case s:String => {
+            if (com.length == 2){
+              com(1).toInt match {
+                case i:Int => {
+                  if (s == "print") {
+                    sharedData.printingHolder = i
+                  } else {
+                    if (cmdQueue.keySet.contains(i)) {
+                      val nl = s::cmdQueue(i)
+                      cmdQueue -= i
+                      cmdQueue += (i->nl)
+                    } else {
+                      cmdQueue += (i->List(s))
+                    }
+                  }
+                }
+                case _ =>
+              }
+            } else {
+              if (cmdQueue.keySet.contains(t)){
+                val nl = s::cmdQueue(t)
+                cmdQueue -= t
+                cmdQueue += (t->nl)
+              } else {
+                cmdQueue += (t->List(s))
+              }
+            }
+          }
+          case _ =>
+        }
+      }
+    }
+
+    if (cmdQueue.keySet.contains(t)) {
+      command(cmdQueue(t))
+      cmdQueue -= t
+    }
+
+    if (performanceFlag && !useFencing) {
+      val newLoad = sysLoad.cpuLoad
+      if (newLoad>0.0){
+        loadAverage = loadAverage.tail++Array(newLoad)
+      }
+
+      if (!actorPaused) {
+        val cpuLoad = (0.0 /: loadAverage){_ + _}/loadAverage.length
+        if (cpuLoad >= systemLoadThreshold && !actorStalled) {
+          tp = System.currentTimeMillis()-tp
+          actorStalled = true
+        } else if (cpuLoad < systemLoadThreshold && actorStalled) {
+          tp = System.currentTimeMillis()-tp
+          actorStalled = false
+        }
+      }
+    }
+
+    if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s) {
+      for (i <- 1 to holders.length){
+        val r = rng.nextInt(txDenominator)
+        if (r==0) issueTx
+      }
+    }
+
+    if (sharedData.killFlag || t>L_s+2*delta_s) {
+      timers.cancelAll
+      fileWriter match {
+        case fw:BufferedWriter => fw.close()
+        case _ => println("error: file writer close on non writer object")
+      }
+      context.system.terminate
     }
   }
 
