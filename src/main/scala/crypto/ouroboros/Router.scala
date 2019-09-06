@@ -116,6 +116,7 @@ class Router(seed:Array[Byte]) extends Actor
   def update = {
     if (globalSlot > L_s || sharedData.killFlag) {
       timers.cancelAll
+      context.system.terminate
     } else {
       if (roundDone) {
         sendAssertDone(coordinatorRef,NextSlot)

@@ -7,7 +7,7 @@ import java.io.BufferedWriter
 import io.iohk.iodb.ByteArrayWrapper
 import scala.math.BigInt
 import scala.util.Random
-import scala.collection.immutable.ListMap
+import scorex.crypto.encode.Base58
 
 /**
   * Stakeholder actor that executes the staking protocol and communicates with other stakeholders,
@@ -234,7 +234,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
           }
           roundBlock = 0
-          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " Last Bid = " + bytes2hex(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
+          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " Last Bid = " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
           if (holderIndex == sharedData.printingHolder && printFlag) {
             println("Holder " + holderIndex.toString + " Update KES")
           }
@@ -742,7 +742,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      println(localState.keySet.size)
       println("Public Key: "+bytes2hex(pk_sig++pk_vrf++pk_kes))
       println("Path: "+self.path)
       println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")

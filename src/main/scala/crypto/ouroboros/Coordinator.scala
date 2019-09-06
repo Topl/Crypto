@@ -11,7 +11,6 @@ import io.circe.Json
 import io.circe.syntax._
 import io.iohk.iodb.ByteArrayWrapper
 import scorex.crypto.encode.Base58
-
 import scala.math.BigInt
 import scala.reflect.io.Path
 import scala.util.{Random, Try}
@@ -101,7 +100,8 @@ class Coordinator extends Actor
         val dataPath = Path(dataFileDir)
         Try(dataPath.createDirectory())
         val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
-        fileWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-data-$dateString.data"))
+        val uid = uuid
+        fileWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-data-$uid-$dateString.data"))
         val fileString = (
           "Holder_number"
             + " t"
@@ -230,7 +230,7 @@ class Coordinator extends Actor
 
         case "inbox" => sendAssertDone(holders,Inbox)
 
-        case "stall0" => sendAssertDone(holders(0),StallActor)
+        case "stall0" => sendAssertDone(holders.head,StallActor)
 
         case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
 
@@ -243,7 +243,8 @@ class Coordinator extends Actor
           println("Writing network graph matrix...")
           gossipersMap = getGossipers(holders)
           val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
-          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.graph"))
+          val uid = uuid
+          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$uid-$dateString.graph"))
           graphWriter match {
             case fw:BufferedWriter => {
               var line:String = ""
@@ -288,7 +289,8 @@ class Coordinator extends Actor
           }
           getBlockTree(holders.head)
           val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
-          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$dateString.tree"))
+          val uid = uuid
+          graphWriter = new BufferedWriter(new FileWriter(s"$dataFileDir/ouroboros-graph-$uid-$dateString.tree"))
           val configString = {
             import Prosomo.input
             if (input.length > 0) { input.head.stripSuffix(".conf")+".conf"} else {""}
