@@ -133,18 +133,19 @@ class Coordinator extends Actor
     case value:IssueTx => {
       value.s match {
         case "randTx" => {
-          if (transactionFlag && useFencing && t>1 && t<L_s) {
+          if (transactionFlag && t>1 && t<L_s) {
             for (holder <- holders){
               val r = rng.nextInt(txDenominator)
-              if (r==0) {issueTx(holder)} else {holder ! IssueTx("noTx")}
+              if (r==0) {issueTx(holder)} else {sendAssertDone(holder,IssueTx("noTx"))}
             }
-          } else if (useFencing) {
+          } else {
             for (holder <- holders){
-              holder ! IssueTx("noTx")
+              sendAssertDone(holder,IssueTx("noTx"))
             }
           }
         }
       }
+      sender() ! "done"
     }
 
     case NextSlot => {
@@ -169,7 +170,16 @@ class Coordinator extends Actor
       if (useFencing) sender() ! "done"
     }
 
-    case _ => println("received unknown message")
+    case unknown:Any => if (!actorStalled) {
+      print("received unknown message ")
+      if (sender() == routerRef) {
+        print("from router")
+      }
+      if (holders.contains(sender())) {
+        print("from holder "+holders.indexOf(sender()).toString)
+      }
+      println(": "+unknown.getClass.toString+" "+unknown.toString)
+    }
   }
 
   /**randomly picks two holders and creates a transaction between the two*/
@@ -188,9 +198,9 @@ class Coordinator extends Actor
     var delta:BigInt = 0
     if (holder1 != holder2) {
       delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-      holder1 ! IssueTx((holderKeys(holder2),delta))
+      sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
     } else {
-      holder1 ! IssueTx("noTx")
+      sendAssertDone(holder1,IssueTx("noTx"))
     }
   }
 

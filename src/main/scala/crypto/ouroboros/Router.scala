@@ -11,7 +11,7 @@ import scala.concurrent.Await
 import scala.math.BigInt
 import scala.util.Random
 import scala.concurrent.duration._
-
+import scorex.crypto.encode.Base58
 
 class Router(seed:Array[Byte]) extends Actor
   with Parameters
@@ -95,21 +95,33 @@ class Router(seed:Array[Byte]) extends Actor
 
   def deliver = {
     var slotMessages = holderMessages(globalSlot)
+    holderMessages -= globalSlot
     ts = slotMessages.keySet.min
-    val queue = slotMessages(ts)
+    var queue:Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]] = slotMessages(ts)
     slotMessages -= ts
     for (holder <- rng.shuffle(holders)) {
       if (queue.keySet.contains(holder)) {
-        val messageMap:Map[BigInt,(ActorRef,ActorRef,Any)] = queue(holder)
-        for (message<-ListMap(messageMap.toSeq.sortBy(_._1):_*)) {
-          val (s,r,c) = message._2
-          reset(r)
-          //println(holders.indexOf(s),holders.indexOf(r),c.getClass,message._1)
-          context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-        }
+        var messageMap:Map[BigInt,(ActorRef,ActorRef,Any)] = queue(holder)
+        queue -= holder
+        val message = ListMap(messageMap.toSeq.sortBy(_._1):_*).head
+        messageMap -= message._1
+        val (s,r,c) = message._2
+        reset(r)
+        println(
+          holders.indexOf(s),
+          holders.indexOf(r),
+          c.getClass,message._1,
+          c match {
+            case value:SendBlock => Base58.encode(value.s match {case s:Box => {s._1 match {case bInfo: (Block,BlockId) => {bInfo._2._2.data}}}})
+            case value:SendTx => Base58.encode(value.s match {case trans:Transaction => {trans._4.data}})
+            case _ => " "
+          }
+        )
+        context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+        if (messageMap.nonEmpty) queue += (holder->messageMap)
       }
     }
-    holderMessages -= globalSlot
+    if (queue.nonEmpty) slotMessages += (ts->queue)
     if (slotMessages.nonEmpty) holderMessages += (globalSlot -> slotMessages)
   }
 
@@ -127,16 +139,14 @@ class Router(seed:Array[Byte]) extends Actor
         ts = 0
         roundStep = "updateSlot"
         reset
-        for (holder<-holders) {
-          holder ! GetSlot(globalSlot)
-        }
+        sendAssertDone(holders,GetSlot(globalSlot))
       } else {
         roundStep match {
           case "updateSlot" => {
             if (holdersReady) {
               roundStep = "issueTx"
-              coordinatorRef ! IssueTx("randTx")
               reset
+              sendAssertDone(coordinatorRef,IssueTx("randTx"))
             }
           }
           case "issueTx" => {

@@ -580,7 +580,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      if (useFencing) routerRef ! (self,"issueTx")
+      if (useFencing) {
+        routerRef ! (self,"issueTx")
+        sender() ! "done"
+      }
     }
 
       /**gossip protocol greeting message for populating inbox*/
@@ -679,6 +682,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       } else {
         if (useFencing) {routerRef ! (self,"updateSlot")}
       }
+      sender() ! "done"
     }
 
       /**accepts list of other holders from coordinator */
@@ -900,10 +904,19 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! diffuse(bytes2hex(pk_sig)+";"+bytes2hex(pk_vrf)+";"+bytes2hex(pk_kes), s"{$holderId}", sk_sig)
     }
 
-    case _ => if (!actorStalled) {
-      println("received unknown message"); sender() ! "error"
+    case unknown:Any => if (!actorStalled) {
+      print("received unknown message ")
+      if (sender() == coordinatorRef) {
+        print("from coordinator")
+      }
+      if (sender() == routerRef) {
+        print("from router")
+      }
+      if (holders.contains(sender())) {
+        print("from holder "+holders.indexOf(sender()).toString)
+      }
+      println(": "+unknown.getClass.toString)
     }
-
   }
 }
 
