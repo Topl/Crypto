@@ -352,7 +352,7 @@ class Coordinator extends Actor
                     "blocks" -> blocks(i).map{
                       case value:(ByteArrayWrapper,Block) => {
                         val (pid:Hash,ledger:Ledger,bs:Slot,cert:Cert,vrfNonce:Rho,noncePi:Pi,kesSig:KesSignature,pk_kes:PublicKey,bn:Int,ps:Slot) = value._2
-                        val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double) = cert
+                        val (pk_vrf:PublicKey,y:Rho,ypi:Pi,pk_sig:PublicKey,thr:Double,info:String) = cert
                         val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
                         Map(
                           "id" -> Base58.encode(value._1.data).asJson,
@@ -365,6 +365,7 @@ class Coordinator extends Actor
                           "y" -> Base58.encode(y).asJson,
                           "ypi" -> Base58.encode(ypi).asJson,
                           "thr" -> thr.asJson,
+                          "info" -> info.asJson,
                           "sig" -> Array(Base58.encode(kesSig._1).asJson,Base58.encode(kesSig._2).asJson,Base58.encode(kesSig._3).asJson).asJson,
                           "ledger" -> ledger.toArray.map{
                             case box:Box => {
@@ -691,7 +692,7 @@ class Coordinator extends Actor
         signBox((genesisBytes, pkw, BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
       }
     }
-    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0)
+    val cert:Cert = (pk_vrf,y,pi_y,pk_sig,1.0,"")
     val sig:KesSignature = kes.sign(sk_kes, h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h,ledger,slot,cert,rho,pi,sig,pk_kes,bn,ps)
   }

@@ -39,6 +39,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val y: Rho = vrf.vrfProofToHash(pi_y)
     if (compare(y, threshold)) {
       roundBlock = {
+        val blockInfo = "eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,localSlot-1))) match {case b:Block => b}
         val bn:Int = pb._9 + 1
         val ps:Slot = pb._3
@@ -47,7 +48,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
         val ledger = blockBox::chooseLedger(pkw)
-        val cert: Cert = (pk_vrf, y, pi_y, pk_sig, threshold)
+        val cert: Cert = (pk_vrf, y, pi_y, pk_sig, threshold,blockInfo)
         val sig: KesSignature = kes.sign(sk_kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, ledger, slot, cert, rho, pi, sig, pk_kes,bn,ps)
       }
@@ -231,7 +232,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         if (kes.getKeyTimeStep(sk_kes) < localSlot) {
           if (holderIndex == sharedData.printingHolder && printFlag && localSlot%epochLength == 0) {
             println("Current Epoch = " + currentEpoch.toString)
-            println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+bytes2hex(eta))
+            println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+Base58.encode(eta))
           }
           roundBlock = 0
           if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " Last Bid = " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
@@ -300,22 +301,16 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               localSlot += 1
               updateSlot
             }
-          }
-
-          if (roundBlock == 0) {
+          } else if (roundBlock == 0 && candidateTines.isEmpty) {
             if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " Forging")}
             forgeBlock
             if (useFencing) {routerRef ! (self,"updateSlot")}
-          } else if (!useFencing) {
-            if (candidateTines.nonEmpty) {
-              if (holderIndex == sharedData.printingHolder && printFlag) {
-                println("Holder " + holderIndex.toString + " Checking Tine")
-              }
-              time(maxValidBG)
+          } else if (!useFencing && candidateTines.nonEmpty) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {
+              println("Holder " + holderIndex.toString + " Checking Tine")
             }
-          }
-
-          if (useFencing && chainUpdateLock) {
+            time(maxValidBG)
+          } else if (useFencing && chainUpdateLock) {
             if (candidateTines.isEmpty) {
               chainUpdateLock = false
             } else {
@@ -325,7 +320,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               time(maxValidBG)
             }
           }
-
         }
         updating = false
       }
@@ -341,6 +335,19 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       update
     }
 
+    case value:GetSlot => {
+      if (!actorStalled) {
+        globalSlot += 1
+        assert(globalSlot == value.s)
+        while (roundBlock == 0) {
+          update
+        }
+      } else {
+        if (useFencing) {routerRef ! (self,"updateSlot")}
+      }
+      sender() ! "done"
+    }
+
     case "updateChain" => if (useFencing) {
       if (!actorStalled) {
         chainUpdateLock = true
@@ -354,7 +361,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
 
     case "endStep" => if (useFencing) {
-      update
+      roundBlock = 0
       routerRef ! (self,"endStep")
     }
 
@@ -675,16 +682,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       globalSlot = ((value.t1 - t0) / slotT).toInt
     }
 
-    case value:GetSlot => {
-      if (!actorStalled) {
-        globalSlot = value.s
-        update
-      } else {
-        if (useFencing) {routerRef ! (self,"updateSlot")}
-      }
-      sender() ! "done"
-    }
-
       /**accepts list of other holders from coordinator */
     case list:List[ActorRef] => {
       holders = list
@@ -724,9 +721,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       /**prints inbox */
     case Inbox => {
       var i = 0
-      println("Holder "+holderIndex.toString+":"+bytes2hex(sessionId.data))
+      println("Holder "+holderIndex.toString+":"+Base58.encode(sessionId.data))
       for (entry <- inbox) {
-        println(i.toString+" "+bytes2hex(entry._1.data))
+        println(i.toString+" "+Base58.encode(entry._1.data))
         i+=1
       }
       println("")
@@ -746,17 +743,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case _ =>
         }
       }
-      println("Public Key: "+bytes2hex(pk_sig++pk_vrf++pk_kes))
+      println("Public Key: "+Base58.encode(pk_sig++pk_vrf++pk_kes))
       println("Path: "+self.path)
-      println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
+      println("Chain hash: " + Base58.encode(FastCryptographicHash(chainBytes))+"\n")
       if (sharedData.error){
         for (id <- localChain) {
-          if (id._1 > -1) println("H:" + holderIndex.toString + "S:" + id._1.toString + "ID:" + bytes2hex(id._2.data))
+          if (id._1 > -1) println("H:" + holderIndex.toString + "S:" + id._1.toString + "ID:" + Base58.encode(id._2.data))
         }
         for (e <- history_eta) {
-          if (!e.isEmpty) println("H:" + holderIndex.toString + "E:" + bytes2hex(e))
+          if (!e.isEmpty) println("H:" + holderIndex.toString + "E:" + Base58.encode(e))
         }
-        println("e:" + bytes2hex(eta(localChain, currentEpoch)) + "\n")
+        println("e:" + Base58.encode(eta(localChain, currentEpoch)) + "\n")
       }
       sender() ! "done"
     }
@@ -811,7 +808,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       val txCountState = math.max(localState(pkw)._3-1,0)
       println(s"Tx Counts in state and chain: $txCountState, $txCountChain")
       println(s"Transactions on chain: $holderTxCount / $holderTxCountTotal Total: $txCount Duplicates: $duplicatesFound")
-      println("Chain hash: " + bytes2hex(FastCryptographicHash(chainBytes))+"\n")
+      println("Chain hash: " + Base58.encode(FastCryptographicHash(chainBytes))+"\n")
       if (false){
         for (id <- localChain) {
           if (id._1 > -1) {
@@ -820,7 +817,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case b:Block => {
                 for (entry<-b._2) {
                   entry match {
-                    case trans:Transaction => println(bytes2hex(trans._4.data)+":"+trans._3.toString)
+                    case trans:Transaction => println(Base58.encode(trans._4.data)+":"+trans._3.toString)
                     case _ =>
                   }
                 }

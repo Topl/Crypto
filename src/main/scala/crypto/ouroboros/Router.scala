@@ -31,6 +31,7 @@ class Router(seed:Array[Byte]) extends Actor
   var roundDone = true
   var firstDataPass = true
   var roundStep = "updateSlot"
+  val printSteps = false
 
   private case object timerKey
 
@@ -59,7 +60,6 @@ class Router(seed:Array[Byte]) extends Actor
     val result = Await.result(future, timeout.duration)
     assert(result == "done")
   }
-
 
   def holdersReady:Boolean = {
     var bool = true
@@ -107,7 +107,7 @@ class Router(seed:Array[Byte]) extends Actor
         messageMap -= message._1
         val (s,r,c) = message._2
         reset(r)
-        println(
+        if (printSteps) println(
           holders.indexOf(s),
           holders.indexOf(r),
           c.getClass,message._1,
@@ -138,6 +138,7 @@ class Router(seed:Array[Byte]) extends Actor
         localSlot = globalSlot
         ts = 0
         roundStep = "updateSlot"
+        if (printSteps) println("--------start----------")
         reset
         sendAssertDone(holders,GetSlot(globalSlot))
       } else {
@@ -145,6 +146,7 @@ class Router(seed:Array[Byte]) extends Actor
           case "updateSlot" => {
             if (holdersReady) {
               roundStep = "issueTx"
+              if (printSteps) println("--------issue----------")
               reset
               sendAssertDone(coordinatorRef,IssueTx("randTx"))
             }
@@ -158,10 +160,11 @@ class Router(seed:Array[Byte]) extends Actor
           case "passData" => {
             if (holdersReady) {
               if (holderMessages.keySet.contains(globalSlot)) {
-                //println("-------deliver---------")
+                if (printSteps) println("-------deliver---------")
                 deliver
               } else {
                 roundStep = "updateChain"
+                if (printSteps) println("--------chain----------")
                 reset
                 for (holder<-holders) {
                   holder ! "updateChain"
@@ -179,6 +182,7 @@ class Router(seed:Array[Byte]) extends Actor
           case "updateChain" => {
             if (holdersReady) {
               roundStep = "endStep"
+              if (printSteps) println("---------end-----------")
               reset
               for (holder<-holders) {
                 holder ! "endStep"
@@ -186,6 +190,7 @@ class Router(seed:Array[Byte]) extends Actor
             }
           }
           case "endStep" => if (holdersReady && !roundDone) {
+            if (printSteps) println("--------reset----------")
             roundDone = true
             firstDataPass = true
             sendAssertDone(coordinatorRef,EndStep)
@@ -200,11 +205,11 @@ class Router(seed:Array[Byte]) extends Actor
 
     case flag:(ActorRef,String) => {
       val (ref,value) = flag
-//      if (value == "updateChain" || value == "passData") {println(value+" "+holders.indexOf(sender).toString)
+//      if (value == "updateChain" || value == "passData") {if (printSteps) println(value+" "+holders.indexOf(sender).toString)
 //        for (holder<-holders) {
-//          println(holders.indexOf(holder).toString+" "+holderReady(holder))
+//          if (printSteps) println(holders.indexOf(holder).toString+" "+holderReady(holder))
 //        }
-//        println(holderMessages.keySet.contains(globalSlot))
+//        if (printSteps) println(holderMessages.keySet.contains(globalSlot))
 //      }
       if (value == roundStep && holderReady.keySet.contains(ref)) {
         holderReady -= ref

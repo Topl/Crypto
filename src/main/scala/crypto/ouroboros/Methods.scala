@@ -14,6 +14,8 @@ import scala.collection.immutable.ListMap
 import util.control.Breaks._
 import scala.math.BigInt
 import scala.util.Random
+import scorex.crypto.encode.Base58
+
 
 trait Methods
   extends Types
@@ -513,7 +515,7 @@ trait Methods
 
     def compareBlocks(parent: Block, block: Block) = {
       val (h0, _, slot, cert, rho, pi, _, pk_kes, bn, ps) = block
-      val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
+      val (pk_vrf, y, pi_y, pk_sig, tr_c,_) = cert
       while(i<=slot) {
         if (i/epochLength > ep) {
           ep = i/epochLength
@@ -602,7 +604,7 @@ trait Methods
 
     def compareBlocks(parent:Block,block:Block) = {
       val (h0, _, slot, cert, rho, pi, _, pk_kes,bn,ps) = block
-      val (pk_vrf, y, pi_y, pk_sig, tr_c) = cert
+      val (pk_vrf, y, pi_y, pk_sig, tr_c,info) = cert
       while(i<=slot) {
         if (i/epochLength > ep) {
           ep = i/epochLength
@@ -644,14 +646,15 @@ trait Methods
           , tr_Ep == tr_c //9
           , compare(y,tr_Ep) //10
         ))
-        println("Holder "+holderIndex.toString+" Epoch:"+(slot/epochLength).toString+"\n"+"Eta:"+bytes2hex(eta_Ep))
+        println("Holder "+holderIndex.toString+" Epoch:"+(slot/epochLength).toString+"\n"+"Eta:"+Base58.encode(eta_Ep))
+        println(info)
       }
     }
 
     if(!bool) sharedData.throwError
     if (sharedData.error) {
       for (id<-subChain(localChain,0,prefix)++tine) {
-        if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+bytes2hex(id._2.data))
+        if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+Base58.encode(id._2.data))
       }
     }
     bool
@@ -718,7 +721,7 @@ trait Methods
       getBlock(id) match {
         case b:Block => {
           val (_,ledger:Ledger,slot:Slot,cert:Cert,_,_,_,pk_kes:PublicKey,_,_) = b
-          val (pk_vrf,_,_,pk_sig,_) = cert
+          val (pk_vrf,_,_,pk_sig,_,_) = cert
           val pk_f:PublicKeyW = ByteArrayWrapper(pk_sig++pk_vrf++pk_kes)
           var validForger = true
           if (slot == 0) {

@@ -24,7 +24,7 @@ trait Types {
   type Ledger = List[Any]
   type State = Map[PublicKeyW,(BigInt,Boolean,Int)]
   type MemPool = Map[Sid,Transaction]
-  type Cert = (PublicKey,Rho,Pi,PublicKey,Double)
+  type Cert = (PublicKey,Rho,Pi,PublicKey,Double,String)
   type Block = (Hash,Ledger,Slot,Cert,Rho,Pi,KesSignature,PublicKey,Int,Slot)
   type BlockId = (Slot,ByteArrayWrapper)
   type Chain = Array[BlockId]
