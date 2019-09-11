@@ -39,7 +39,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val y: Rho = vrf.vrfProofToHash(pi_y)
     if (compare(y, threshold)) {
       roundBlock = {
-        val blockInfo = "eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch
+        val blockInfo = "forger index: "+holderIndex.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,localSlot-1))) match {case b:Block => b}
         val bn:Int = pb._9 + 1
         val ps:Slot = pb._3
@@ -112,6 +112,23 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
     if (foundAncestor) {
+      var prevId = localChain(prefix)
+      for (id<-tine) {
+        getParentId(id) match {
+          case pb:BlockId => {
+            if (pb == prevId) {
+              prevId = id
+            } else {
+              println("error:pid mismatch in tine building")
+              sharedData.throwError
+            }
+          }
+          case _ => {
+            println("error:parent block not found")
+            sharedData.throwError
+          }
+        }
+      }
       candidateTines = Array((tine,prefix)) ++ candidateTines
       tines -= job._1
     } else {
