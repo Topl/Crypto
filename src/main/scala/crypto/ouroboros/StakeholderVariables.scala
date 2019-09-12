@@ -28,7 +28,7 @@ trait StakeholderVariables
   //counter for identifying tines
   var tineCounter = 0
   //completed tines waiting to be selected with maxvalid-bg
-  var candidateTines:Array[(Chain,Slot)] = Array()
+  var candidateTines:Array[(Chain,Slot,Int)] = Array()
   //placeholder for genesis block
   var genBlock: Any = 0
   //placeholder for genesis block ID

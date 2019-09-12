@@ -214,11 +214,12 @@ trait Methods
     * @param p prefix slot
     * @return expanded tine
     */
-  def expand(c:Chain,p:Slot): Chain ={
-    val out = Array.fill(c.last._1-p){(-1,ByteArrayWrapper(Array()))}
+  def expand(c:Chain,p:Slot,s:Slot): Chain ={
+    val out = Array.fill(s-p){(-1,ByteArrayWrapper(Array()))}
     for (id <- c) {
       out.update(id._1-p-1,id)
     }
+    assert(out.length == s-p)
     out
   }
 

@@ -73,11 +73,40 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
-//  def buildTines:Unit = {
-//    for (job <- ListMap(tines.toSeq.sortBy(_._1):_*)) {
-//      buildTine(job)
-//    }
-//  }
+  def updateTine(inputTine:Chain): (Chain,Slot) = {
+    var foundAncestor = true
+    var tine:Chain = inputTine
+    var prefix:Slot = 0
+    if (localChain(tine.head._1) == tine.head) {
+      (tine,-1)
+    } else {
+      breakable{
+        while(foundAncestor) {
+          getParentId(tine.head) match {
+            case pb:BlockId => {
+              tine = Array(pb) ++ tine
+              if (tine.head == localChain(tine.head._1)) {
+                prefix = tine.head._1
+                tine = tine.tail
+                break
+              }
+              if (tine.head._1 == 0) {
+                prefix = 0
+                tine = tine.tail
+                break
+              }
+            }
+            case _ => {
+              foundAncestor = false
+              println("Error: update tine found no common prefix")
+              prefix = -1
+            }
+          }
+        }
+      }
+      (tine,prefix)
+    }
+  }
 
   def buildTine(job:(Int,(Chain,Int,Int,Int,ActorRef))): Unit = {
     val entry = job._2
@@ -112,24 +141,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
     if (foundAncestor) {
-      var prevId = localChain(prefix)
-      for (id<-tine) {
-        getParentId(id) match {
-          case pb:BlockId => {
-            if (pb == prevId) {
-              prevId = id
-            } else {
-              println("error:pid mismatch in tine building")
-              sharedData.throwError
-            }
-          }
-          case _ => {
-            println("error:parent block not found")
-            sharedData.throwError
-          }
-        }
-      }
-      candidateTines = Array((tine,prefix)) ++ candidateTines
+      candidateTines = Array((tine,prefix,job._1)) ++ candidateTines
       tines -= job._1
     } else {
       if (counter>2*tineMaxTries) {
@@ -161,10 +173,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   /**main chain selection routine, maxvalid-bg*/
   def maxValidBG = {
     val prefix:Slot = candidateTines.last._2
-    val tine:Chain = expand(candidateTines.last._1,prefix)
+    val tine:Chain = expand(candidateTines.last._1,prefix,localSlot)
+    val job:Int = candidateTines.last._3
     var trueChain = false
     val s1 = tine.last._1
-    val bnt = {getBlock(tine.last) match {case b:Block => b._9}}
+    val bnt = {getBlock(tine(lastActiveSlot(tine,localSlot-prefix-1))) match {case b:Block => b._9}}
     val bnl = {getBlock(localChain(lastActiveSlot(localChain,localSlot))) match {case b:Block => b._9}}
     if(s1 - prefix < k_s && bnl < bnt) {
       trueChain = true
@@ -182,19 +195,16 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       if (holderIndex == sharedData.printingHolder && printFlag) println("Holder " + holderIndex.toString + " Adopting Chain")
       collectLedger(subChain(localChain,prefix+1,localSlot))
       collectLedger(tine)
-
       for (i <- prefix+1 to localSlot) {
-        localChain.update(i,(-1,ByteArrayWrapper(Array())))
-        chainHistory.update(i,(-1,ByteArrayWrapper(Array()))::chainHistory(i))
-      }
-      for (id <- tine) {
+        val id = tine(i-prefix-1)
         if (id._1 > -1) {
-          localChain.update(id._1,id)
+          assert(id._1 == i)
           chainHistory.update(id._1,id::{chainHistory(id._1).tail})
+          localChain.update(id._1,id)
           getBlock(id) match {
             case b:Block => {
-              val blockState = b._2
-              for (entry<-blockState.tail) {
+              val blockLedger = b._2
+              for (entry<-blockLedger.tail) {
                 entry match {
                   case trans:Transaction => {
                     if (memPool.keySet.contains(trans._4)) {
@@ -207,12 +217,24 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             }
             case _ =>
           }
+        } else {
+          chainHistory.update(i,(-1,ByteArrayWrapper(Array()))::chainHistory(i))
+          localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
       }
       localState = history_state(prefix)
       eta = history_eta(prefix/epochLength)
       localSlot = prefix
       currentEpoch = localSlot/epochLength
+      candidateTines = candidateTines.dropRight(1)
+      var newCandidateTines:Array[(Chain,Slot,Int)] = Array()
+      for (entry <- candidateTines) {
+        val newTine = updateTine(Array(entry._1.last))
+        if (newTine._2 > 0) {
+          newCandidateTines = newCandidateTines ++ Array((newTine._1,newTine._2,entry._3))
+        }
+      }
+      candidateTines = newCandidateTines
     } else {
       collectLedger(tine)
       for (id <- subChain(localChain,prefix+1,localSlot)) {
@@ -235,8 +257,25 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
       }
+      candidateTines = candidateTines.dropRight(1)
     }
-    candidateTines = candidateTines.dropRight(1)
+  }
+
+  def validateChainIds = {
+    var pid = localChain.head
+    for (id <- localChain.tail) {
+      getParentId(id) match {
+        case bid:BlockId => {
+          if (bid == pid) {
+            pid = id
+          } else {
+            println(s"Holder $holderIndex error: pid mismatch in local chain")
+            sharedData.throwError
+          }
+        }
+        case _ =>
+      }
+    }
   }
 
   /**slot routine, called every time currentSlot increments*/
