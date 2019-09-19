@@ -156,18 +156,16 @@ class Coordinator extends Actor
           routerRef ! NextSlot
         }
       }
-      sender() ! "done"
     }
 
     case EndStep => {
+      readCommand
       roundDone = true
-      sender() ! "done"
     }
 
       /**command interpretation from config and cmd script*/
     case ReadCommand => {
       readCommand
-      if (useFencing) sender() ! "done"
     }
 
     case unknown:Any => if (!actorStalled) {
@@ -557,6 +555,7 @@ class Coordinator extends Actor
       }
     }
     getBlockTree(holder)
+    val positionData:(Map[ActorRef,(Double,Double)],Map[(ActorRef,ActorRef),Long]) = getPositionData(routerRef)
     val dateString = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString.replace(":", "-")
     val uid = uuid
     val holderIndex = holders.indexOf(holder)
@@ -605,6 +604,18 @@ class Coordinator extends Actor
             "dataFileDir" -> dataFileDir.asJson,
             "useFencing" -> useFencing.asJson,
             "inputSeed" -> inputSeed.asJson
+          ).asJson,
+          "position" -> Map(
+            "delay" -> positionData._2.map{
+              case value: ((ActorRef,ActorRef),Long) => {
+                Array(holders.indexOf(value._1._1).asJson,holders.indexOf(value._1._2).asJson,value._2.asJson)
+              }
+            }.asJson,
+            "coordinates" -> positionData._1.map{
+              case value:(ActorRef,(Double,Double)) => {
+                Map(holders.indexOf(value._1).toString -> Array(value._2._1.asJson,value._2._2.asJson)).asJson
+              }
+            }.asJson
           ).asJson,
           "data" -> (0 to tn).toArray.map{
             case i:Int => Map(

@@ -131,8 +131,7 @@ class Router(seed:Array[Byte]) extends Actor
       context.system.terminate
     } else {
       if (roundDone) {
-        sendAssertDone(coordinatorRef,NextSlot)
-        sendAssertDone(coordinatorRef,ReadCommand)
+        coordinatorRef ! NextSlot
       }
       if (globalSlot > localSlot) {
         localSlot = globalSlot
@@ -193,7 +192,7 @@ class Router(seed:Array[Byte]) extends Actor
             if (printSteps) println("--------reset----------")
             roundDone = true
             firstDataPass = true
-            sendAssertDone(coordinatorRef,EndStep)
+            coordinatorRef ! EndStep
           }
           case _ =>
         }
@@ -307,6 +306,10 @@ class Router(seed:Array[Byte]) extends Actor
 
     case value:GetTime => {
       globalSlot = ((value.t1 - t0) / slotT).toInt
+    }
+
+    case RequestPositionData => {
+      sender() ! GetPositionData((holdersPosition,distanceMap))
     }
 
     case _ =>

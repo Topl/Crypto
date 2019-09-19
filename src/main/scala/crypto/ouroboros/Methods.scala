@@ -426,6 +426,21 @@ trait Methods
     }
   }
 
+  def getPositionData(router:ActorRef):(Map[ActorRef,(Double,Double)],Map[(ActorRef,ActorRef),Long]) = {
+    implicit val timeout:Timeout = Timeout(waitTime)
+    val future = router ? RequestPositionData
+    val result = Await.result(future, timeout.duration)
+    result match {
+      case value:GetPositionData => {
+        value.s match {
+          case data:(Map[ActorRef,(Double,Double)],Map[(ActorRef,ActorRef),Long]) => {
+            data
+          }
+        }
+      }
+    }
+  }
+
   /**
     * Sends commands one by one to list of stakeholders
     * @param holders actor list

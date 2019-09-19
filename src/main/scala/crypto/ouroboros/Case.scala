@@ -20,6 +20,7 @@ case object Populate
 case object NewDataFile
 case object NextSlot
 case object EndStep
+case object RequestPositionData
 case class NullBlock(job:Int)
 case class GetSlot(s:Int)
 case class Hello(id: Any)
@@ -41,3 +42,5 @@ case class GetGossipers(list:Any)
 case class Party(list:Any,clear:Boolean)
 case class GetState(s:Any)
 case class GetBlockTree(t:Any,h:Any)
+case class GetPositionData(s:Any)
+
