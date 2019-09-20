@@ -22,7 +22,7 @@ object Prosomo extends App {
   coordinator ! Populate
   coordinator ! Run
 
-  if (true) {
+  if (false) {
     println("-->Press ENTER to exit<--")
     try StdIn.readLine()
     finally {

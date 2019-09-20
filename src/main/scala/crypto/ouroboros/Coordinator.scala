@@ -705,7 +705,14 @@ class Coordinator extends Actor
     val h:Hash = ByteArrayWrapper(eta0)
     val ledger: Ledger = holders.map{
       case ref:ActorRef => {
-        val initStake = {initStakeMax*rng.nextDouble}
+        val initStake = {
+          val out = initStakeMax*rng.nextDouble
+          if (initStakeMax > 1.0 && out > 1.0) {
+            out
+          } else {
+            1.0
+          }
+        }
         val pkw = ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))++hex2bytes(genKeys(s"${ref.path}").split(";")(1))++hex2bytes(genKeys(s"${ref.path}").split(";")(2)))
         holderKeys += (ref-> pkw)
         signBox((genesisBytes, pkw, BigDecimal(initStake).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), ByteArrayWrapper(FastCryptographicHash(coordId)),sk_sig,pk_sig)
