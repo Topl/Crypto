@@ -393,7 +393,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case value:GetSlot => {
       if (!actorStalled) {
-        globalSlot += 1
+        if (roundBlock == 0) globalSlot += 1
         assert(globalSlot == value.s)
         while (roundBlock == 0) {
           update

@@ -24,7 +24,7 @@ class Router(seed:Array[Byte]) extends Actor
   var holderMessages:Map[Slot,Map[Long,Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]]]] = Map()
   var holderReady:Map[ActorRef,Boolean] = Map()
   var globalSlot:Slot = 0
-  var localSlot:Slot = -1
+  var localSlot:Slot = 0
   var coordinatorRef:ActorRef = _
   var t0:Long = 0
   var ts:Long = 0
@@ -133,7 +133,8 @@ class Router(seed:Array[Byte]) extends Actor
       if (roundDone) {
         coordinatorRef ! NextSlot
       }
-      if (globalSlot > localSlot) {
+      if (globalSlot > localSlot && !roundDone) {
+        assert(globalSlot == localSlot + 1)
         localSlot = globalSlot
         ts = 0
         roundStep = "updateSlot"
