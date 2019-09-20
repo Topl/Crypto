@@ -574,6 +574,7 @@ class Coordinator extends Actor
             "delay_ms_km" -> delay_ms_km.asJson,
             "useRouting" -> useRouting.asJson,
             "delta_s" -> delta_s.asJson,
+            "useDelayParam" -> useDelayParam.asJson,
             "k_s" -> k_s.asJson,
             "f_s" -> f_s.asJson,
             "L_s" -> L_s.asJson,

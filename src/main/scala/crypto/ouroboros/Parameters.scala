@@ -57,31 +57,52 @@ trait Parameters extends Utils {
   } else {
     Map()
   }
-
+  //use network delay parameterization if true
+  val useDelayParam:Boolean = config.getBoolean("params.useDelayParam")
   //number of stakeholders
   val numHolders:Int = config.getInt("params.numHolders")
   //duration of slot in milliseconds
   val slotT:Long = config.getInt("params.slotT")
-  //delay in milliseconds per killometer in router model
+  //delay in milliseconds per kilometer in router model
   val delay_ms_km:Double = config.getDouble("params.delay_ms_km")
   //communication method
   val useRouting:Boolean = config.getBoolean("params.useRouting")
-  // delta parameter
+  //delay in slots, calculated as maximum possible delay in random global network model
   val delta_s:Int = (40075.0*delay_ms_km/slotT+1.0).ceil.toInt
-  // checkpoint depth in slots, k parameter in maxValid-bg
-  val k_s:Int = if(useRouting) {
-    config.getInt("params.k_s")
+  //epoch parameter
+  val epsilon_s:Double = config.getDouble("params.epsilon_s")
+  //alert stake ratio
+  val alpha_s:Double = config.getDouble("params.alpha_s")
+  //participating stake ratio
+  val beta_s:Double = config.getDouble("params.beta_s")
+  //active slot coefficient
+  val f_s:Double = if (useDelayParam) {
+    val out = 1.0-math.exp(1.0/(delta_s+1.0))*(1+epsilon_s)/(2.0*alpha_s)
+    assert(out>0)
+    out
   } else {
-    (192.0*delta_s/(2.0*math.pow(1.0-f_s,delta_s+1)-1.0)).ceil.toInt
+    config.getDouble("params.f_s")
   }
-  //active slot coefficient, 'difficulty parameter' (0 < f_s < 1)
-  val f_s:Double = config.getDouble("params.f_s")
+  // checkpoint depth in slots, k parameter in maxValid-bg, k > 192*delta/epsilon*beta
+  val k_s:Int = if(useDelayParam) {
+    (192.0*delta_s/(epsilon_s*beta_s)).floor.toInt + 1
+  } else {
+    config.getInt("params.k_s")
+  }
+  // epoch length R >= 3k/2f
+  val epochLength:Int = if (useDelayParam) {
+    3*(k_s*(0.5/f_s)).toInt
+  } else {
+    config.getInt("params.epochLength")
+  }
+  // slot window for chain selection, s = k/4f
+  val slotWindow:Int = if (useDelayParam) {
+    (k_s*0.25/f_s).toInt
+  } else {
+    config.getInt("params.slotWindow")
+  }
   //simulation runtime in slots
   val L_s:Int = config.getInt("params.L_s")
-  // epoch length R >= 3k/2f
-  val epochLength:Int = 3*(k_s*(0.5/f_s)).toInt
-  // slot window for chain selection, s = k/4f
-  val slotWindow:Int = (k_s*0.25/f_s).toInt
   //status and verify check chain hash data up to this depth to gauge consensus amongst actors
   val confirmationDepth:Int = config.getInt("params.confirmationDepth")
   //max initial stake
