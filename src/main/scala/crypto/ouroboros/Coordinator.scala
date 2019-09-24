@@ -238,8 +238,6 @@ class Coordinator extends Actor
 
         case "inbox" => sendAssertDone(holders,Inbox)
 
-        case "stall0" => sendAssertDone(holders.head,StallActor)
-
         case "randtx" => if (!transactionFlag) {transactionFlag = true} else {transactionFlag = false}
 
         case "write" => fileWriter match {
@@ -316,95 +314,10 @@ class Coordinator extends Actor
           gossipersMap = getGossipers(holders)
         }
 
-        case "split_stake" => {
-          val stakingState:State = getStakingState(holders(0))
-          val netStake:BigInt = {
-            var out:BigInt = 0
-            for (holder<-holders){
-              out += stakingState(holderKeys(holder))._1
-            }
-            out
-          }
-          var holders1:List[ActorRef] = List()
-          var net1:BigInt = 0
-          var holders2:List[ActorRef] = List()
-          var net2:BigInt = 0
-          for (holder <- rng.shuffle(holders)) {
-            val holderStake = stakingState(holderKeys(holder))._1
-            if (net1<net2) {
-              net1 += holderStake
-              holders1 ::= holder
-            } else {
-              net2 += holderStake
-              holders2 ::= holder
-            }
-          }
-          val alpha1 = net1.toDouble/netStake.toDouble
-          val alpha2 = net2.toDouble/netStake.toDouble
-          val numh1 = holders1.length
-          val numh2 = holders2.length
-
-          parties = List()
-
-          println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
-          sendAssertDone(holders1,Party(holders1,true))
-          sendAssertDone(holders1,Diffuse)
-          sendAssertDone(holders2,Party(holders2,true))
-          sendAssertDone(holders2,Diffuse)
-          parties ::= holders1
-          parties ::= holders2
-          gossipersMap = getGossipers(holders)
-        }
-
         case "bridge" => {
           parties = List()
           val (holders1,holders2) = rng.shuffle(holders).splitAt(rng.nextInt(holders.length-3)+2)
           println("Bridging Party into groups of "+holders1.length.toString+" and "+holders2.length.toString)
-          val commonRef = holders1.head
-          sendAssertDone(holders,Party(List(),true))
-          sendAssertDone(List(commonRef),Party(holders,false))
-          sendAssertDone(List(commonRef),Diffuse)
-          sendAssertDone(holders1.tail,Party(holders1,false))
-          sendAssertDone(holders1.tail,Diffuse)
-          sendAssertDone(holders2,Party(commonRef::holders2,false))
-          sendAssertDone(holders2,Diffuse)
-          parties ::= holders1
-          parties ::= holders2
-          gossipersMap = getGossipers(holders)
-        }
-
-        case "bridge_stake" => {
-          parties = List()
-          val stakingState:State = getStakingState(holders(0))
-          val netStake:BigInt = {
-            var out:BigInt = 0
-            for (holder<-holders){
-              out += stakingState(holderKeys(holder))._1
-            }
-            out
-          }
-          var holders1:List[ActorRef] = List()
-          var net1:BigInt = 0
-          var holders2:List[ActorRef] = List()
-          var net2:BigInt = 0
-          for (holder <- rng.shuffle(holders)) {
-            val holderStake = stakingState(holderKeys(holder))._1
-            if (net1<net2) {
-              net1 += holderStake
-              holders1 ::= holder
-            } else {
-              net2 += holderStake
-              holders2 ::= holder
-            }
-          }
-          val alpha1 = net1.toDouble/netStake.toDouble
-          val alpha2 = net2.toDouble/netStake.toDouble
-          val numh1 = holders1.length
-          val numh2 = holders2.length
-
-          parties = List()
-
-          println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
           val commonRef = holders1.head
           sendAssertDone(holders,Party(List(),true))
           sendAssertDone(List(commonRef),Party(holders,false))
@@ -447,6 +360,115 @@ class Coordinator extends Actor
           newHolder ! Run
         }
 
+        case value:String => {
+          val arg0 = "print_"
+          if (value.slice(0,arg0.length) == arg0) {
+            val index:Int = value.drop(arg0.length).toInt
+            sharedData.printingHolder = index
+          }
+
+          val arg1 = "stall_"
+          if(value.slice(0,arg1.length) == arg1) {
+            val index:Int = value.drop(arg1.length).toInt
+            if (index < holders.length) {
+              sendAssertDone(holders(index),StallActor)
+              println(s"Holder $index sent stall signal")
+            }
+          }
+
+          val arg2 = "split_stake_"
+          if(value.slice(0,arg2.length) == arg2) {
+            val ratio:Double =  value.drop(arg2.length).toDouble
+            assert(ratio>0.0 && ratio<1.0)
+            val stakingState:State = getStakingState(holders.head)
+            val netStake:BigInt = {
+              var out:BigInt = 0
+              for (holder<-holders){
+                out += stakingState(holderKeys(holder))._1
+              }
+              out
+            }
+
+            var holders1:List[ActorRef] = List()
+            var net1:BigInt = 0
+            var holders2:List[ActorRef] = List()
+            var net2:BigInt = 0
+            for (holder <- rng.shuffle(holders)) {
+              val holderStake = stakingState(holderKeys(holder))._1
+              if (net1< BigDecimal(ratio*(net1.toDouble+net2.toDouble)).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
+                net1 += holderStake
+                holders1 ::= holder
+              } else {
+                net2 += holderStake
+                holders2 ::= holder
+              }
+            }
+            val alpha1 = net1.toDouble/netStake.toDouble
+            val alpha2 = net2.toDouble/netStake.toDouble
+            val numh1 = holders1.length
+            val numh2 = holders2.length
+
+            parties = List()
+
+            println(s"Splitting Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+            sendAssertDone(holders1,Party(holders1,true))
+            sendAssertDone(holders1,Diffuse)
+            sendAssertDone(holders2,Party(holders2,true))
+            sendAssertDone(holders2,Diffuse)
+            parties ::= holders1
+            parties ::= holders2
+            gossipersMap = getGossipers(holders)
+          }
+
+          val arg3 = "bridge_stake_"
+          if (value.slice(0,arg3.length) == arg3) {
+            val ratio:Double =  value.drop(arg3.length).toDouble
+            assert(ratio>0.0 && ratio<1.0)
+            val stakingState:State = getStakingState(holders.head)
+            val netStake:BigInt = {
+              var out:BigInt = 0
+              for (holder<-holders){
+                out += stakingState(holderKeys(holder))._1
+              }
+              out
+            }
+            var holders1:List[ActorRef] = List()
+            var net1:BigInt = 0
+            var holders2:List[ActorRef] = List()
+            var net2:BigInt = 0
+            for (holder <- rng.shuffle(holders)) {
+              val holderStake = stakingState(holderKeys(holder))._1
+              if (net1<BigDecimal(ratio*(net1.toDouble+net2.toDouble)).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
+                net1 += holderStake
+                holders1 ::= holder
+              } else {
+                net2 += holderStake
+                holders2 ::= holder
+              }
+            }
+            val alpha1 = net1.toDouble/netStake.toDouble
+            val alpha2 = net2.toDouble/netStake.toDouble
+            val numh1 = holders1.length
+            val numh2 = holders2.length
+
+            parties = List()
+
+            println(s"Bridging Stake to $alpha1 and $alpha2 with $numh1 and $numh2 holders")
+            val commonRef = holders1.head
+            sendAssertDone(holders,Party(List(),true))
+            sendAssertDone(List(commonRef),Party(holders,false))
+            sendAssertDone(List(commonRef),Diffuse)
+            sendAssertDone(holders1.tail,Party(holders1,false))
+            sendAssertDone(holders1.tail,Diffuse)
+            sendAssertDone(holders2,Party(commonRef::holders2,false))
+            sendAssertDone(holders2,Diffuse)
+            parties ::= holders1
+            parties ::= holders2
+            gossipersMap = getGossipers(holders)
+          }
+
+        }
+
         case _ =>
       }
     }
@@ -474,16 +496,12 @@ class Coordinator extends Actor
             if (com.length == 2){
               com(1).toInt match {
                 case i:Int => {
-                  if (s == "print") {
-                    sharedData.printingHolder = i
+                  if (cmdQueue.keySet.contains(i)) {
+                    val nl = s::cmdQueue(i)
+                    cmdQueue -= i
+                    cmdQueue += (i->nl)
                   } else {
-                    if (cmdQueue.keySet.contains(i)) {
-                      val nl = s::cmdQueue(i)
-                      cmdQueue -= i
-                      cmdQueue += (i->nl)
-                    } else {
-                      cmdQueue += (i->List(s))
-                    }
+                    cmdQueue += (i->List(s))
                   }
                 }
                 case _ =>

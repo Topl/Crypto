@@ -5,14 +5,14 @@ import numpy as np
 import os
 import glob
 
-list_of_files = glob.glob('/home/aaron/topl/Crypto/target/universal/stage/bin/*.tree') # * means all if need specific format then *.csv
+list_of_files = glob.glob('/home/aaron/topl/ssh/delaySweep1/*.tree') # * means all if need specific format then *.csv
 
 xaxis = np.empty([len(list_of_files)])
 yaxis = np.empty([len(list_of_files)])
 zaxis = np.empty([len(list_of_files)])
 taxis = np.empty([len(list_of_files)])
 baxis = np.empty([len(list_of_files)])
-
+print(len(list_of_files))
 i = 0
 for file in list_of_files:
 	f = open(file)
