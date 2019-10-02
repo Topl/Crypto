@@ -4,14 +4,13 @@ from mpl_toolkits import mplot3d
 import numpy as np
 import os
 import glob
-from anytree import Node, RenderTree, AsciiStyle, find_by_attr
-from anytree.exporter import DotExporter
+from anytree import Node, RenderTree, AsciiStyle, find_by_attr, PreOrderIter
+from anytree.exporter import UniqueDotExporter
+import uuid
 
-# dataDir = '/home/aaron/topl/Crypto/data/'
-dataDir = '/home/aaron/topl/ssh/delaySweep1/'
+dataDir = ''
 
 list_of_files = glob.glob(dataDir+'*.tree') # * means all if need specific format then *.csv
-#list_of_files = glob.glob('/home/aaron/topl/ssh/delaySweep1/*.tree') # * means all if need specific format then *.csv
 
 xaxis = np.empty([len(list_of_files)])
 yaxis = np.empty([len(list_of_files)])
@@ -20,6 +19,20 @@ taxis = np.empty([len(list_of_files)])
 baxis = np.empty([len(list_of_files)])
 tines = np.empty([len(list_of_files)])
 avgLenTines = np.empty([len(list_of_files)])
+
+def edgetypefunc(node, child):
+	return '--'
+
+def nodeattrfunc(node):
+	out = 'label=\"'+node.name+'\"'
+	if node.name == "":
+		out = out+',shape=circle'
+	else:
+		out = out+',shape=box'
+	if node.highlight == 1:
+		out = out+',style=filled,fillcolor=yellow'
+	return out
+
 print('Total files '+str(len(list_of_files)))
 i = 0
 for file in list_of_files:
@@ -33,8 +46,10 @@ for file in list_of_files:
 	jjj = 0
 	k = 1
 	for s in tree["data"]:
+		print('slot:'+str(ii))
 		if s["history"][0]["id"] != "":
 			j = j + 1
+			lastId = s["history"][0]["id"]
 		l = len(s["history"])
 		if l < k:
 			jj = jj + 1
@@ -43,9 +58,24 @@ for file in list_of_files:
 		jjj = jjj + ll
 		for b in s["blocks"]:
 			if ii == 0:
-				root = Node(b["id"])
+				root = Node(b["id"],highlight=1)
 			else:
-				Node(b["id"],parent = find_by_attr(root,b["pid"]))
+				sdiff = b["bs"] - b["ps"]
+				oldName = ""
+				if sdiff == 1:
+					Node(b["id"],parent = find_by_attr(root,b["pid"]),highlight=0)
+				else:
+					while sdiff > 1:
+						if oldName == "":
+							newName = 'empty:'+uuid.uuid4().hex
+							Node(newName,parent = find_by_attr(root,b["pid"]),highlight=0)
+							oldName = newName
+						else:
+							newName = 'empty:'+uuid.uuid4().hex
+							Node(newName,parent = find_by_attr(root,oldName),highlight=0)
+							oldName = newName
+						sdiff = sdiff - 1
+					Node(b["id"],parent = find_by_attr(root,oldName),highlight=0)
 		ii = ii + 1
 	zaxis[i] = j
 	taxis[i] = jj
@@ -55,15 +85,30 @@ for file in list_of_files:
 	leaves = root.leaves
 	tines[i] = len(leaves)
 	avgLen = 0.0
-	for lNode in leaves:
-		lll = 1
-		node = lNode
-		while len(node.siblings) == 0:
-			node = node.parent
-			lll = lll + 1
-		avgLen = avgLen + lll
+	if len(leaves) == 1:
+		avgLen = root.height
+	else:
+		for lNode in leaves:
+			lll = 1
+			node = lNode
+			while len(node.siblings) == 0:
+				node = node.parent
+				lll = lll + 1
+			avgLen = avgLen + lll
 	avgLenTines[i] = avgLen/tines[i]
-	#DotExporter(root).to_picture(dataDir+"root_"+str(i)+".png")
+	if len(list_of_files)<10:
+		node = find_by_attr(root,lastId)
+		while not node.is_root:
+			node.highlight = 1
+			node=node.parent
+		for node in PreOrderIter(root):
+			nodeName = node.name
+			if 'empty' in nodeName:
+				node.name = ""
+			else:
+				node.name = nodeName[0:3]
+		dots = UniqueDotExporter(root,graph='graph',nodeattrfunc=nodeattrfunc,edgetypefunc=edgetypefunc)
+		dots.to_picture(dataDir+"root_"+str(i)+".png")
 	i = i + 1
 
 plt.figure(1)
