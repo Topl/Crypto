@@ -8,7 +8,9 @@ from anytree import Node, RenderTree, AsciiStyle, find_by_attr, PreOrderIter
 from anytree.exporter import UniqueDotExporter
 import uuid
 
-dataDir = ''
+# dataDir = '/home/aaron/topl/Crypto/data/'
+dataDir = '/home/aaron/topl/ssh/delaySweep1/'
+printGraphs = False
 
 list_of_files = glob.glob(dataDir+'*.tree') # * means all if need specific format then *.csv
 
@@ -19,6 +21,7 @@ taxis = np.empty([len(list_of_files)])
 baxis = np.empty([len(list_of_files)])
 tines = np.empty([len(list_of_files)])
 avgLenTines = np.empty([len(list_of_files)])
+avgLenTinesS = np.empty([len(list_of_files)])
 
 def edgetypefunc(node, child):
 	return '--'
@@ -45,8 +48,9 @@ for file in list_of_files:
 	jj = 0
 	jjj = 0
 	k = 1
+	prevSlotNodes = []
+	thisSlotNodes = []
 	for s in tree["data"]:
-		print('slot:'+str(ii))
 		if s["history"][0]["id"] != "":
 			j = j + 1
 			lastId = s["history"][0]["id"]
@@ -58,12 +62,13 @@ for file in list_of_files:
 		jjj = jjj + ll
 		for b in s["blocks"]:
 			if ii == 0:
-				root = Node(b["id"],highlight=1)
+				root = Node(b["id"],highlight=1,slot=int(b["bs"]))
+				prevSlotNodes = [root]
 			else:
-				sdiff = b["bs"] - b["ps"]
+				sdiff = int(b["bs"]) - int(b["ps"])
 				oldName = ""
-				if sdiff == 1:
-					Node(b["id"],parent = find_by_attr(root,b["pid"]),highlight=0)
+				if sdiff == 1 or not printGraphs:
+					Node(b["id"],parent = find_by_attr(root,b["pid"]),highlight=0,slot=int(b["bs"]))
 				else:
 					while sdiff > 1:
 						if oldName == "":
@@ -75,7 +80,7 @@ for file in list_of_files:
 							Node(newName,parent = find_by_attr(root,oldName),highlight=0)
 							oldName = newName
 						sdiff = sdiff - 1
-					Node(b["id"],parent = find_by_attr(root,oldName),highlight=0)
+					Node(b["id"],parent = find_by_attr(root,oldName),highlight=0,slot=int(b["bs"]))
 		ii = ii + 1
 	zaxis[i] = j
 	taxis[i] = jj
@@ -85,18 +90,24 @@ for file in list_of_files:
 	leaves = root.leaves
 	tines[i] = len(leaves)
 	avgLen = 0.0
+	avgLenS = 0.0
 	if len(leaves) == 1:
 		avgLen = root.height
+		avgLenS = leaves[0].slot
 	else:
 		for lNode in leaves:
 			lll = 1
+			lllS = 1
 			node = lNode
 			while len(node.siblings) == 0:
+				lllS = lllS + node.slot - node.parent.slot
 				node = node.parent
 				lll = lll + 1
 			avgLen = avgLen + lll
+			avgLenS = avgLen + lllS
 	avgLenTines[i] = avgLen/tines[i]
-	if len(list_of_files)<10:
+	avgLenTinesS[i] = avgLenS/tines[i]
+	if printGraphs:
 		node = find_by_attr(root,lastId)
 		while not node.is_root:
 			node.highlight = 1
@@ -143,6 +154,15 @@ ax = plt.axes(projection='3d')
 ax.scatter3D(xaxis,yaxis,avgLenTines, c=avgLenTines, cmap='hsv')
 ax.set_xlabel('Delay (ms/km)')
 ax.set_ylabel('Active Slot Coefficient')
-ax.set_zlabel('Length of Tines')
+ax.set_zlabel('Length of Tines (Block Number)')
+ax.set_title('Average length of tines after 1000 slots')
+plt.show()
+
+plt.figure(5)
+ax = plt.axes(projection='3d')
+ax.scatter3D(xaxis,yaxis,avgLenTinesS, c=avgLenTinesS, cmap='hsv')
+ax.set_xlabel('Delay (ms/km)')
+ax.set_ylabel('Active Slot Coefficient')
+ax.set_zlabel('Length of Tines (Slot Number)')
 ax.set_title('Average length of tines after 1000 slots')
 plt.show()
