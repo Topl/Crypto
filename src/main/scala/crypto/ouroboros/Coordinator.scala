@@ -133,10 +133,10 @@ class Coordinator extends Actor
     case value:IssueTx => {
       value.s match {
         case "randTx" => {
-          if (transactionFlag && t>1 && t<L_s) {
+          if (transactionFlag && t>1 && t<L_s && transactionCounter < txMax) {
             for (holder <- holders){
-              val r = rng.nextInt(txDenominator)
-              if (r==0) {issueTx(holder)} else {sendAssertDone(holder,IssueTx("noTx"))}
+              val r = rng.nextDouble
+              if (r<txProbability) {issueTx(holder)} else {sendAssertDone(holder,IssueTx("noTx"))}
             }
           } else {
             for (holder <- holders){
@@ -181,25 +181,15 @@ class Coordinator extends Actor
   }
 
   /**randomly picks two holders and creates a transaction between the two*/
-  def issueTx: Unit = {
-    val holder1 = holders(rng.nextInt(holders.length))
-    val holder2 = holders(rng.nextInt(holders.length))
-    var delta:BigInt = 0
-    if (holder1 != holder2) {
-      delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-      holder1 ! IssueTx((holderKeys(holder2),delta))
-    }
-  }
-
   def issueTx(holder1:ActorRef): Unit = {
-    val holder2 = holders(rng.nextInt(holders.length))
-    var delta:BigInt = 0
-    if (holder1 != holder2) {
-      delta = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+    val holder2 = holders.filter(_ != holder1)(rng.nextInt(holders.length-1))
+    val delta:BigInt = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+    if (useFencing) {
       sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
     } else {
-      sendAssertDone(holder1,IssueTx("noTx"))
+      holder1 ! IssueTx((holderKeys(holder2),delta))
     }
+    transactionCounter += 1
   }
 
   /**command string interpreter*/
@@ -211,6 +201,7 @@ class Coordinator extends Actor
           sendAssertDone(holders,Status)
           assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
           println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
+          println("Total Issued Txs:"+transactionCounter.toString)
           sharedData.txCounter = 0
         }
 
@@ -542,10 +533,11 @@ class Coordinator extends Actor
       }
     }
 
-    if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s) {
-      for (i <- 1 to holders.length){
-        val r = rng.nextInt(txDenominator)
-        if (r==0) issueTx
+    if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s && transactionCounter < txMax) {
+      for (i <- 0 to txProbability.floor.toInt) {
+        val holder = rng.shuffle(holders).head
+        val r = rng.nextDouble
+        if (r<txProbability%1.0) {issueTx(holder)}
       }
     }
 
@@ -612,7 +604,7 @@ class Coordinator extends Actor
             "updateTime" -> updateTime.toMillis.asJson,
             "commandUpdateTime" -> commandUpdateTime.toMillis.asJson,
             "transactionFlag" -> transactionFlag.asJson,
-            "txDenominator" -> txDenominator.asJson,
+            "txDenominator" -> txProbability.asJson,
             "randomFlag" -> randomFlag.asJson,
             "performanceFlag" -> performanceFlag.asJson,
             "systemLoadThreshold" -> systemLoadThreshold.asJson,

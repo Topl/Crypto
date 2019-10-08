@@ -281,7 +281,7 @@ class Router(seed:Array[Byte]) extends Actor
     }
 
     case Run => {
-      timers.startPeriodicTimer(timerKey, Update, updateTime)
+      timers.startPeriodicTimer(timerKey, Update, commandUpdateTime)
       coordinatorRef ! NextSlot
     }
 

@@ -971,12 +971,15 @@ trait Methods
   def chooseLedger(pkw:PublicKeyW): Ledger = {
     var ledger: Ledger = List()
     var ls: State = localState
-    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5):_*)
-    for (entry<-sortedBuffer) {
-      if (entry._2._5 >= ls(entry._2._1)._3) {
-        ls = applyTransaction(ls,entry._2,pkw)
+    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5): _*)
+    breakable {
+      for (entry <- sortedBuffer) {
+        if (entry._2._5 >= ls(entry._2._1)._3) {
+          ls = applyTransaction(ls, entry._2, pkw)
+        }
+        ledger ::= entry._2
+        if (ledger.length >= txPerBlock) break
       }
-      ledger ::= entry._2
     }
     ledger.reverse
   }

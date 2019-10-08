@@ -41,4 +41,5 @@ trait CoordinatorVariables
   var fileWriter:Any = 0
   var graphWriter:Any = 0
   var gossipersMap:Map[ActorRef,List[ActorRef]] = Map()
+  var transactionCounter:Int = 0
 }

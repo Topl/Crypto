@@ -128,11 +128,15 @@ trait Parameters extends Utils {
   //duration between update tics that stakeholder actors send to themselves
   val updateTime:FiniteDuration = config.getInt("params.updateTime") millis
   //duration between command read tics and transaction generation for the coordinator
-  val commandUpdateTime:FiniteDuration = (slotT/2).toInt millis
+  val commandUpdateTime:FiniteDuration = config.getInt("params.commandUpdateTime") millis
+  //number of txs per block
+  val txPerBlock:Int = config.getInt("params.txPerBlock")
+  //max number of transactions to be issued over lifetime of simulation
+  val txMax:Int = config.getInt("params.txMax")
   //Issue random transactions if true
   var transactionFlag:Boolean = config.getBoolean("params.transactionFlag")
-  // p = 1/txDenominator => 2*(1-p)^numHolders chance of issuing transaction per slot, lower means more txs
-  var txDenominator:Int = config.getInt("params.txDenominator")
+  // p = txProbability => (1-p)^numHolders
+  var txProbability:Double = config.getDouble("params.txProbability")
   //uses randomness for public key seed and initial stake, set to false for deterministic run
   val randomFlag:Boolean = config.getBoolean("params.randomFlag")
   //when true, if system cpu load is too high the coordinator will stall to allow stakeholders to catch up
