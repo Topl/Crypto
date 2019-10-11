@@ -8,6 +8,7 @@ import io.iohk.iodb.ByteArrayWrapper
 import scala.math.BigInt
 import scala.util.Random
 import scorex.crypto.encode.Base58
+import scala.util.{Try, Success, Failure}
 
 /**
   * Stakeholder actor that executes the staking protocol and communicates with other stakeholders,
@@ -66,7 +67,14 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         chainHistory.update(localSlot,(localSlot, hb)::chainHistory(localSlot))
         send(self,gossipers, SendBlock(signBox((b,(localSlot, hb)), sessionId, sk_sig, pk_sig)))
         blocksForged += 1
-        localState = updateLocalState(localState, Array(localChain(localSlot)))
+        updateLocalState(localState, Array(localChain(localSlot))) match {
+          case value:State => localState = value
+          case _ => {
+            sharedData.throwError
+            println("error: invalid legder in forged block")
+          }
+        }
+        trimMemPool
         issueState = localState
       }
       case _ =>
@@ -235,6 +243,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       candidateTines = newCandidateTines
+      newHead = true
     } else {
       collectLedger(tine)
       for (id <- subChain(localChain,prefix+1,localSlot)) {
@@ -284,6 +293,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       updateEpoch
     )
     if (localSlot == globalSlot) {
+      if (newHead) {
+        trimMemPool
+        issueState = localState
+        newHead = false
+      }
       time(
         if (kes.getKeyTimeStep(sk_kes) < localSlot) {
           if (holderIndex == sharedData.printingHolder && printFlag && localSlot%epochLength == 0) {
@@ -312,8 +326,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       )
     }
-    localState = updateLocalState(localState, Array(localChain(localSlot)))
-    issueState = localState
+    updateLocalState(localState, Array(localChain(localSlot))) match {
+      case value:State => localState = value
+      case _ => {
+        sharedData.throwError
+        println("error: invalid block ledger on chain")
+      }
+    }
     if (dataOutFlag && globalSlot % dataOutInterval == 0) {
       coordinatorRef ! WriteFile
     }
@@ -431,15 +450,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         value.s match {
           case trans:Transaction => {
             if (!memPool.keySet.contains(trans._4) && localState.keySet.contains(trans._1)) {
-              val delta:BigInt = trans._3
-              val pk_s:PublicKeyW = trans._1
-              val net = localState(pk_s)._1
-              if (delta<=net && localState(pk_s)._3 <= trans._5) {
-                if (verifyTransaction(trans)) {
-                  memPool += (trans._4->trans)
-                  send(self,gossipers, SendTx(value.s))
-                }
-              }
+              memPool += (trans._4->(trans,0))
+              send(self,gossipers, SendTx(value.s))
             }
           }
           case _ =>
@@ -630,14 +642,18 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             val (pk_r,delta) = data
             val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
             val net = issueState(pkw)._1
-            val txC = txCounter//issueState(pkw)._3
-            if (delta <= net) {
-              if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-              val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC+1)
-              issueState = applyTransaction(issueState,trans,ByteArrayWrapper(Array()))
-              txCounter += 1
-              setOfTxs += (trans._4->trans._5)
-              send(self,gossipers, SendTx(trans))
+            val txC = issueState(pkw)._3
+            if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
+            val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
+            applyTransaction(issueState,trans,ByteArrayWrapper(Array())) match {
+              case value:State => {
+                issueState = value
+                txCounter += 1
+                setOfTxs += (trans._4->trans._5)
+                send(self,gossipers, SendTx(trans))
+                send(self,self,SendTx(trans))
+              }
+              case _ =>
             }
           }
           case _ =>
@@ -715,7 +731,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       history_eta = Array.fill(tMax/epochLength+1){Array()}
       history_state = Array.fill(tMax+1){Map()}
       assert(genBlockHash == hash(blocks(0)(genBlockHash)))
-      localState = updateLocalState(localState, Array(localChain(0)))
+      updateLocalState(localState, Array(localChain(0))) match {
+        case value:State => localState = value
+        case _ => {
+          sharedData.throwError
+          println("error: invalid genesis block")
+        }
+      }
       eta = eta(localChain, 0, Array())
       history_state.update(0,localState)
       history_eta.update(0,eta)

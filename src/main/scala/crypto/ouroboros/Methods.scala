@@ -487,8 +487,13 @@ trait Methods
     * @returnt true if signature is valid, false otherwise
     */
   def verifyBlock(b:Block): Boolean = {
-    val (hash, state, slot, cert, rho, pi, sig, pk_kes, bn,ps) = b
-    kes.verify(pk_kes,hash.data++serialize(state)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps),sig,slot)
+    val (hash, ledger, slot, cert, rho, pi, sig, pk_kes, bn,ps) = b
+    val kesVer = kes.verify(pk_kes,hash.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps),sig,slot)
+    if (slot > 0) {
+      kesVer && ledger.length <= txPerBlock + 1
+    } else {
+      kesVer
+    }
   }
 
   /**
@@ -536,7 +541,10 @@ trait Methods
         if (i/epochLength > ep) {
           ep = i/epochLength
           eta_Ep = eta(c, ep, eta_Ep)
-          stakingState = updateLocalState(stakingState,subChain(c,(i/epochLength)*epochLength-2*epochLength+1,(i/epochLength)*epochLength-epochLength))
+          updateLocalState(stakingState,subChain(c,(i/epochLength)*epochLength-2*epochLength+1,(i/epochLength)*epochLength-epochLength)) match {
+            case value:State =>  stakingState = value
+            case _ => println("Error: encountered invalid ledger in local chain")
+          }
         }
         i+=1
       }
@@ -582,6 +590,7 @@ trait Methods
   def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
     val ep0 = prefix/epochLength
     var eta_Ep:Eta = history_eta(ep0)
+    var ls:State = history_state(prefix)
     var stakingState: State = {
       if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
     }
@@ -591,7 +600,6 @@ trait Methods
     var tr_Ep = 0.0
     var pid:BlockId = (0,ByteArrayWrapper(Array()))
     var i = prefix+1
-
     breakable{
       for (id<-tine) {
         if (!id._2.data.isEmpty) {
@@ -603,6 +611,10 @@ trait Methods
     }
 
     for (id <- tine) {
+      updateLocalState(ls,Array(id)) match {
+        case value:State => ls = value
+        case _ => bool &&= false
+      }
       getBlock(id) match {
         case b:Block => {
           getParentBlock(b) match {
@@ -629,7 +641,10 @@ trait Methods
             stakingState = history_state((ep - 1) * epochLength)
           } else {
             eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-            stakingState = updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength))
+            updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength)) match {
+              case value:State => stakingState = value
+              case _ => println("Error: encountered invalid ledger in tine")
+            }
           }
         }
         i+=1
@@ -731,8 +746,9 @@ trait Methods
     * @param c chain of block ids
     * @return updated localstate
     */
-  def updateLocalState(ls:State, c:Chain): State = {
+  def updateLocalState(ls:State, c:Chain): Any = {
     var nls:State = ls
+    var isValid = true
     for (id <- c) {
       getBlock(id) match {
         case b:Block => {
@@ -752,62 +768,76 @@ trait Methods
                           val netStake:BigInt = 0
                           val newStake:BigInt = netStake + delta
                           val pk_g:PublicKeyW = entry._2
-                          if(nls.keySet.contains(pk_g)) nls -= pk_g
+                          if(nls.keySet.contains(pk_g)) {
+                            isValid = false
+                            nls -= pk_g
+                          }
                           nls += (pk_g -> (newStake,true,0))
                         }
                       }
-                      case _ =>
+                      case _ => isValid = false
                     }
                   }
                 }
                 case _ =>
               }
             }
-          }
-          ledger.head match {
-            case box:Box => {
-              if (verifyBox(box)) {
-                box._1 match {
-                  case entry:(ByteArrayWrapper,BigInt) => {
-                    val delta = entry._2
-                    if (entry._1 == forgeBytes && delta == BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
-                      if (nls.keySet.contains(pk_f)) {
-                        val netStake: BigInt = nls(pk_f)._1
-                        val txC:Int = nls(pk_f)._3
-                        val newStake: BigInt = netStake + BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-                        nls -= pk_f
-                        nls += (pk_f -> (newStake,true,txC))
+          } else {
+            ledger.head match {
+              case box:Box => {
+                if (verifyBox(box)) {
+                  box._1 match {
+                    case entry:(ByteArrayWrapper,BigInt) => {
+                      val delta = entry._2
+                      if (entry._1 == forgeBytes && delta == BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt) {
+                        if (nls.keySet.contains(pk_f)) {
+                          val netStake: BigInt = nls(pk_f)._1
+                          val txC:Int = nls(pk_f)._3
+                          val newStake: BigInt = netStake + BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+                          nls -= pk_f
+                          nls += (pk_f -> (newStake,true,txC))
+                        } else {
+                          validForger = false
+                        }
                       } else {
                         validForger = false
                       }
-                    } else {
-                      validForger = false
+                    }
+                    case _ => validForger = false
+                  }
+                } else {
+                  validForger = false
+                }
+              }
+              case _ => validForger = false
+            }
+            if (validForger) {
+              for (entry <- ledger.tail) {
+                entry match {
+                  case trans:Transaction => {
+                    applyTransaction(nls,trans,pk_f) match {
+                      case value:State => {
+                        nls = value
+                      }
+                      case _ => isValid = false
                     }
                   }
-                  case _ => validForger = false
+                  case _ => isValid = false
                 }
-              } else {
-                validForger = false
               }
-            }
-            case _ => validForger = false
-          }
-
-          if (validForger) {
-            for (entry <- ledger.tail) {
-              entry match {
-                case trans:Transaction => {
-                  nls = applyTransaction(nls,trans,pk_f)
-                }
-                case _ =>
-              }
+            } else {
+              isValid = false
             }
           }
         }
         case _ =>
       }
     }
-    nls
+    if (isValid) {
+      nls
+    } else {
+      0
+    }
   }
 
   /**
@@ -817,14 +847,14 @@ trait Methods
     * @param pk_f sig public key of the forger
     * @return updated localstate
     */
-  def applyTransaction(ls:State, trans:Transaction, pk_f:PublicKeyW): State = {
+  def applyTransaction(ls:State, trans:Transaction, pk_f:PublicKeyW): Any = {
     var nls:State = ls
     if (verifyTransaction(trans)) {
       val pk_s:PublicKeyW = trans._1
       val pk_r:PublicKeyW = trans._2
       val validSender = nls.keySet.contains(pk_s)
       val txC_s:Int = nls(pk_s)._3
-      if (validSender && trans._5 >= txC_s) {
+      if (validSender && trans._5 == txC_s) {
         val delta:BigInt = trans._3
         val fee = BigDecimal(delta.toDouble*transactionFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
         val validRecip = nls.keySet.contains(pk_r)
@@ -886,6 +916,7 @@ trait Methods
             nls += (pk_r -> (r_new,true,r_txC))
             nls += (pk_f -> (f_new,true,f_txC))
           }
+          nls
         } else if (validFunds) {
           if (pk_s == pk_f) {
             val s_net:BigInt = nls(pk_s)._1
@@ -917,10 +948,27 @@ trait Methods
             nls += (pk_r -> (r_new,true,0))
             nls += (pk_f -> (f_new,true,f_txC))
           }
+          nls
         }
+      } else {
+        0
+      }
+    } else {
+      0
+    }
+  }
+
+  def trimMemPool: Unit = {
+    val mp = memPool
+    for (entry <- mp) {
+      if (entry._2._2 < confirmationDepth) {
+        val cnt = entry._2._2 + 1
+        memPool -= entry._1
+        memPool += (entry._1 -> (entry._2._1,cnt))
+      } else {
+        memPool -= entry._1
       }
     }
-    nls
   }
 
   /**
@@ -936,7 +984,7 @@ trait Methods
             entry match {
               case trans:Transaction => {
                 if (!memPool.keySet.contains(trans._4)) {
-                  if (verifyTransaction(trans)) memPool += (trans._4->trans)
+                  if (verifyTransaction(trans)) memPool += (trans._4->(trans,0))
                 }
               }
               case _ =>
@@ -949,21 +997,6 @@ trait Methods
   }
 
   /**
-    * removes transactions from the buffer that have a tx counter lower than the localstate tx counter
-    */
-  def updateBuffer: Unit = {
-    for (state <- localState) {
-      for (entry <- memPool) {
-        if (state._1 == entry._2._1) {
-          if (entry._2._5 < state._2._3) {
-            memPool -= entry._1
-          }
-        }
-      }
-    }
-  }
-
-  /**
     * sorts buffer and adds transaction to ledger during block forging
     * @param pkw public key triad of forger
     * @return list of transactions
@@ -971,16 +1004,22 @@ trait Methods
   def chooseLedger(pkw:PublicKeyW): Ledger = {
     var ledger: Ledger = List()
     var ls: State = localState
-    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._5 < _._2._5): _*)
+    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._1._5 < _._2._1._5): _*)
     breakable {
       for (entry <- sortedBuffer) {
-        if (entry._2._5 >= ls(entry._2._1)._3) {
-          ls = applyTransaction(ls, entry._2, pkw)
+        if (entry._2._1._5 == ls(entry._2._1._1)._3) {
+          applyTransaction(ls, entry._2._1, pkw) match {
+            case value:State => {
+              ledger ::= entry._2._1
+              ls = value
+            }
+            case _ =>
+          }
+          if (ledger.length >= txPerBlock) break
         }
-        ledger ::= entry._2
-        if (ledger.length >= txPerBlock) break
       }
     }
+    println(ledger.length)
     ledger.reverse
   }
 
