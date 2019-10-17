@@ -968,6 +968,9 @@ trait Methods
       } else {
         memPool -= entry._1
       }
+      if (entry._2._1._5 < localState(entry._2._1._1)._3) {
+        memPool -= entry._1
+      }
     }
   }
 
@@ -1019,7 +1022,7 @@ trait Methods
         }
       }
     }
-    println(ledger.length)
+    println("Holder "+holderIndex.toString+" ledger length: "+ledger.length.toString)
     ledger.reverse
   }
 

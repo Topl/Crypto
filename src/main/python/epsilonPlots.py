@@ -8,7 +8,7 @@ from matplotlib.font_manager import FontProperties
 
 epsilon = np.linspace(0.0,1.0,4000)
 
-N = 12
+N = 100
 # O_f = 1-np.exp(1.0/(1.0+delta))*(1/2+epsilon/2)
 # Omega_k = 192*delta/epsilon
 # Omega_s = Omega_k*0.25/O_f

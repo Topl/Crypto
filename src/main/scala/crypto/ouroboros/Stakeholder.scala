@@ -71,11 +71,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case value:State => localState = value
           case _ => {
             sharedData.throwError
-            println("error: invalid legder in forged block")
+            println("error: invalid ledger in forged block")
           }
         }
-        trimMemPool
         issueState = localState
+        trimMemPool
       }
       case _ =>
     }
@@ -294,8 +294,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     )
     if (localSlot == globalSlot) {
       if (newHead) {
-        trimMemPool
         issueState = localState
+        trimMemPool
         newHead = false
       }
       time(
@@ -311,7 +311,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
           sk_kes = kes.updateKey(sk_kes, localSlot)
           if (useGossipProtocol) {
-            val newOff = (numGossipers*math.sin(2.0*math.Pi*(globalSlot.toDouble/k_s.toDouble+phase))/2.0).toInt
+            val newOff = (numGossipers*math.sin(2.0*math.Pi*(globalSlot.toDouble/100.0+phase))/2.0).toInt
             if (newOff != gOff) {
               if (gOff < newOff) numHello = 0
               gOff = newOff
@@ -385,6 +385,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               println("Holder " + holderIndex.toString + " Checking Tine")
             }
             time(maxValidBG)
+            while (globalSlot > localSlot) {
+              history_state.update(localSlot, localState)
+              localSlot += 1
+              updateSlot
+            }
           } else if (useFencing && chainUpdateLock) {
             if (candidateTines.isEmpty) {
               chainUpdateLock = false
@@ -653,10 +658,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 send(self,gossipers, SendTx(trans))
                 send(self,self,SendTx(trans))
               }
-              case _ =>
+              case _ => {println("Holder "+holderIndex.toString+" tx issue failed delta = "+ scaledDelta.toString);sharedData.throwError}
             }
           }
-          case _ =>
+          case _ => sharedData.throwError
         }
       }
       if (useFencing) {

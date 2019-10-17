@@ -187,6 +187,7 @@ class Coordinator extends Actor
     if (useFencing) {
       sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
     } else {
+      assert(holder1 != holder2)
       holder1 ! IssueTx((holderKeys(holder2),delta))
     }
     transactionCounter += 1
@@ -201,7 +202,7 @@ class Coordinator extends Actor
           sendAssertDone(holders,Status)
           assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
           println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
-          println("Total Issued Txs:"+transactionCounter.toString)
+          println("Total Attempts to Issue Txs:"+transactionCounter.toString)
           sharedData.txCounter = 0
         }
 
