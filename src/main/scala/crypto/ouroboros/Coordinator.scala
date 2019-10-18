@@ -534,7 +534,7 @@ class Coordinator extends Actor
       }
     }
 
-    if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s && transactionCounter < txMax) {
+    if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s && transactionCounter < txMax && !sharedData.errorFlag) {
       for (i <- 0 to txProbability.floor.toInt) {
         val holder = rng.shuffle(holders).head
         val r = rng.nextDouble

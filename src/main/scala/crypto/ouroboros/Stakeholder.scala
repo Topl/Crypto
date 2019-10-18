@@ -660,9 +660,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               }
               case _ => {println("Holder "+holderIndex.toString+" tx issue failed delta = "+ scaledDelta.toString);sharedData.throwError}
             }
-          }
-          case _ => sharedData.throwError
+          } else {println("invalid tx key");sharedData.throwError}
+          case _ => {println("invalid tx data");sharedData.throwError}
         }
+      } else {
+        println("tx issued while stalled");sharedData.throwError
       }
       if (useFencing) {
         routerRef ! (self,"issueTx")
@@ -672,7 +674,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
       /**gossip protocol greeting message for populating inbox*/
     case value:Hello => {
-      //println(gossipers.length, numGossipers + gOff)
       if (!actorStalled) {
         if (gossipers.length < numGossipers + gOff) {
           value.id match {
@@ -743,6 +744,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           println("error: invalid genesis block")
         }
       }
+      issueState = localState
       eta = eta(localChain, 0, Array())
       history_state.update(0,localState)
       history_eta.update(0,eta)

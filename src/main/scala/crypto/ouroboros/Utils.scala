@@ -15,7 +15,7 @@ object sharedData extends Types {
     println(counter)
     out
   }
-  def throwError = {errorFlag=true}
+  def throwError = {println("----------Error------------");errorFlag=true}
   def error:Boolean = {errorFlag}
 }
 
