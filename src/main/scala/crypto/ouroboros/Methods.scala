@@ -35,6 +35,7 @@ trait Methods
   var stakingState:State = Map()
   var history_state:Array[State] = Array()
   var history_eta:Array[Eta] = Array()
+  var unconfirmedTxs:Seq[Transaction] = Seq()
   var memPool:MemPool = Map()
   var holderIndex:Int = -1
   var diffuseSent = false
@@ -740,6 +741,53 @@ trait Methods
     trans
   }
 
+  def rebaseIssueState(s:Slot,pk:PublicKeyW): State = {
+    val lastSlot = lastActiveSlot(localChain,s)
+    getBlock(localChain(lastSlot)) match {
+      case b:Block => {
+        val bn = b._9
+        if (bn > confirmationDepth + 1) {
+          var pb = getParentBlock(b) match {case bb:Block => bb}
+          for (i <- 1 to confirmationDepth) {
+            pb = getParentBlock(pb) match {case bb:Block => bb}
+          }
+          val ledger: Ledger = pb._2
+          for (entry <- ledger.tail) {
+            entry match {
+              case trans:Transaction => {
+                if (trans._1 == pk) {
+                  unconfirmedTxs = unconfirmedTxs.filter(_._4 != trans._4)
+                }
+              }
+              case _ =>
+            }
+          }
+          var out = history_state(pb._3+1)
+          for (entry <- unconfirmedTxs) {
+            applyTransaction(out,entry,ByteArrayWrapper(Array())) match {
+              case s:State => {
+                out = s
+              }
+              case _ => {println("error: issue state rebase tx counter mismatch 2");sharedData.throwError}
+            }
+          }
+          out
+        } else {
+          var out = history_state(0)
+          for (entry <- unconfirmedTxs) {
+            applyTransaction(out,entry,ByteArrayWrapper(Array())) match {
+              case s:State => {
+                out = s
+              }
+              case _ => {println("error: issue state rebase tx counter mismatch 1");sharedData.throwError}
+            }
+          }
+          out
+        }
+      }
+    }
+  }
+
   /**
     * apply each block in chain to passed local state
     * @param ls old local state to be updated
@@ -854,6 +902,7 @@ trait Methods
       val pk_r:PublicKeyW = trans._2
       val validSender = nls.keySet.contains(pk_s)
       val txC_s:Int = nls(pk_s)._3
+      if (trans._5 != txC_s) println(trans._5,txC_s)
       if (validSender && trans._5 == txC_s) {
         val delta:BigInt = trans._3
         val fee = BigDecimal(delta.toDouble*transactionFee).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt

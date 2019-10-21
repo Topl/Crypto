@@ -74,7 +74,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("error: invalid ledger in forged block")
           }
         }
-        issueState = localState
+        issueState = rebaseIssueState(localSlot,pkw)
         trimMemPool
       }
       case _ =>
@@ -294,7 +294,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     )
     if (localSlot == globalSlot) {
       if (newHead) {
-        issueState = localState
+        issueState = rebaseIssueState(localSlot,pkw)
         trimMemPool
         newHead = false
       }
@@ -646,7 +646,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case data:(PublicKeyW,BigInt) => if (issueState.keySet.contains(pkw)) {
             val (pk_r,delta) = data
             val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-            val net = issueState(pkw)._1
             val txC = issueState(pkw)._3
             if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
             val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
@@ -655,6 +654,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 issueState = value
                 txCounter += 1
                 setOfTxs += (trans._4->trans._5)
+                unconfirmedTxs = unconfirmedTxs ++ Seq(trans)
                 send(self,gossipers, SendTx(trans))
                 send(self,self,SendTx(trans))
               }
