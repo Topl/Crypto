@@ -455,8 +455,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         value.s match {
           case trans:Transaction => {
             if (!memPool.keySet.contains(trans._4) && localState.keySet.contains(trans._1)) {
-              memPool += (trans._4->(trans,0))
-              send(self,gossipers, SendTx(value.s))
+              if (localState(trans._1)._3 <= trans._5) {
+                if (verifyTransaction(trans)) {
+                  memPool += (trans._4->(trans,0))
+                  send(self,gossipers, SendTx(value.s))
+                }
+              }
             }
           }
           case _ =>
