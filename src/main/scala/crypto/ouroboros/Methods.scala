@@ -31,11 +31,8 @@ trait Methods
   var blocks:ChainData = Array()
   var chainHistory:ChainHistory = Array()
   var localState:State = Map()
-  var issueState:State = Map()
+  var eta:Eta = Array()
   var stakingState:State = Map()
-  var history_state:Array[State] = Array()
-  var history_eta:Array[Eta] = Array()
-  var unconfirmedTxs:Seq[Transaction] = Seq()
   var memPool:MemPool = Map()
   var holderIndex:Int = -1
   var diffuseSent = false
@@ -45,6 +42,8 @@ trait Methods
   val kes = new Kes
   val sig = new Sig
 
+  val history:History = new History
+  //val mempool:Mempool = new Mempool
   var rng:Random = new Random
   var routerRef:ActorRef = _
 
@@ -230,7 +229,7 @@ trait Methods
     * @param f active slot coefficient
     * @return probability of being elected slot leader
     */
-  def phi (a:Double,f:Double): Double = {
+  def phi(a:Double,f:Double): Double = {
     1.0 - scala.math.pow(1.0 - f,a)
   }
 
@@ -589,14 +588,45 @@ trait Methods
     * @return true if chain is valid, false otherwise
     */
   def verifySubChain(tine:Chain,prefix:Slot): Boolean = {
+    var isValid = true
     val ep0 = prefix/epochLength
-    var eta_Ep:Eta = history_eta(ep0)
-    var ls:State = history_state(prefix)
-    var stakingState: State = {
-      if (ep0 > 1) {history_state((ep0-1)*epochLength)} else {history_state(0)}
+    var eta_Ep:Eta = Array()
+    var ls:State = Map()
+
+    history.get(localChain(prefix)._2) match {
+      case value:(State,Eta) => {
+        ls = value._1
+        eta_Ep = value._2
+      }
+      case _ => isValid &&= false
     }
+
+
+    var stakingState: State = {
+      if (ep0 > 1) {
+        history.get(localChain((ep0-1)*epochLength)._2) match {
+          case value:(State,Eta) => {
+            value._1
+          }
+          case _ => {
+            isValid &&= false
+            Map()
+          }
+        }
+      } else {
+        history.get(localChain(0)._2) match {
+          case value:(State,Eta) => {
+            value._1
+          }
+          case _ => {
+            isValid &&= false
+            Map()
+          }
+        }
+      }
+    }
+
     var ep = ep0
-    var bool = true
     var alpha_Ep = 0.0
     var tr_Ep = 0.0
     var pid:BlockId = (0,ByteArrayWrapper(Array()))
@@ -608,27 +638,38 @@ trait Methods
           break()
         }
       }
-      bool &&= false
+      isValid &&= false
     }
 
     for (id <- tine) {
-      updateLocalState(ls,Array(id)) match {
-        case value:State => ls = value
-        case _ => bool &&= false
+      if (isValid) updateLocalState(ls,Array(id)) match {
+        case value:State => {
+          ls = value
+        }
+        case _ => {
+          isValid &&= false
+          println("Error: encountered invalid ledger in tine")
+        }
       }
-      getBlock(id) match {
+      if (isValid) getBlock(id) match {
         case b:Block => {
           getParentBlock(b) match {
             case pb:Block => {
-              bool &&= getParentId(b) == pid
-              compareBlocks(pb,b)
-              pid = id
+              isValid &&= getParentId(b) == pid
+              if (isValid) {
+                compareBlocks(pb,b)
+                pid = id
+              }
             }
-            case _ => bool &&= false
+            case _ => {
+              println("Error: parent id mismatch in tine")
+              isValid &&= false
+            }
           }
         }
         case _ =>
       }
+      if (isValid) history.add(id._2,ls,eta_Ep)
     }
 
     def compareBlocks(parent:Block,block:Block) = {
@@ -639,7 +680,17 @@ trait Methods
           ep = i/epochLength
           if (ep0 + 1 == ep) {
             eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
-            stakingState = history_state((ep - 1) * epochLength)
+            stakingState = {
+              history.get(localChain((ep - 1) * epochLength)._2) match {
+                case value:(State,Eta) => {
+                  value._1
+                }
+                case _ => {
+                  isValid &&= false
+                  Map()
+                }
+              }
+            }
           } else {
             eta_Ep = eta(subChain(localChain, 0, prefix) ++ tine, ep, eta_Ep)
             updateLocalState(stakingState, subChain(subChain(localChain, 0, prefix) ++ tine, (i / epochLength) * epochLength - 2 * epochLength + 1, (i / epochLength) * epochLength - epochLength)) match {
@@ -652,7 +703,7 @@ trait Methods
       }
       alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
       tr_Ep = phi(alpha_Ep, f_s)
-      bool &&= (
+      isValid &&= (
              hash(parent) == h0
           && verifyBlock(block)
           && parent._3 == ps
@@ -664,7 +715,7 @@ trait Methods
           && tr_Ep == tr_c
           && compare(y, tr_Ep)
         )
-      if(!bool){
+      if(!isValid){
         print("Error: Holder "+holderIndex.toString+" ");print(slot);print(" ")
         println(Seq(
             hash(parent) == h0 //1
@@ -683,13 +734,17 @@ trait Methods
       }
     }
 
-    if(!bool) sharedData.throwError
+    if(!isValid) sharedData.throwError
     if (sharedData.error) {
       for (id<-subChain(localChain,0,prefix)++tine) {
         if (id._1 > -1) println("H:"+holderIndex.toString+"S:"+id._1.toString+"ID:"+Base58.encode(id._2.data))
       }
     }
-    bool
+    if (isValid) {
+      localState = ls
+      eta = eta_Ep
+    }
+    isValid
   }
 
   /**
@@ -739,53 +794,6 @@ trait Methods
     val sid:Sid = hash(rng.nextString(64))
     val trans:Transaction = (pk_s,pk_r,delta,sid,txCounter,sig.sign(sk_s,pk_r.data++delta.toByteArray++sid.data++serialize(txCounter)))
     trans
-  }
-
-  def rebaseIssueState(s:Slot,pk:PublicKeyW): State = {
-    val lastSlot = lastActiveSlot(localChain,s)
-    getBlock(localChain(lastSlot)) match {
-      case b:Block => {
-        val bn = b._9
-        if (bn > confirmationDepth + 1) {
-          var pb = getParentBlock(b) match {case bb:Block => bb}
-          for (i <- 1 to confirmationDepth) {
-            pb = getParentBlock(pb) match {case bb:Block => bb}
-          }
-          val ledger: Ledger = pb._2
-          for (entry <- ledger.tail) {
-            entry match {
-              case trans:Transaction => {
-                if (trans._1 == pk) {
-                  unconfirmedTxs = unconfirmedTxs.filter(_._4 != trans._4)
-                }
-              }
-              case _ =>
-            }
-          }
-          var out = history_state(pb._3+1)
-          for (entry <- unconfirmedTxs) {
-            applyTransaction(out,entry,ByteArrayWrapper(Array())) match {
-              case s:State => {
-                out = s
-              }
-              case _ => {println("error: issue state rebase tx counter mismatch 2");sharedData.throwError}
-            }
-          }
-          out
-        } else {
-          var out = history_state(0)
-          for (entry <- unconfirmedTxs) {
-            applyTransaction(out,entry,ByteArrayWrapper(Array())) match {
-              case s:State => {
-                out = s
-              }
-              case _ => {println("error: issue state rebase tx counter mismatch 1");sharedData.throwError}
-            }
-          }
-          out
-        }
-      }
-    }
   }
 
   /**

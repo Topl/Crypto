@@ -35,14 +35,8 @@ trait StakeholderVariables
   var genBlockHash: Hash = ByteArrayWrapper(Array())
   //placeholder for forged block if elected slot leader
   var roundBlock: Any = 0
-  //nonce for the epoch
-  var eta:Eta = Array()
   //staking threshold for the epoch
   var threshold: Double = 0.0
-  //total stake for the current epoch
-  var netStake: BigInt = 0
-  //total stake from the first epoch
-  var netStake0: BigInt = 0
   //max time steps set by coordinator
   var tMax = 0
   //start system time set by coordinator
