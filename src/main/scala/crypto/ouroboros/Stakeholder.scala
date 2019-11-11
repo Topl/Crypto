@@ -76,7 +76,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("error: invalid ledger in forged block")
           }
         }
-        trimMemPool
+        history.add(hb,localState,eta)
+        newHead = true
       }
       case _ =>
     }
@@ -120,17 +121,37 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   def updateWallet = {
     var id = localChain(lastActiveSlot(localChain,localSlot))
     val bn = {getBlock(id) match {case b:Block => b._9}}
-    breakable{
-      while (true) {
-        id = getParentId(id) match {case value:BlockId => value}
-        val bni = {getBlock(id) match {case b:Block => b._9}}
-        if (bni == bn-confirmationDepth || bni == 0) {
-          history.get(id._2) match {
-            case value:(State,Eta) => {
-              wallet.update(value._1)
+    if (bn == 0) {
+      getBlock(id) match {
+        case b:Block => {
+          val bni = b._9
+          if (bni == bn-confirmationDepth || bni == 0) {
+            history.get(id._2) match {
+              case value:(State,Eta) => {
+                wallet.update(value._1)
+              }
             }
           }
-          break
+        }
+      }
+    } else {
+      breakable{
+        while (true) {
+          id = getParentId(id) match {case value:BlockId => value}
+          getBlock(id) match {
+            case b:Block => {
+              val bni = b._9
+              if (bni == bn-confirmationDepth || bni == 0) {
+                wallet.apply(b._2)
+                history.get(id._2) match {
+                  case value:(State,Eta) => {
+                    wallet.update(value._1)
+                  }
+                }
+                break
+              }
+            }
+          }
         }
       }
     }
@@ -272,7 +293,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           localChain.update(i,(-1,ByteArrayWrapper(Array())))
         }
       }
-
       candidateTines = candidateTines.dropRight(1)
       var newCandidateTines:Array[(Chain,Slot,Int)] = Array()
       for (entry <- candidateTines) {
@@ -333,6 +353,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     )
     if (localSlot == globalSlot) {
       if (newHead) {
+        updateWallet
         trimMemPool
         newHead = false
       }
@@ -786,6 +807,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       eta = eta(localChain, 0, Array())
+      history.add(genBlockHash,localState,eta)
+      updateWallet
       sender() ! "done"
     }
 
