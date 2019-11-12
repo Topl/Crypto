@@ -3,8 +3,9 @@ package crypto.ouroboros
 import io.iohk.iodb.ByteArrayWrapper
 
 import scala.collection.immutable.ListMap
+import scala.util.Random
 
-class Wallet(pkw:ByteArrayWrapper) extends Types with Parameters with Methods {
+class Wallet(pkw:ByteArrayWrapper) extends Functions {
   var pendingTxsOut:Map[Sid,Transaction] = Map()
   var availableBalance:BigInt = 0
   var totalBalance:BigInt = 0
@@ -68,7 +69,7 @@ class Wallet(pkw:ByteArrayWrapper) extends Types with Parameters with Methods {
     }
   }
 
-  def revert(ledger:Ledger) = {
+  def add(ledger:Ledger) = {
     for (entry <- ledger) {
       entry match {
         case transaction: Transaction => {
@@ -79,7 +80,7 @@ class Wallet(pkw:ByteArrayWrapper) extends Types with Parameters with Methods {
     }
   }
 
-  def apply(ledger:Ledger) = {
+  def remove(ledger:Ledger) = {
     for (entry <- ledger) {
       entry match {
         case transaction: Transaction => {
@@ -94,12 +95,12 @@ class Wallet(pkw:ByteArrayWrapper) extends Types with Parameters with Methods {
     ListMap(pendingTxsOut.toSeq.sortWith(_._2._5 < _._2._5): _*)
   }
 
-  def issueTx(data:(ByteArrayWrapper,BigInt),sk_sig:Array[Byte]): Any = {
+  def issueTx(data:(ByteArrayWrapper,BigInt),sk_sig:Array[Byte],sig:Sig,rng:Random): Any = {
     if (issueState.keySet.contains(pkw)) {
       val (pk_r,delta) = data
       val scaledDelta = BigDecimal(delta.toDouble*netStake.toDouble/netStake0.toDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
       val txC = issueState(pkw)._3
-      val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC)
+      val trans:Transaction = signTransaction(sk_sig,pkw,pk_r,scaledDelta,txC,sig,rng)
       applyTransaction(issueState,trans,ByteArrayWrapper(Array())) match {
         case value:State => {
           issueState = value

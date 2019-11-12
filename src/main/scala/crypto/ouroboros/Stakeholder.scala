@@ -55,15 +55,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val sig: KesSignature = kes.sign(sk_kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, ledger, slot, cert, rho, pi, sig, pk_kes,bn,ps)
       }
-      if (holderIndex == sharedData.printingHolder && printFlag) {
-        println("Holder " + holderIndex.toString + " is slot a leader")
-      }
+
     } else {
       roundBlock = -1
     }
     roundBlock match {
       case b: Block => {
         val hb = hash(b)
+        val bn = b._9
+        if (printFlag) {
+          println("Holder " + holderIndex.toString + s" forged block $bn with id:"+Base58.encode(hb.data))
+        }
         blocks.update(localSlot, blocks(localSlot) + (hb -> b))
         localChain.update(localSlot, (localSlot, hb))
         chainHistory.update(localSlot,(localSlot, hb)::chainHistory(localSlot))
@@ -142,7 +144,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             case b:Block => {
               val bni = b._9
               if (bni == bn-confirmationDepth || bni == 0) {
-                wallet.apply(b._2)
+                wallet.remove(b._2)
                 history.get(id._2) match {
                   case value:(State,Eta) => {
                     wallet.update(value._1)
@@ -249,7 +251,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case b:Block => {
             val ledger:Ledger = b._2
             if (b._9 <= bnl - confirmationDepth) {
-              wallet.revert(ledger)
+              wallet.add(ledger)
             }
           }
           case _ =>
@@ -260,7 +262,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           case b:Block => {
             val ledger:Ledger = b._2
             if (b._9 <= bnt - confirmationDepth) {
-              wallet.apply(ledger)
+              wallet.remove(ledger)
             }
           }
           case _ =>
@@ -364,7 +366,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+Base58.encode(eta))
           }
           roundBlock = 0
-          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " Last Bid = " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
+          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " on block " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
           if (holderIndex == sharedData.printingHolder && printFlag) {
             println("Holder " + holderIndex.toString + " Update KES")
           }
@@ -715,7 +717,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         value.s match {
           case data:(PublicKeyW,BigInt) => {
             if (holderIndex == sharedData.printingHolder && printFlag) {println(s"Holder $holderIndex Issued Transaction")}
-            wallet.issueTx(data,sk_sig) match {
+            wallet.issueTx(data,sk_sig,sig,rng) match {
               case trans:Transaction => {
                 txCounter += 1
                 setOfTxs += (trans._4->trans._5)

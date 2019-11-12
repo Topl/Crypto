@@ -3,9 +3,16 @@ package crypto.ouroboros
 import scala.concurrent.duration._
 import com.typesafe.config.{Config, ConfigFactory}
 import java.io.File
+
+import io.iohk.iodb.ByteArrayWrapper
+
 import collection.JavaConverters._
 
 trait Parameters extends Utils {
+
+  //tags for identifying ledger entries
+  val forgeBytes = ByteArrayWrapper("FORGER_REWARD".getBytes)
+  val genesisBytes = ByteArrayWrapper("GENESIS".getBytes)
 
   def getConfig:Config = {
     import Prosomo.input
