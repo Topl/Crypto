@@ -127,11 +127,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       getBlock(id) match {
         case b:Block => {
           val bni = b._9
-          if (bni == bn-confirmationDepth || bni == 0) {
-            history.get(id._2) match {
-              case value:(State,Eta) => {
-                wallet.update(value._1)
-              }
+          history.get(id._2) match {
+            case value:(State,Eta) => {
+              wallet.update(value._1)
             }
           }
         }
@@ -143,8 +141,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           getBlock(id) match {
             case b:Block => {
               val bni = b._9
-              if (bni == bn-confirmationDepth || bni == 0) {
-                wallet.remove(b._2)
+              if (bni <= bn-confirmationDepth || bni == 0) {
                 history.get(id._2) match {
                   case value:(State,Eta) => {
                     wallet.update(value._1)
@@ -156,6 +153,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
       }
+    }
+    for (trans <- wallet.getPending(localState)) {
+      if (!memPool.keySet.contains(trans._4)) memPool += (trans._4->(trans,0))
+      send(self,gossipers, SendTx(trans))
     }
   }
 
@@ -250,20 +251,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         getBlock(id) match {
           case b:Block => {
             val ledger:Ledger = b._2
-            if (b._9 <= bnl - confirmationDepth) {
-              wallet.add(ledger)
-            }
-          }
-          case _ =>
-        }
-      }
-      for (id <- tine) {
-        getBlock(id) match {
-          case b:Block => {
-            val ledger:Ledger = b._2
-            if (b._9 <= bnt - confirmationDepth) {
-              wallet.remove(ledger)
-            }
+            wallet.add(ledger)
           }
           case _ =>
         }

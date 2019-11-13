@@ -55,6 +55,11 @@ class Wallet(pkw:ByteArrayWrapper) extends Functions {
   def update(state:State) = {
     issueState = state
     confirmedState = state
+    for (entry <- pendingTxsOut) {
+      if (entry._2._5 < issueState(pkw)._3) {
+        removeTx(entry._2)
+      }
+    }
     for (entry <- sortPendingTx) {
       val trans = entry._2
       applyTransaction(issueState,trans,ByteArrayWrapper(Array())) match {
@@ -67,6 +72,16 @@ class Wallet(pkw:ByteArrayWrapper) extends Functions {
         }
       }
     }
+  }
+
+  def getPending(state:State):List[Transaction] = {
+    var out:List[Transaction] = List()
+    for (entry <- pendingTxsOut) {
+      if (entry._2._5 >= state(pkw)._3) {
+        out ::= entry._2
+      }
+    }
+    out
   }
 
   def add(ledger:Ledger) = {
