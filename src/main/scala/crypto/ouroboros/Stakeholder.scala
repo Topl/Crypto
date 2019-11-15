@@ -484,18 +484,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       sender() ! "done"
     }
 
-    case "updateChain" => if (useFencing) {
-      if (!actorStalled) {
-        chainUpdateLock = true
-        while (chainUpdateLock) {
-          update
-        }
-        routerRef ! (self,"updateChain")
-      } else {
-        routerRef ! (self,"updateChain")
-      }
-    }
-
     case "endStep" => if (useFencing) {
       roundBlock = 0
       routerRef ! (self,"endStep")
@@ -503,6 +491,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case "passData" => if (useFencing) {
       routerRef ! (self,"passData")
+    }
+
+    case "issueTx" => if (useFencing) {
+      routerRef ! (self,"issueTx")
     }
 
       /**adds confirmed transactions to buffer and sends new ones to gossipers*/
@@ -563,6 +555,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       if (useFencing) {
+        chainUpdateLock = true
+        while (chainUpdateLock) {
+          update
+        }
         routerRef ! (self,"passData")
       }
     }
@@ -604,6 +600,10 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       if (useFencing) {
+        chainUpdateLock = true
+        while (chainUpdateLock) {
+          update
+        }
         routerRef ! (self,"passData")
       }
     }
@@ -709,7 +709,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               case trans:Transaction => {
                 txCounter += 1
                 setOfTxs += (trans._4->trans._5)
-                send(self,self,SendTx(trans))
+                memPool += (trans._4->(trans,0))
                 send(self,gossipers, SendTx(trans))
               }
               case _ => {println("Holder "+holderIndex.toString+" tx issue failed")}
@@ -721,7 +721,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         println("tx issued while stalled");sharedData.throwError
       }
       if (useFencing) {
-        routerRef ! (self,"issueTx")
         sender() ! "done"
       }
     }

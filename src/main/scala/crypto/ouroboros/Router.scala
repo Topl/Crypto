@@ -32,6 +32,8 @@ class Router(seed:Array[Byte]) extends Actor
   var firstDataPass = true
   var roundStep = "updateSlot"
   val printSteps = false
+  var txRoundCounter = 0
+  var maxDelay:Double = 0
 
   private case object timerKey
 
@@ -81,7 +83,7 @@ class Router(seed:Array[Byte]) extends Actor
     holderReady += (holder->false)
   }
 
-  def delay(sender:ActorRef,recip:ActorRef):FiniteDuration = {
+  def delay(sender:ActorRef,recip:ActorRef,data:Any):FiniteDuration = {
     if (!distanceMap.keySet.contains((sender,recip))) {
       distanceMap += ((sender,recip)->(delay_ms_km*1.0e6*DistanceCalculator.distance(
         holdersPosition(sender)._1,
@@ -90,39 +92,50 @@ class Router(seed:Array[Byte]) extends Actor
         holdersPosition(recip)._2,
         "K")).toLong)
     }
-    distanceMap((sender,recip)).nano
+    val delay_ns:Long = (rng.nextDouble()*delay_ms_noise*1.0e6).toLong + (serialize(data).length*delay_ms_byte*1.0e6).toLong + distanceMap((sender,recip))
+    if (delay_ns/1.0e9 > maxDelay) {maxDelay = delay_ns/1.0e9}
+    delay_ns.nano
   }
 
   def deliver = {
     var slotMessages = holderMessages(globalSlot)
-    holderMessages -= globalSlot
-    ts = slotMessages.keySet.min
-    var queue:Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]] = slotMessages(ts)
-    slotMessages -= ts
-    for (holder <- rng.shuffle(holders)) {
-      if (queue.keySet.contains(holder)) {
-        var messageMap:Map[BigInt,(ActorRef,ActorRef,Any)] = queue(holder)
-        queue -= holder
-        val message = ListMap(messageMap.toSeq.sortBy(_._1):_*).head
-        messageMap -= message._1
-        val (s,r,c) = message._2
-        reset(r)
-        if (printSteps) println(
-          holders.indexOf(s),
-          holders.indexOf(r),
-          c.getClass,message._1,
-          c match {
-            case value:SendBlock => Base58.encode(value.s match {case s:Box => {s._1 match {case bInfo: (Block,BlockId) => {bInfo._2._2.data}}}})
-            case value:SendTx => Base58.encode(value.s match {case trans:Transaction => {trans._4.data}})
-            case _ => " "
-          }
-        )
-        context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
-        if (messageMap.nonEmpty) queue += (holder->messageMap)
+    val next_message_t = slotMessages.keySet.min
+    if (next_message_t > (txRoundCounter*commandUpdateTime.toNanos)) {
+      txRoundCounter += 1
+      ts = txRoundCounter*commandUpdateTime.toNanos
+      coordinatorRef ! IssueTx("randTx")
+      roundStep = "issueTx"
+      reset
+    } else {
+      holderMessages -= globalSlot
+      ts = next_message_t
+      var queue:Map[ActorRef,Map[BigInt,(ActorRef,ActorRef,Any)]] = slotMessages(ts)
+      slotMessages -= ts
+      for (holder <- rng.shuffle(holders)) {
+        if (queue.keySet.contains(holder)) {
+          var messageMap:Map[BigInt,(ActorRef,ActorRef,Any)] = queue(holder)
+          queue -= holder
+          val message = ListMap(messageMap.toSeq.sortBy(_._1):_*).head
+          messageMap -= message._1
+          val (s,r,c) = message._2
+          reset(r)
+          if (printSteps) println(
+            holders.indexOf(s),
+            holders.indexOf(r),
+            c.getClass,message._1,
+            c match {
+              case value:SendBlock => Base58.encode(value.s match {case s:Box => {s._1 match {case bInfo: (Block,BlockId) => {bInfo._2._2.data}}}})
+              case value:SendTx => Base58.encode(value.s match {case trans:Transaction => {trans._4.data}})
+              case _ => " "
+            }
+          )
+          context.system.scheduler.scheduleOnce(0 nano,r,c)(context.system.dispatcher,s)
+          if (messageMap.nonEmpty) queue += (holder->messageMap)
+        }
       }
+      if (queue.nonEmpty) slotMessages += (ts->queue)
+      if (slotMessages.nonEmpty) holderMessages += (globalSlot -> slotMessages)
     }
-    if (queue.nonEmpty) slotMessages += (ts->queue)
-    if (slotMessages.nonEmpty) holderMessages += (globalSlot -> slotMessages)
   }
 
   def update = {
@@ -145,15 +158,14 @@ class Router(seed:Array[Byte]) extends Actor
         roundStep match {
           case "updateSlot" => {
             if (holdersReady) {
-              roundStep = "issueTx"
-              if (printSteps) println("--------issue----------")
+              roundStep = "passData"
               reset
-              sendAssertDone(coordinatorRef,IssueTx("randTx"))
             }
           }
           case "issueTx" => {
             if (holdersReady) {
               roundStep = "passData"
+              firstDataPass = true
               reset
             }
           }
@@ -163,11 +175,19 @@ class Router(seed:Array[Byte]) extends Actor
                 if (printSteps) println("-------deliver---------")
                 deliver
               } else {
-                roundStep = "updateChain"
-                if (printSteps) println("--------chain----------")
-                reset
-                for (holder<-holders) {
-                  holder ! "updateChain"
+                if (slotT*1000000>(txRoundCounter*commandUpdateTime.toNanos)) {
+                  txRoundCounter += 1
+                  ts = txRoundCounter*commandUpdateTime.toNanos
+                  coordinatorRef ! IssueTx("randTx")
+                  roundStep = "issueTx"
+                  reset
+                } else {
+                  roundStep = "endStep"
+                  if (printSteps) println("---------end-----------")
+                  reset
+                  for (holder<-holders) {
+                    holder ! "endStep"
+                  }
                 }
               }
             } else {
@@ -179,20 +199,11 @@ class Router(seed:Array[Byte]) extends Actor
               }
             }
           }
-          case "updateChain" => {
-            if (holdersReady) {
-              roundStep = "endStep"
-              if (printSteps) println("---------end-----------")
-              reset
-              for (holder<-holders) {
-                holder ! "endStep"
-              }
-            }
-          }
           case "endStep" => if (holdersReady && !roundDone) {
             if (printSteps) println("--------reset----------")
             roundDone = true
             firstDataPass = true
+            txRoundCounter = 0
             coordinatorRef ! EndStep
           }
           case _ =>
@@ -244,13 +255,13 @@ class Router(seed:Array[Byte]) extends Actor
     /** adds delay to routed message*/
     case newMessage:(ActorRef,ActorRef,Any) => {
       val (s,r,c) = newMessage
-      context.system.scheduler.scheduleOnce(delay(s,r),r,c)(context.system.dispatcher,sender())
+      context.system.scheduler.scheduleOnce(delay(s,r,c),r,c)(context.system.dispatcher,sender())
     }
 
     case newIdMessage:(BigInt,ActorRef,ActorRef,Any) => {
       val (uid,s,r,c) = newIdMessage
       val newMessage = (s,r,c)
-      val nsDelay = delay(s,r)
+      val nsDelay = delay(s,r,c)
       val messageDelta:Slot = ((nsDelay.toNanos+ts)/(slotT*1000000)).toInt
       val priority:Long = (nsDelay.toNanos+ts)%(slotT*1000000)
       val offsetSlot = globalSlot+messageDelta
