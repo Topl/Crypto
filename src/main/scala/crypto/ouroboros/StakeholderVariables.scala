@@ -55,7 +55,5 @@ trait StakeholderVariables
   var txCounter = 0
   //set of all txs issued by holder
   var setOfTxs:Map[Sid,Int] = Map()
-  //tracks if a new tine has been adopted
-  var newHead = false
 }
 

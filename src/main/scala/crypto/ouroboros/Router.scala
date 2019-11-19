@@ -34,6 +34,8 @@ class Router(seed:Array[Byte]) extends Actor
   val printSteps = false
   var txRoundCounter = 0
   var maxDelay:Double = 0
+  var transactionCounter:Int = 0
+  var holderKeys:Map[ActorRef,PublicKeyW] = Map()
 
   private case object timerKey
 
@@ -138,6 +140,25 @@ class Router(seed:Array[Byte]) extends Actor
     }
   }
 
+  /**randomly picks two holders and creates a transaction between the two*/
+  def issueTx = {
+    for (i <- 0 to txProbability.floor.toInt) {
+      val holder1 = rng.shuffle(holders).head
+      val r = rng.nextDouble
+      if (r<txProbability%1.0) {
+        val holder2 = holders.filter(_ != holder1)(rng.nextInt(holders.length-1))
+        assert(holder1 != holder2)
+        val delta:BigInt = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+        if (useFencing) {
+          sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
+        } else {
+          holder1 ! IssueTx((holderKeys(holder2),delta))
+        }
+        transactionCounter += 1
+      }
+    }
+  }
+
   def update = {
     if (globalSlot > L_s || sharedData.killFlag) {
       timers.cancelAll
@@ -213,6 +234,11 @@ class Router(seed:Array[Byte]) extends Actor
   }
 
   def receive: Receive = {
+
+    case value:Map[ActorRef,PublicKeyW] => {
+      holderKeys = value
+      sender() ! "done"
+    }
 
     case flag:(ActorRef,String) => {
       val (ref,value) = flag

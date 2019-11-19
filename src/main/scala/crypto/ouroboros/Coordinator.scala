@@ -61,6 +61,8 @@ class Coordinator extends Actor
       genBlock = forgeGenBlock
       println("Send GenBlock")
       sendAssertDone(holders,GenBlock(genBlock))
+      println("Send Router Keys")
+      sendAssertDone(routerRef,holderKeys)
     }
 
       /**tells actors to print their inbox */

@@ -27,7 +27,6 @@ trait Methods
   var localState:State = Map()
   var eta:Eta = Array()
   var stakingState:State = Map()
-  var memPool:MemPool = Map()
   var holderIndex:Int = -1
   var diffuseSent = false
 
@@ -37,7 +36,6 @@ trait Methods
   val sig = new Sig
 
   val history:History = new History
-  //val mempool:Mempool = new Mempool
   var rng:Random = new Random
   var routerRef:ActorRef = _
 
@@ -749,56 +747,15 @@ trait Methods
     }
   }
 
-  def trimMemPool: Unit = {
-    val mp = memPool
-    for (entry <- mp) {
-      if (entry._2._2 < confirmationDepth) {
-        val cnt = entry._2._2 + 1
-        memPool -= entry._1
-        memPool += (entry._1 -> (entry._2._1,cnt))
-      } else {
-        memPool -= entry._1
-      }
-      if (entry._2._1._5 < localState(entry._2._1._1)._3) {
-        memPool -= entry._1
-      }
-    }
-  }
-
-  /**
-    * collects all transaction on the ledger of each block in the passed chain and adds them to the buffer
-    * @param c chain to collect transactions
-    */
-  def collectLedger(c:Chain): Unit = {
-    for (id <- c) {
-      getBlock(id) match {
-        case b:Block => {
-          val ledger:Ledger = b._2
-          for (entry <- ledger.tail) {
-            entry match {
-              case trans:Transaction => {
-                if (!memPool.keySet.contains(trans._4)) {
-                  if (verifyTransaction(trans)) memPool += (trans._4->(trans,0))
-                }
-              }
-              case _ =>
-            }
-          }
-        }
-        case _ =>
-      }
-    }
-  }
-
   /**
     * sorts buffer and adds transaction to ledger during block forging
     * @param pkw public key triad of forger
     * @return list of transactions
     */
-  def chooseLedger(pkw:PublicKeyW): Ledger = {
+  def chooseLedger(pkw:PublicKeyW,mp:Mempool): Ledger = {
     var ledger: Ledger = List()
     var ls: State = localState
-    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._1._5 < _._2._1._5): _*)
+    val sortedBuffer:ListMap[Sid,(Transaction,Int)] = mp.getBuffer
     breakable {
       for (entry <- sortedBuffer) {
         val transaction:Transaction = entry._2._1
