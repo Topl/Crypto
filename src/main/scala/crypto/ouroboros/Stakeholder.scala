@@ -35,7 +35,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val slot = localSlot
     val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, eta ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
-    if (compare(y, threshold)) {
+    if (compare(y, forgerKeys.threshold)) {
       roundBlock = {
         val blockInfo = "forger index: "+holderIndex.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,localSlot-1))) match {case b:Block => b}
@@ -46,7 +46,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
         val ledger = blockBox::chooseLedger(forgerKeys.pkw,mempool)
-        val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, threshold,blockInfo)
+        val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo)
         val sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
       }
@@ -307,7 +307,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         if (keys.sk_kes.time(kes) < localSlot) {
           if (holderIndex == sharedData.printingHolder && printFlag && localSlot%epochLength == 0) {
             println("Current Epoch = " + currentEpoch.toString)
-            println("Holder " + holderIndex.toString + " alpha = " + alpha.toString+"\nEta:"+Base58.encode(eta))
+            println("Holder " + holderIndex.toString + " alpha = " + keys.alpha.toString+"\nEta:"+Base58.encode(eta))
           }
           roundBlock = 0
           if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " on block " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
@@ -368,8 +368,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
       }
-      alpha = relativeStake(keys.pkw, stakingState)
-      threshold = phi(alpha, f_s)
+      keys.alpha = relativeStake(keys.pkw, stakingState)
+      keys.threshold = phi(keys.alpha, f_s)
       if (currentEpoch > 0) {
         eta = eta(localChain, currentEpoch, eta)
       }
@@ -826,7 +826,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       /**prints stats */
     case Verify => {
       val trueChain = verifyChain(localChain, genBlockHash)
-      println("Holder "+holderIndex.toString + ": t = " + localSlot.toString + ", alpha = " + alpha.toString + ", blocks forged = "
+      println("Holder "+holderIndex.toString + ": t = " + localSlot.toString + ", alpha = " + keys.alpha.toString + ", blocks forged = "
         + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString + ", Valid chain = "
         + trueChain.toString)
       var chainBytes:Array[Byte] = Array()
@@ -850,7 +850,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
       /**prints stats */
     case Status => {
-      println("Holder "+holderIndex.toString + ": t = " + localSlot.toString + ", alpha = " + alpha.toString + ", blocks forged = "
+      println("Holder "+holderIndex.toString + ": t = " + localSlot.toString + ", alpha = " + keys.alpha.toString + ", blocks forged = "
         + blocksForged.toString + "\nChain length = " + getActiveSlots(localChain).toString+", MemPool Size = "+mempool.transactions.size+" Num Gossipers = "+gossipers.length.toString)
       var chainBytes:Array[Byte] = Array()
       for (id <- subChain(localChain,0,localSlot-confirmationDepth)) {
@@ -927,7 +927,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           val fileString = (
             holderIndex.toString + " "
               + globalSlot.toString + " "
-              + alpha.toString + " "
+              + keys.alpha.toString + " "
               + blocksForged.toString + " "
               + getActiveSlots(localChain).toString + " "
               + "\n"
