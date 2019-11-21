@@ -449,8 +449,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       routerRef ! (self,"passData")
     }
 
-    case "issueTx" => if (useFencing) {
-      routerRef ! (self,"issueTx")
+    case "issueRandTx" => if (useFencing) {
+      routerRef ! (self,"issueRandTx")
     }
 
       /**adds confirmed transactions to buffer and sends new ones to gossipers*/
@@ -821,6 +821,12 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
       println("")
       sender() ! "done"
+    }
+
+    case GetBalance => {
+      val netAvailable = wallet.getBalance
+      val netTotal = wallet.getTotalBalance
+      println(s"Holder $holderIndex available balance: $netAvailable , total balance: $netTotal")
     }
 
       /**prints stats */

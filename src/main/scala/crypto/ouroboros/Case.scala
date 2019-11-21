@@ -21,6 +21,7 @@ case object NewDataFile
 case object NextSlot
 case object EndStep
 case object RequestPositionData
+case object GetBalance
 case class NullBlock(job:Int)
 case class GetSlot(s:Int)
 case class Hello(id: Any)
