@@ -17,6 +17,8 @@ trait StakeholderVariables
   var numHello = 0
   //map of all session IDs and public keys associated with holders in holder list
   var inbox:Map[Sid,(ActorRef,PublicKeys)] = Map()
+  //local stakeholder epoch relative stake
+  var alpha = 0.0
   //total number of times this stakeholder was elected slot leader
   var blocksForged = 0
   //slot time as determined from coordinator clock
@@ -33,6 +35,8 @@ trait StakeholderVariables
   var genBlockHash: Hash = ByteArrayWrapper(Array())
   //placeholder for forged block if elected slot leader
   var roundBlock: Any = 0
+  //staking threshold for the epoch
+  var threshold: Double = 0.0
   //max time steps set by coordinator
   var tMax = 0
   //start system time set by coordinator

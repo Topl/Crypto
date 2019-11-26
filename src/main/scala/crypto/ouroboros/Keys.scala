@@ -11,8 +11,6 @@ class Keys extends Types {
   var pk_kes:PublicKey = Array()
   var publicKeys:PublicKeys = (Array(),Array(),Array())
   var pkw:PublicKeyW = ByteArrayWrapper(Array())
-  var alpha:Double = 0.0
-  var threshold:Double = 0.0
 
   def seedKeys(seed:Array[Byte],sig:Sig,vrf:Vrf,kes:Kes,t:Int) = {
     sk_vrf = vrf.vrfKeypair(seed)._1
