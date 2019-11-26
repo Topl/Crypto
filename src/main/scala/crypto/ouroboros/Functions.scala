@@ -119,17 +119,18 @@ trait Functions
 
   /**
     * calculates alpha, the epoch relative stake, from the staking state
-    * @param holderKey
+    * @param holderKeys
     * @param ls
     * @return
     */
-  def relativeStake(holderKey:PublicKeyW,ls:State): Double = {
+  def relativeStake(holderKeys:PublicKeys,ls:State): Double = {
     var netStake:BigInt = 0
     var holderStake:BigInt = 0
     for (member <- ls.keySet) {
       val (balance,activityIndex,txC) = ls(member)
       if (activityIndex) netStake += balance
     }
+    val holderKey = ByteArrayWrapper(holderKeys._1++holderKeys._2++holderKeys._3)
     if (ls.keySet.contains(holderKey)){
       val (balance,activityIndex,txC) = ls(holderKey)
       if (activityIndex) holderStake += balance
