@@ -106,7 +106,7 @@ class Wallet(pkw:ByteArrayWrapper) extends Functions {
     }
   }
 
-  def sortPendingTx:ListMap[Sid,Transaction] = {
+  def sortPendingTx = {
     ListMap(pendingTxsOut.toSeq.sortWith(_._2._5 < _._2._5): _*)
   }
 

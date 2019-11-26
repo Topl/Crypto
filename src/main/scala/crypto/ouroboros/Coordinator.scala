@@ -165,7 +165,7 @@ class Coordinator extends Actor
   }
 
   /**randomly picks two holders and creates a transaction between the two*/
-  def issueRandTx = {
+  def issueTx = {
     for (i <- 0 to txProbability.floor.toInt) {
       val holder1 = rng.shuffle(holders).head
       val r = rng.nextDouble
@@ -179,19 +179,12 @@ class Coordinator extends Actor
     }
   }
 
-  def issueTx(holder1:ActorRef,holder2:ActorRef,delta:BigInt) = {
-    holder1 ! IssueTx((holderKeys(holder2),delta))
-    transactionCounter += 1
-  }
-
   /**command string interpreter*/
   def command(sl:List[String]): Unit = {
     for (s<-sl.reverse){
       s.trim match {
 
-        case "status_all" => {
-          sharedData.txCounter = 0
-          sharedData.setOfTxs = Map()
+        case "status" => {
           sendAssertDone(holders,Status)
           assert(sharedData.setOfTxs.keySet.size == sharedData.txCounter)
           println("Total Transactions: "+sharedData.setOfTxs.keySet.size.toString)
@@ -201,7 +194,7 @@ class Coordinator extends Actor
 
         case "fence_step" => sendAssertDone(routerRef,"fence_step")
 
-        case "verify_all" => sendAssertDone(holders,Verify)
+        case "verify" => sendAssertDone(holders,Verify)
 
         case "stall" => sendAssertDone(holders,StallActor)
 
@@ -452,36 +445,6 @@ class Coordinator extends Actor
             gossipersMap = getGossipers(holders)
           }
 
-          val arg4 = "issue_"
-          if (value.slice(0,arg4.length) == arg4) {
-            val data:String = value.drop(arg4.length)
-            val hIndex1s:String = data.split("_")(0)
-            val hIndex2s:String = data.split("_")(1)
-            val deltas:String = data.split("_")(2)
-            val holder1:ActorRef = holders(hIndex1s.toInt)
-            val holder2:ActorRef = holders(hIndex2s.toInt)
-            val delta:BigInt = BigInt(deltas)
-            issueTx(holder1,holder2,delta)
-          }
-
-          val arg5 = "balance_"
-          if (value.slice(0,arg5.length) == arg5) {
-            val data = value.drop(arg5.length)
-            holders(data.toInt) ! GetBalance
-          }
-
-          val arg6 = "status_"
-          if (value.slice(0,arg6.length) == arg6) {
-            val data = value.drop(arg6.length)
-            sendAssertDone(holders(data.toInt),Status)
-            println("Total Txs:"+transactionCounter.toString)
-          }
-
-          val arg7 = "verify_"
-          if (value.slice(0,arg7.length) == arg7) {
-            val data = value.drop(arg7.length)
-            sendAssertDone(holders(data.toInt),Verify)
-          }
         }
 
         case _ =>
@@ -558,7 +521,7 @@ class Coordinator extends Actor
     }
 
     if (!actorStalled && transactionFlag && !useFencing && t>1 && t<L_s && transactionCounter < txMax && !sharedData.errorFlag) {
-      issueRandTx
+      issueTx
     }
 
     if (sharedData.killFlag || t>L_s+2*delta_s) {
