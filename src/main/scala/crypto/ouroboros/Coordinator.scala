@@ -132,6 +132,17 @@ class Coordinator extends Actor
       }
     }
 
+    case value:IssueTx => {
+      value.s match {
+        case "randTx" => {
+          issueTx
+        }
+      }
+      for (holder <- holders) {
+        holder ! "issueTx"
+      }
+    }
+
     case NextSlot => {
       if (!actorPaused && !actorStalled) {
         if (roundDone) {
@@ -173,7 +184,11 @@ class Coordinator extends Actor
         val holder2 = holders.filter(_ != holder1)(rng.nextInt(holders.length-1))
         assert(holder1 != holder2)
         val delta:BigInt = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-        holder1 ! IssueTx((holderKeys(holder2),delta))
+        if (useFencing) {
+          sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
+        } else {
+          holder1 ! IssueTx((holderKeys(holder2),delta))
+        }
         transactionCounter += 1
       }
     }
