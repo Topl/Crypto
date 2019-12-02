@@ -437,7 +437,7 @@ trait Methods
         }
         i+=1
       }
-      alpha_Ep = relativeStake((pk_sig, pk_vrf, pk_kes), stakingState)
+      alpha_Ep = relativeStake(ByteArrayWrapper(pk_sig++pk_vrf++pk_kes), stakingState)
       tr_Ep = phi(alpha_Ep, f_s)
       bool &&= (
         hash(parent) == h0
@@ -590,7 +590,7 @@ trait Methods
         }
         i+=1
       }
-      alpha_Ep = relativeStake((pk_sig,pk_vrf,pk_kes),stakingState)
+      alpha_Ep = relativeStake(ByteArrayWrapper(pk_sig++pk_vrf++pk_kes),stakingState)
       tr_Ep = phi(alpha_Ep, f_s)
       isValid &&= (
              hash(parent) == h0
