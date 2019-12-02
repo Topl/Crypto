@@ -72,7 +72,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
         }
         history.add(hb,localState,eta)
-        newHead = true
+        updateWallet
+        trimMemPool
       }
       case _ =>
     }
@@ -285,7 +286,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         }
       }
       candidateTines = newCandidateTines
-      newHead = true
+      updateWallet
+      trimMemPool
     } else {
       collectLedger(tine)
       for (id <- subChain(localChain,prefix+1,localSlot)) {
@@ -335,11 +337,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       updateEpoch
     )
     if (localSlot == globalSlot) {
-      if (newHead) {
-        updateWallet
-        trimMemPool
-        newHead = false
-      }
       time(
         if (keys.sk_kes.time(kes) < localSlot) {
           if (holderIndex == sharedData.printingHolder && printFlag && localSlot%epochLength == 0) {
