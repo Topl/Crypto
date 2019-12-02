@@ -271,6 +271,7 @@ In order to schedule commands and set parameters, spdecify the command in the cm
 would set the number of holders in the simulation to 32.  The simulation would evolve until slot 100 and the 32 holders would be split based on their stake into parties consisting of ~30% and ~70% of the net stake respectively.  Then once slot 200 is reached, the parties are joined back together.  This kind of control allows specific network conditions to be emulated to study how the protocol responds to these scenarios.  The plan is to model adversarial behavior with commands that stall parties and change the network connectivity.
 
 The parameters available to be set in the *.conf format files are listed below:
+
     params {
       //seed for pseudo random runs
       inputSeed = ""
