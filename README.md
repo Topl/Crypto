@@ -149,11 +149,13 @@ Prosomo has command line configuration capabilities.  The *.conf files are HOCON
         cmd = []
       }
     }
+    
 The command line also accepts HOCON formatted strings in the command line to enable scripts to set values in batch jobs.  An example of a parameter sweep run in the bin directory is given below (using GNU parallel):
     
     parallel --jobs 32 "./prosomo input \"input{params{f_s={1},delay_ms_km={2},inputSeed={3}}}\"" ::: 0.15 0.25 0.35 ::: 0.0 0.1 0.2 0.3 0.4 ::: seed1 seed2 seed3
 
 The prosomo executable will look for a file called input.conf in the local directory and load those values, then it loads the values specified in the string.  The first argument of the prosomo executable specifies the file to look for, e.g. ./prosomo run1 will look for a file called run1.conf
+
 **Commands**
 
 Commands may be specified to execute in a given slot in the configuration file.
@@ -253,6 +255,14 @@ Joins the parties back together and resets all actors gossipers.
     new_holder
 
 Creates a new holder that bootstraps from the genesis block.  The new holder will not have any stake initially and won’t be able to forge blocks until future epochs where it has acquired tokens through transactions.
+
+    balance_0
+    
+Prints the confirmed and pending account balance of holder of the given index, e.g. balance_2 will print the 2nd holders balance.
+
+    issue_0_1_100
+    
+Generates a transaction from holder 0 to holder 1 with a delta of 100 tokens.  Can be used to script transactions between holders of any amount, e.g. issue_23_17_2000 with send 2000 tokens from holder 23 to holder 17.
 
 **Configuration Files**
 
