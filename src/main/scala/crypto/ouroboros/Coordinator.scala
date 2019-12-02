@@ -61,6 +61,8 @@ class Coordinator extends Actor
       genBlock = forgeGenBlock
       println("Send GenBlock")
       sendAssertDone(holders,GenBlock(genBlock))
+      println("Send Router Keys")
+      sendAssertDone(routerRef,holderKeys)
     }
 
       /**tells actors to print their inbox */
@@ -130,17 +132,6 @@ class Coordinator extends Actor
       }
     }
 
-    case value:IssueTx => {
-      value.s match {
-        case "randTx" => {
-          issueTx
-        }
-      }
-      for (holder <- holders) {
-        holder ! "issueTx"
-      }
-    }
-
     case NextSlot => {
       if (!actorPaused && !actorStalled) {
         if (roundDone) {
@@ -182,12 +173,8 @@ class Coordinator extends Actor
         val holder2 = holders.filter(_ != holder1)(rng.nextInt(holders.length-1))
         assert(holder1 != holder2)
         val delta:BigInt = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
-        if (useFencing) {
-          sendAssertDone(holder1,IssueTx((holderKeys(holder2),delta)))
-        } else {
-          holder1 ! IssueTx((holderKeys(holder2),delta))
-        }
         transactionCounter += 1
+        holder1 ! IssueTx((holderKeys(holder2),delta))
       }
     }
   }

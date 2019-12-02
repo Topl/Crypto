@@ -721,7 +721,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         println("tx issued while stalled");sharedData.throwError
       }
       if (useFencing) {
-        sender() ! "done"
+        routerRef ! (self,"passData")
       }
     }
 

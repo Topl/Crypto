@@ -34,6 +34,8 @@ class Router(seed:Array[Byte]) extends Actor
   val printSteps = false
   var txRoundCounter = 0
   var maxDelay:Double = 0
+  var transactionCounter:Int = 0
+  var holderKeys:Map[ActorRef,PublicKeyW] = Map()
 
   private case object timerKey
 
@@ -103,9 +105,7 @@ class Router(seed:Array[Byte]) extends Actor
     if (next_message_t > (txRoundCounter*commandUpdateTime.toNanos)) {
       txRoundCounter += 1
       ts = txRoundCounter*commandUpdateTime.toNanos
-      coordinatorRef ! IssueTx("randTx")
-      roundStep = "issueTx"
-      reset
+      issueTx
     } else {
       holderMessages -= globalSlot
       ts = next_message_t
@@ -138,6 +138,22 @@ class Router(seed:Array[Byte]) extends Actor
     }
   }
 
+  /**randomly picks two holders and creates a transaction between the two*/
+  def issueTx = {
+    for (i <- 0 to txProbability.floor.toInt) {
+      val holder1 = rng.shuffle(holders).head
+      val r = rng.nextDouble
+      if (r<txProbability%1.0) {
+        val holder2 = holders.filter(_ != holder1)(rng.nextInt(holders.length-1))
+        assert(holder1 != holder2)
+        val delta:BigInt = BigDecimal(maxTransfer*rng.nextDouble).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt
+        reset(holder1)
+        transactionCounter += 1
+        context.system.scheduler.scheduleOnce(0 nano,holder1,IssueTx((holderKeys(holder2),delta)))(context.system.dispatcher,self)
+      }
+    }
+  }
+
   def update = {
     if (globalSlot > L_s || sharedData.killFlag) {
       timers.cancelAll
@@ -162,13 +178,6 @@ class Router(seed:Array[Byte]) extends Actor
               reset
             }
           }
-          case "issueTx" => {
-            if (holdersReady) {
-              roundStep = "passData"
-              firstDataPass = true
-              reset
-            }
-          }
           case "passData" => {
             if (holdersReady) {
               if (holderMessages.keySet.contains(globalSlot)) {
@@ -178,9 +187,7 @@ class Router(seed:Array[Byte]) extends Actor
                 if (slotT*1000000>(txRoundCounter*commandUpdateTime.toNanos)) {
                   txRoundCounter += 1
                   ts = txRoundCounter*commandUpdateTime.toNanos
-                  coordinatorRef ! IssueTx("randTx")
-                  roundStep = "issueTx"
-                  reset
+                  issueTx
                 } else {
                   roundStep = "endStep"
                   if (printSteps) println("---------end-----------")
@@ -213,6 +220,11 @@ class Router(seed:Array[Byte]) extends Actor
   }
 
   def receive: Receive = {
+
+    case value:Map[ActorRef,PublicKeyW] => {
+      holderKeys = value
+      sender() ! "done"
+    }
 
     case flag:(ActorRef,String) => {
       val (ref,value) = flag
