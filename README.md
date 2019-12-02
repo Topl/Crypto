@@ -138,6 +138,7 @@ Transactions that are broadcast on the network file into stakeholders mempools a
 The simulation is designed to execute a predetermined number of slots, retaining all information in memory.  Chain data is written to disk only when the command is given, stakeholders retain all data in memory and don’t save or load blocks to disk.  The project can be run either in the scala build tool (sbt) console or staged for deployment to a server by running ‘sbt stage’ in the project directory.  This creates the executable Crypto/target/universal/stage/bin/prosomo that can be run independently of sbt.  A command line script for interacting with the simulation is provided in the project directory.  To execute the command line, run Crypto/cmd.sh in a separate terminal.  This is used to pass commands to Prosomo via a file tmp/scorex/test-data/crypto/cmd and also can be used to queue commands at a later slot.  Just enter the desired slot number next to the command.  The command line input script is mostly for debugging purposes, and is useful for manipulating repeated simulation runs in real time.
 
 Prosomo has command line configuration capabilities.  The *.conf files are HOCON formatted configuration files that specify the simulation parameters and commands.  To run a simulation with a given input command, they can be entered into an array in the .conf file.  The default input.conf file is given below, and is included in the project directory:
+    
     input{
       params {
         //your parameters go here
@@ -149,7 +150,9 @@ Prosomo has command line configuration capabilities.  The *.conf files are HOCON
       }
     }
 The command line also accepts HOCON formatted strings in the command line to enable scripts to set values in batch jobs.  An example of a parameter sweep run in the bin directory is given below (using GNU parallel):
+    
     parallel --jobs 32 "./prosomo input \"input{params{f_s={1},delay_ms_km={2},inputSeed={3}}}\"" ::: 0.15 0.25 0.35 ::: 0.0 0.1 0.2 0.3 0.4 ::: seed1 seed2 seed3
+
 The prosomo executable will look for a file called input.conf in the local directory and load those values, then it loads the values specified in the string.  The first argument of the prosomo executable specifies the file to look for, e.g. ./prosomo run1 will look for a file called run1.conf
 **Commands**
 
