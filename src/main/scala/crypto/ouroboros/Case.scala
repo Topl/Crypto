@@ -44,4 +44,5 @@ case class Party(list:Any,clear:Boolean)
 case class GetState(s:Any)
 case class GetBlockTree(t:Any,h:Any)
 case class GetPositionData(s:Any)
+case class Adversary(s:String)
 

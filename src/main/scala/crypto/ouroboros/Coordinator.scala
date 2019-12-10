@@ -483,6 +483,18 @@ class Coordinator extends Actor
             sendAssertDone(holders(data.toInt),Verify)
           }
 
+          val arg8 = "adversary_"
+          if (value.slice(0,arg8.length) == arg8) {
+            val data = value.drop(arg8.length)
+            sendAssertDone(holders(data.toInt),Adversary(""))
+          }
+
+          val arg9 = "covert_"
+          if (value.slice(0,arg9.length) == arg9) {
+            val data = value.drop(arg9.length)
+            sendAssertDone(holders(data.toInt),Adversary("covert"))
+          }
+
         }
         case _ =>
       }

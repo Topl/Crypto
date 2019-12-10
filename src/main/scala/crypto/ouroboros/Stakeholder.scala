@@ -461,6 +461,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   /************************Adversarial********************************/
 
   var honestPrefix:BlockId = (-1,ByteArrayWrapper(Array()))
+  var covertHead:BlockId = (-1,ByteArrayWrapper(Array()))
 
   def leaderTest(forgerKeys:Keys,slot:Int,etaIn:Eta):Boolean = {
     val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("TEST"))
@@ -483,6 +484,40 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
   }
 
+  def covertlyForge = {
+    val data:(State,Eta) = history.get(covertHead._2) match {case value:(State,Eta) => value}
+    if (leaderTest(keys,localSlot,eta)) {
+      val parentBlock:Block = getBlock(covertHead) match {case value:Block => value}
+      //(forgerKeys:Keys,pb:Block,slot:Int,stateIn:State,etaIn:Eta)
+      val covertBlock = forgeBlock(keys,parentBlock,localSlot,data._1,eta)
+      roundBlock = covertBlock
+    } else {
+      roundBlock = -1
+    }
+    roundBlock match {
+      case b: Block => {
+        val hb = hash(b)
+        val bn = b._9
+        if (printFlag) {
+          println("Holder " + holderIndex.toString + s" forged block $bn with id:"+Base58.encode(hb.data))
+        }
+        blocks.update(localSlot, blocks(localSlot) + (hb -> b))
+        blocksForged += 1
+        updateLocalState(data._1, Array((localSlot,hb))) match {
+          case value:State => {
+            covertHead = (localSlot,hb)
+            history.add(hb,value,eta)
+          }
+          case _ => {
+            sharedData.throwError
+            println("error: invalid ledger in forged block")
+          }
+        }
+      }
+      case _ =>
+    }
+  }
+
   def updateAdversary = {
     if (sharedData.error) {
       actorStalled = true
@@ -503,7 +538,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             if (holderIndex == sharedData.printingHolder && printFlag) {
               println("Holder " + holderIndex.toString + " Forging")
             }
-            forgeBlock(keys)
+            if(covert) {
+              covertlyForge
+            } else {
+              forgeBlock(keys)
+            }
             if (useFencing) {
               routerRef ! (self, "updateSlot")
             }
@@ -539,7 +578,11 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
       /**updates time, the kes key, and resets variables */
     case Update => {
-      update
+      if (adversary) {
+        updateAdversary
+      } else {
+        update
+      }
     }
 
     case value:GetSlot => {
@@ -562,6 +605,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case "passData" => if (useFencing) {
       routerRef ! (self,"passData")
+    }
+
+    case value:Adversary => {
+      value.s match {
+        case "" => if (adversary) {adversary=false} else {adversary=true}
+        case "covert" => if (covert) {adversary=false;covert=false} else {adversary=true;covert=true}
+      }
     }
 
       /**adds confirmed transactions to buffer and sends new ones to gossipers*/
