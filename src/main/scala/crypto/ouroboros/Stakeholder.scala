@@ -29,6 +29,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
   private case object timerKey
 
+
+  /*************************Honest************************************/
+
+  def blockInfo:String = {
+    "forger index: "+holderIndex.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
+  }
+
   /**determines eligibility for a stakeholder to be a slot leader then calculates a block with epoch variables */
   def forgeBlock(forgerKeys:Keys) = {
     val slot = localSlot
@@ -36,7 +43,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val y: Rho = vrf.vrfProofToHash(pi_y)
     if (compare(y, forgerKeys.threshold)) {
       roundBlock = {
-        val blockInfo = "forger index: "+holderIndex.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
         val pb:Block = getBlock(localChain(lastActiveSlot(localChain,localSlot-1))) match {case b:Block => b}
         val bn:Int = pb._9 + 1
         val ps:Slot = pb._3
@@ -44,7 +50,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val pi: Pi = vrf.vrfProof(forgerKeys.sk_vrf, eta ++ serialize(slot) ++ serialize("NONCE"))
         val rho: Rho = vrf.vrfProofToHash(pi)
         val h: Hash = hash(pb)
-        val ledger = blockBox::chooseLedger(forgerKeys.pkw)
+        val ledger = blockBox::chooseLedger(forgerKeys.pkw,memPool,localState)
         val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo)
         val sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
         (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
@@ -451,6 +457,81 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       }
     }
   }
+
+  /************************Adversarial********************************/
+
+  var honestPrefix:BlockId = (-1,ByteArrayWrapper(Array()))
+
+  def leaderTest(forgerKeys:Keys,slot:Int,etaIn:Eta):Boolean = {
+    val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("TEST"))
+    val y: Rho = vrf.vrfProofToHash(pi_y)
+    compare(y, forgerKeys.threshold)
+  }
+
+  def forgeBlock(forgerKeys:Keys,pb:Block,slot:Int,stateIn:State,etaIn:Eta):Block = {
+    val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("TEST"))
+    val y: Rho = vrf.vrfProofToHash(pi_y)
+    val bn:Int = pb._9 + 1
+    val ps:Slot = pb._3
+    val blockBox: Box = signBox((forgeBytes,BigDecimal(forgerReward).setScale(0, BigDecimal.RoundingMode.HALF_UP).toBigInt), sessionId, forgerKeys.sk_sig, forgerKeys.pk_sig)
+    val pi: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("NONCE"))
+    val rho: Rho = vrf.vrfProofToHash(pi)
+    val h: Hash = hash(pb)
+    val ledger = blockBox::chooseLedger(forgerKeys.pkw,memPool,stateIn)
+    val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo)
+    val sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+    (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
+  }
+
+  def updateAdversary = {
+    if (sharedData.error) {
+      actorStalled = true
+    }
+    if (!actorStalled) {
+      if (!updating) {
+        updating = true
+        if (globalSlot > tMax || sharedData.killFlag) {
+          timers.cancelAll
+        } else if (diffuseSent) {
+          if (!useFencing) coordinatorRef ! GetTime
+          if (globalSlot > localSlot) {
+            while (globalSlot > localSlot) {
+              localSlot += 1
+              updateSlot
+            }
+          } else if (roundBlock == 0 && candidateTines.isEmpty) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {
+              println("Holder " + holderIndex.toString + " Forging")
+            }
+            forgeBlock(keys)
+            if (useFencing) {
+              routerRef ! (self, "updateSlot")
+            }
+          } else if (!useFencing && candidateTines.nonEmpty) {
+            if (holderIndex == sharedData.printingHolder && printFlag) {
+              println("Holder " + holderIndex.toString + " Checking Tine")
+            }
+            time(maxValidBG)
+            while (globalSlot > localSlot) {
+              localSlot += 1
+              updateSlot
+            }
+          } else if (useFencing && chainUpdateLock) {
+            if (candidateTines.isEmpty) {
+              chainUpdateLock = false
+            } else {
+              if (holderIndex == sharedData.printingHolder && printFlag) {
+                println("Holder " + holderIndex.toString + " Checking Tine")
+              }
+              time(maxValidBG)
+            }
+          }
+        }
+        updating = false
+      }
+    }
+  }
+
 
   def receive: Receive = {
 

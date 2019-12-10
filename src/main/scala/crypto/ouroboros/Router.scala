@@ -199,6 +199,7 @@ class Router(seed:Array[Byte]) extends Actor
               }
             } else {
               if (firstDataPass) {
+                if (printSteps) println("---------first-----------")
                 for (holder<-holders) {
                   holder ! "passData"
                 }
@@ -304,7 +305,7 @@ class Router(seed:Array[Byte]) extends Actor
     }
 
     case Run => {
-      timers.startPeriodicTimer(timerKey, Update, commandUpdateTime)
+      timers.startPeriodicTimer(timerKey, Update, 1 nano)
       coordinatorRef ! NextSlot
     }
 
@@ -337,6 +338,16 @@ class Router(seed:Array[Byte]) extends Actor
     }
 
     case _ =>
+  }
+
+  def time[R](block: => R): R = {
+    val t0 = System.nanoTime()
+    val result = block
+    val t1 = System.nanoTime()
+    val outTime = (t1 - t0)*1.0e-9
+    val tString = "%6.6f".format(outTime)
+    println("Elapsed time: " + tString + " s")
+    result
   }
 }
 

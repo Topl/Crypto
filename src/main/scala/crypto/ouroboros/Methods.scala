@@ -795,10 +795,10 @@ trait Methods
     * @param pkw public key triad of forger
     * @return list of transactions
     */
-  def chooseLedger(pkw:PublicKeyW): Ledger = {
+  def chooseLedger(pkw:PublicKeyW,mp:MemPool,s:State): Ledger = {
     var ledger: Ledger = List()
-    var ls: State = localState
-    val sortedBuffer = ListMap(memPool.toSeq.sortWith(_._2._1._5 < _._2._1._5): _*)
+    var ls: State = s
+    val sortedBuffer = ListMap(mp.toSeq.sortWith(_._2._1._5 < _._2._1._5): _*)
     breakable {
       for (entry <- sortedBuffer) {
         val transaction:Transaction = entry._2._1

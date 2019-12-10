@@ -51,5 +51,9 @@ trait StakeholderVariables
   var txCounter = 0
   //set of all txs issued by holder
   var setOfTxs:Map[Sid,Int] = Map()
+  //toggle if holder is adversary
+  var adversary:Boolean = false
+  //toggle for covert mining
+  var covert:Boolean = false
 }
 
