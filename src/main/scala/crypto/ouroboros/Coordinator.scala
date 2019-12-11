@@ -748,11 +748,19 @@ class Coordinator extends Actor
     val ledger: Ledger = holders.map{
       case ref:ActorRef => {
         val initStake = {
-          val out = initStakeMax*rng.nextDouble
-          if (initStakeMax > 1.0 && out > 1.0) {
+          val out = stakeDistribution match {
+            case "random" => {initStakeMax*rng.nextDouble}
+            case "exp" => {initStakeMax*math.exp(-stakeScale*holders.indexOf(ref).toDouble)}
+            case "flat" => {initStakeMax}
+          }
+          if (initStakeMax > initStakeMin && out > initStakeMin) {
             out
           } else {
-            1.0
+            if (initStakeMin > 1.0) {
+              initStakeMin
+            } else {
+              1.0
+            }
           }
         }
         val pkw = ByteArrayWrapper(hex2bytes(genKeys(s"${ref.path}").split(";")(0))++hex2bytes(genKeys(s"${ref.path}").split(";")(1))++hex2bytes(genKeys(s"${ref.path}").split(";")(2)))

@@ -174,5 +174,7 @@ trait Parameters extends Utils {
       config.getString("params.inputSeed")
     }
   }
-
+  val stakeDistribution:String = config.getString("params.stakeDistribution")
+  val stakeScale:Double = config.getDouble("params.stakeScale")
+  val initStakeMin:Double = config.getDouble("params.initStakeMin")
 }

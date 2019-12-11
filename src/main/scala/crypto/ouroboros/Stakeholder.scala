@@ -485,6 +485,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   }
 
   def covertlyForge = {
+    if (honestPrefix._1 == -1) honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
+    if (covertHead._1 == -1) covertHead = honestPrefix
     val data:(State,Eta) = history.get(covertHead._2) match {case value:(State,Eta) => value}
     if (leaderTest(keys,localSlot,eta)) {
       val parentBlock:Block = getBlock(covertHead) match {case value:Block => value}
@@ -829,7 +831,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
                 memPool += (trans._4->(trans,0))
                 send(self,gossipers, SendTx(trans))
               }
-              case _ => {println("Holder "+holderIndex.toString+" tx issue failed")}
+              case _ => //{println("Holder "+holderIndex.toString+" tx issue failed")}
             }
           }
           case _ => {println("invalid tx data");sharedData.throwError}
