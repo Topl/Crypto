@@ -462,11 +462,67 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
   var honestPrefix:BlockId = (-1,ByteArrayWrapper(Array()))
   var covertHead:BlockId = (-1,ByteArrayWrapper(Array()))
+  var covertTine:Chain = Array()
+  var leaderPredict:Map[Slot,Boolean] = Map()
+  val numFutureSlots = 100
+  val probability_threshold = 0.5
+
+  var withhold:Boolean = false
 
   def leaderTest(forgerKeys:Keys,slot:Int,etaIn:Eta):Boolean = {
     val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("TEST"))
     val y: Rho = vrf.vrfProofToHash(pi_y)
     compare(y, forgerKeys.threshold)
+  }
+  def predictLeaderSlots(currentSlot:Slot) = {
+    if (leaderPredict.isEmpty) {
+      for (i <- currentSlot to currentSlot + numFutureSlots) {
+        leaderPredict += (i -> leaderTest(keys,currentSlot,eta))
+      }
+    } else {
+      for (entry <- leaderPredict) {
+        if (entry._1 < currentSlot || entry._1 >= currentSlot + numFutureSlots) leaderPredict -= entry._1
+      }
+      leaderPredict += (currentSlot + numFutureSlots -> leaderTest(keys,currentSlot,eta))
+    }
+  }
+
+  def factorial(n: Int): Int = n match {
+    case 0 => 1
+    case _ => n * factorial(n-1)
+  }
+
+  def theta(alpha:Double,n:Int,m:Int):Double = {
+    (factorial(n).toDouble/(factorial(m)*factorial(n-m)).toDouble)*(math.pow(phi(1.0-alpha,f_s),m)*math.pow(phi(1.0-alpha,f_s),n-m))
+  }
+
+  def predictive_selfish_mining_logic:Boolean = {
+    val honestTineLength:Int = getActiveSlots(subChain(localChain,honestPrefix._1,localSlot))
+    val covertTineLength:Int = covertTine.length
+    if (honestTineLength >= covertTineLength) {
+      false
+    } else {
+      var intervals:Array[Int] = Array()
+      var i = 0
+      for (entry <- leaderPredict) {
+        i = i + 1
+        if (entry._2) {
+          intervals = Array(i) ++ intervals
+          i = 0
+        }
+      }
+      intervals.length match {
+        case 0 => false
+        case 1 => {
+          val prob_honest_wins = theta(keys.alpha,covertTineLength-honestTineLength,intervals(0))
+          if (prob_honest_wins > probability_threshold) {
+            false
+          } else {
+            true
+          }
+        }
+      }
+    }
   }
 
   def forgeBlock(forgerKeys:Keys,pb:Block,slot:Int,stateIn:State,etaIn:Eta):Block = {
@@ -508,6 +564,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         updateLocalState(data._1, Array((localSlot,hb))) match {
           case value:State => {
             covertHead = (localSlot,hb)
+            covertTine = covertTine ++ Array(covertHead)
             history.add(hb,value,eta)
           }
           case _ => {
@@ -519,6 +576,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
       case _ =>
     }
   }
+
+
 
   def updateAdversary = {
     if (sharedData.error) {
@@ -541,7 +600,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               println("Holder " + holderIndex.toString + " Forging")
             }
             if(covert) {
-              covertlyForge
+              predictLeaderSlots(localSlot)
+              withhold = predictive_selfish_mining_logic
+              if (withhold) {
+                covertlyForge
+              } else {
+                forgeBlock(keys)
+              }
             } else {
               forgeBlock(keys)
             }
