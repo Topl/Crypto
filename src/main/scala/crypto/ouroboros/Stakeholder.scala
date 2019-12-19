@@ -33,7 +33,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   /*************************Honest************************************/
 
   def blockInfo:String = {
-    "forger index: "+holderIndex.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
+    "forger index: "+holderIndex.toString+" adversarial:"+adversary.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
+
   }
 
   /**determines eligibility for a stakeholder to be a slot leader then calculates a block with epoch variables */
@@ -350,7 +351,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             println("Holder " + holderIndex.toString + " alpha = " + keys.alpha.toString+"\nEta:"+Base58.encode(eta))
           }
           roundBlock = 0
-          if (holderIndex == sharedData.printingHolder) println("Slot = " + localSlot.toString + " on block " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data))
+          if (holderIndex == sharedData.printingHolder) println(Console.CYAN + "Slot = " + localSlot.toString + " on block " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data) + Console.WHITE)
           if (holderIndex == sharedData.printingHolder && printFlag) {
             println("Holder " + holderIndex.toString + " Update KES")
           }
@@ -474,54 +475,64 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val y: Rho = vrf.vrfProofToHash(pi_y)
     compare(y, forgerKeys.threshold)
   }
-  def predictLeaderSlots(currentSlot:Slot) = {
-    if (leaderPredict.isEmpty) {
-      for (i <- currentSlot to currentSlot + numFutureSlots) {
-        leaderPredict += (i -> leaderTest(keys,currentSlot,eta))
-      }
-    } else {
-      for (entry <- leaderPredict) {
-        if (entry._1 < currentSlot || entry._1 >= currentSlot + numFutureSlots) leaderPredict -= entry._1
-      }
-      leaderPredict += (currentSlot + numFutureSlots -> leaderTest(keys,currentSlot,eta))
-    }
-  }
 
   def factorial(n: Int): Int = n match {
     case 0 => 1
     case _ => n * factorial(n-1)
   }
 
-  def theta(alpha:Double,n:Int,m:Int):Double = {
-    (factorial(n).toDouble/(factorial(m)*factorial(n-m)).toDouble)*(math.pow(phi(1.0-alpha,f_s),m)*math.pow(phi(1.0-alpha,f_s),n-m))
+  // probability of no blocks forged by honest parties
+  def theta = {
+    math.pow(1.0-f_s,1.0-keys.alpha)
+  }
+
+  def bernoulli_probability(p:Double,n:Int,m:Int):Double = {
+    (factorial(n).toDouble/(factorial(m)*factorial(n-m)).toDouble)*(math.pow(p,m)*math.pow(1-p,n-m))
   }
 
   def predictive_selfish_mining_logic:Boolean = {
-    val honestTineLength:Int = getActiveSlots(subChain(localChain,honestPrefix._1,localSlot))
+    val honestTineLength:Int = getActiveSlots(subChain(localChain,honestPrefix._1+1,localSlot))
     val covertTineLength:Int = covertTine.length
-    if (honestTineLength >= covertTineLength) {
-      false
+    var intervals:Array[Int] = Array()
+    println(Console.RED + s"Covert L:$covertTineLength Honest L:$honestTineLength" + Console.WHITE)
+    var i = 0
+    for (j <- localSlot+1 to localSlot + numFutureSlots) {
+      i = i + 1
+      if (leaderPredict(j)) {
+        intervals = Array(i) ++ intervals
+        i = 0
+      }
+    }
+    var out = false
+    intervals.length match {
+      case 0 => sendCovertTine
+      case _ => {
+        val expectedHonest:Double = (1-theta)*intervals.sum
+        val expectedCovert:Double = intervals.length
+        if (expectedCovert+covertTineLength > expectedHonest+honestTineLength && covertTineLength < 10) {
+          out = true
+        } else {
+          sendCovertTine
+        }
+      }
+    }
+    out
+  }
+
+  def sendCovertTine = {
+    if (covertTine.isEmpty) {
+      honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
+      covertTine = Array()
+      covertHead = honestPrefix
     } else {
-      var intervals:Array[Int] = Array()
-      var i = 0
-      for (entry <- leaderPredict) {
-        i = i + 1
-        if (entry._2) {
-          intervals = Array(i) ++ intervals
-          i = 0
-        }
+      val b = getBlock(covertHead) match {
+        case value:Block => value
       }
-      intervals.length match {
-        case 0 => false
-        case 1 => {
-          val prob_honest_wins = theta(keys.alpha,covertTineLength-honestTineLength,intervals(0))
-          if (prob_honest_wins > probability_threshold) {
-            false
-          } else {
-            true
-          }
-        }
-      }
+      send(self,gossipers, SendBlock(signBox((b,covertHead), sessionId, keys.sk_sig, keys.pk_sig)))
+      honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
+      covertTine = Array()
+      covertHead = honestPrefix
+      println(Console.RED + s"Holder $holderIndex released covert Tine" + Console.WHITE)
     }
   }
 
@@ -577,7 +588,19 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
-
+  def predictLeaderSlots(currentSlot:Slot) = {
+    if (leaderPredict.isEmpty) {
+      for (i <- currentSlot to currentSlot + numFutureSlots) {
+        println(i,leaderTest(keys,i,eta))
+        leaderPredict += (i -> leaderTest(keys,i,eta))
+      }
+    } else {
+      for (entry <- leaderPredict) {
+        if (entry._1 < currentSlot || entry._1 >= currentSlot + numFutureSlots) leaderPredict -= entry._1
+      }
+      leaderPredict += (currentSlot + numFutureSlots -> leaderTest(keys,currentSlot + numFutureSlots,eta))
+    }
+  }
 
   def updateAdversary = {
     if (sharedData.error) {
@@ -589,7 +612,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         if (globalSlot > tMax || sharedData.killFlag) {
           timers.cancelAll
         } else if (diffuseSent) {
-          if (!useFencing) coordinatorRef ! GetTime
+          if (!useFencing) {
+            coordinatorRef ! GetTime
+          }
           if (globalSlot > localSlot) {
             while (globalSlot > localSlot) {
               localSlot += 1
@@ -601,7 +626,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             }
             if(covert) {
               predictLeaderSlots(localSlot)
-              withhold = predictive_selfish_mining_logic
+              if (leaderPredict(localSlot)) println("*********************************************")
+              if (!withhold && leaderPredict(localSlot)) {
+                withhold = true
+                println(Console.RED + s"Holder $holderIndex starting covert Tine" + Console.WHITE)
+              } else if (withhold) {
+                withhold = predictive_selfish_mining_logic
+              }
               if (withhold) {
                 covertlyForge
               } else {
@@ -676,9 +707,25 @@ class Stakeholder(seed:Array[Byte]) extends Actor
 
     case value:Adversary => {
       value.s match {
-        case "" => if (adversary) {adversary=false} else {adversary=true}
-        case "covert" => if (covert) {adversary=false;covert=false} else {adversary=true;covert=true}
+        case "" => {
+          if (adversary) {
+            adversary=false
+          } else {
+            adversary=true
+          }
+        }
+        case "covert" => {
+          if (covert) {
+            adversary=false
+            covert=false
+          } else {
+            adversary=true
+            covert=true
+          }
+        }
+        case _ => "error: Adversary command unknown"
       }
+      sender() ! "done"
     }
 
       /**adds confirmed transactions to buffer and sends new ones to gossipers*/

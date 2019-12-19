@@ -8,9 +8,8 @@ from anytree import Node, RenderTree, AsciiStyle, find_by_attr, PreOrderIter
 from anytree.exporter import UniqueDotExporter
 import uuid
 
-# dataDir = '/home/aaron/topl/Crypto/data/'
-dataDir = '/home/aaron/topl/ssh/delaySweep1/'
-printGraphs = False
+dataDir = '/tmp/scorex/test-data/crypto/'
+printGraphs = True
 
 list_of_files = glob.glob(dataDir+'*.tree') # * means all if need specific format then *.csv
 
@@ -33,7 +32,11 @@ def nodeattrfunc(node):
 	else:
 		out = out+',shape=box'
 	if node.highlight == 1:
-		out = out+',style=filled,fillcolor=yellow'
+		out = out+',style=filled,fillcolor=cyan'
+	if node.highlight == 2:
+		out = out+',style=filled,fillcolor=pink'
+	if node.highlight == 3:
+		out = out+',style=filled,fillcolor=red'
 	return out
 
 print('Total files '+str(len(list_of_files)))
@@ -67,20 +70,27 @@ for file in list_of_files:
 			else:
 				sdiff = int(b["bs"]) - int(b["ps"])
 				oldName = ""
-				if sdiff == 1 or not printGraphs:
-					Node(b["id"],parent = find_by_attr(root,b["pid"]),highlight=0,slot=int(b["bs"]))
+				highlightNumber = 0
+				if 'adversarial:true' in b["info"]:
+					highlightNumber = 2
 				else:
+					highlightNumber = 0
+				if sdiff == 1 or not printGraphs:
+					Node(b["id"],parent = find_by_attr(root,b["pid"]),highlight=highlightNumber,slot=int(b["bs"]))
+				else:
+					emptySlotNum = int(b["ps"])
 					while sdiff > 1:
+						emptySlotNum = emptySlotNum + 1
 						if oldName == "":
 							newName = 'empty:'+uuid.uuid4().hex
-							Node(newName,parent = find_by_attr(root,b["pid"]),highlight=0)
+							Node(newName,parent = find_by_attr(root,b["pid"]),highlight=highlightNumber,slot=emptySlotNum)
 							oldName = newName
 						else:
 							newName = 'empty:'+uuid.uuid4().hex
-							Node(newName,parent = find_by_attr(root,oldName),highlight=0)
+							Node(newName,parent = find_by_attr(root,oldName),highlight=highlightNumber,slot=emptySlotNum)
 							oldName = newName
 						sdiff = sdiff - 1
-					Node(b["id"],parent = find_by_attr(root,oldName),highlight=0,slot=int(b["bs"]))
+					Node(b["id"],parent = find_by_attr(root,oldName),highlight=highlightNumber,slot=int(b["bs"]))
 		ii = ii + 1
 	zaxis[i] = j
 	taxis[i] = jj
@@ -91,6 +101,22 @@ for file in list_of_files:
 	tines[i] = len(leaves)
 	avgLen = 0.0
 	avgLenS = 0.0
+	if printGraphs:
+		node = find_by_attr(root,lastId)
+		while not node.is_root:
+			if node.highlight == 2:
+				node.highlight = 3
+			if node.highlight == 0:
+				node.highlight = 1
+			node=node.parent
+		for node in PreOrderIter(root):
+			nodeName = node.name
+			if 'empty' in nodeName:
+				node.name = ""
+			else:
+				node.name = nodeName[0:3]
+		dots = UniqueDotExporter(root,graph='graph',nodeattrfunc=nodeattrfunc,edgetypefunc=edgetypefunc)
+		dots.to_picture(dataDir+"root_"+str(i)+".png")
 	if len(leaves) == 1:
 		avgLen = root.height
 		avgLenS = leaves[0].slot
@@ -107,19 +133,6 @@ for file in list_of_files:
 			avgLenS = avgLen + lllS
 	avgLenTines[i] = avgLen/tines[i]
 	avgLenTinesS[i] = avgLenS/tines[i]
-	if printGraphs:
-		node = find_by_attr(root,lastId)
-		while not node.is_root:
-			node.highlight = 1
-			node=node.parent
-		for node in PreOrderIter(root):
-			nodeName = node.name
-			if 'empty' in nodeName:
-				node.name = ""
-			else:
-				node.name = nodeName[0:3]
-		dots = UniqueDotExporter(root,graph='graph',nodeattrfunc=nodeattrfunc,edgetypefunc=edgetypefunc)
-		dots.to_picture(dataDir+"root_"+str(i)+".png")
 	i = i + 1
 
 plt.figure(1)
