@@ -30,13 +30,19 @@ def nodeattrfunc(node):
 	if node.name == "":
 		out = out+',shape=circle'
 	else:
-		out = out+',shape=box'
+		out = out+',shape=box3d'
 	if node.highlight == 1:
 		out = out+',style=filled,fillcolor=cyan'
 	if node.highlight == 2:
-		out = out+',style=filled,fillcolor=pink'
+		out = out+',style=filled,fillcolor=yellow'
 	if node.highlight == 3:
+		out = out+',style=filled,fillcolor=green'	
+	if node.highlight == 4:
+		out = out+',style=filled,fillcolor=pink'
+	if node.highlight == 5:
 		out = out+',style=filled,fillcolor=red'
+
+
 	return out
 
 print('Total files '+str(len(list_of_files)))
@@ -72,7 +78,10 @@ for file in list_of_files:
 				oldName = ""
 				highlightNumber = 0
 				if 'adversarial:true' in b["info"]:
-					highlightNumber = 2
+					if 'tag:covert' in b["info"]:
+						highlightNumber = 4
+					else:
+						highlightNumber = 2
 				else:
 					highlightNumber = 0
 				if sdiff == 1 or not printGraphs:
@@ -104,10 +113,12 @@ for file in list_of_files:
 	if printGraphs:
 		node = find_by_attr(root,lastId)
 		while not node.is_root:
-			if node.highlight == 2:
-				node.highlight = 3
 			if node.highlight == 0:
 				node.highlight = 1
+			if node.highlight == 2:
+				node.highlight = 3
+			if node.highlight == 4:
+				node.highlight = 5
 			node=node.parent
 		for node in PreOrderIter(root):
 			nodeName = node.name

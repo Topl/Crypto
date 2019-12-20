@@ -33,8 +33,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   /*************************Honest************************************/
 
   def blockInfo:String = {
-    "forger index: "+holderIndex.toString+" adversarial:"+adversary.toString+" eta used: "+Base58.encode(eta)+" epoch forged: "+currentEpoch.toString
-
+    "forger_index:"+holderIndex.toString+",adversarial:"+adversary.toString+",eta:"+Base58.encode(eta)+",epoch:"+currentEpoch.toString
   }
 
   /**determines eligibility for a stakeholder to be a slot leader then calculates a block with epoch variables */
@@ -352,9 +351,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           }
           roundBlock = 0
           if (holderIndex == sharedData.printingHolder) println(Console.CYAN + "Slot = " + localSlot.toString + " on block " + Base58.encode(localChain(lastActiveSlot(localChain,globalSlot))._2.data) + Console.WHITE)
-          if (holderIndex == sharedData.printingHolder && printFlag) {
-            println("Holder " + holderIndex.toString + " Update KES")
-          }
           keys.sk_kes.update(kes, localSlot)
           if (useGossipProtocol) {
             val newOff = (numGossipers*math.sin(2.0*math.Pi*(globalSlot.toDouble/100.0+phase))/2.0).toInt
@@ -431,7 +427,6 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               updateSlot
             }
           } else if (roundBlock == 0 && candidateTines.isEmpty) {
-            if (holderIndex == sharedData.printingHolder && printFlag) {println("Holder " + holderIndex.toString + " Forging")}
             forgeBlock(keys)
             if (useFencing) {routerRef ! (self,"updateSlot")}
           } else if (!useFencing && candidateTines.nonEmpty) {
@@ -467,8 +462,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   var leaderPredict:Map[Slot,Boolean] = Map()
   val numFutureSlots = 100
   val probability_threshold = 0.5
-
-  var withhold:Boolean = false
+  val maxCovertLength = 10
 
   def leaderTest(forgerKeys:Keys,slot:Int,etaIn:Eta):Boolean = {
     val pi_y: Pi = vrf.vrfProof(forgerKeys.sk_vrf, etaIn ++ serialize(slot) ++ serialize("TEST"))
@@ -491,10 +485,19 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   }
 
   def predictive_selfish_mining_logic:Boolean = {
-    val honestTineLength:Int = getActiveSlots(subChain(localChain,honestPrefix._1+1,localSlot))
+    var out = false
+    predictLeaderSlots(localSlot)
+    if (covertTine.isEmpty) {
+      honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
+      covertHead = honestPrefix
+    }
+    val honestTineLength:Int = if (honestPrefix._1 < localSlot) {
+      getActiveSlots(subChain(localChain,honestPrefix._1+1,localSlot))
+    } else {
+      0
+    }
     val covertTineLength:Int = covertTine.length
     var intervals:Array[Int] = Array()
-    println(Console.RED + s"Covert L:$covertTineLength Honest L:$honestTineLength" + Console.WHITE)
     var i = 0
     for (j <- localSlot+1 to localSlot + numFutureSlots) {
       i = i + 1
@@ -503,14 +506,19 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         i = 0
       }
     }
-    var out = false
     intervals.length match {
       case 0 => sendCovertTine
       case _ => {
         val expectedHonest:Double = (1-theta)*intervals.sum
         val expectedCovert:Double = intervals.length
-        if (expectedCovert+covertTineLength > expectedHonest+honestTineLength && covertTineLength < 10) {
-          out = true
+        if (expectedCovert+covertTineLength > expectedHonest+honestTineLength && covertTineLength < maxCovertLength) {
+          if (covertTine.isEmpty && leaderPredict(localSlot)) {
+            println(Console.RED + s"Holder $holderIndex starting covert Tine" + Console.WHITE)
+            out = true
+          } else if (!covertTine.isEmpty) {
+            println(Console.RED + s"Covert L:$covertTineLength Honest L:$honestTineLength" + Console.WHITE)
+            out = true
+          }
         } else {
           sendCovertTine
         }
@@ -520,19 +528,17 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   }
 
   def sendCovertTine = {
-    if (covertTine.isEmpty) {
-      honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
-      covertTine = Array()
-      covertHead = honestPrefix
-    } else {
+    if (!covertTine.isEmpty) {
       val b = getBlock(covertHead) match {
         case value:Block => value
       }
+      val jobNumber = tineCounter
+      tines += (jobNumber -> (Array(covertHead),0,0,0,self))
+      buildTine((jobNumber,tines(jobNumber)))
+      tineCounter += 1
       send(self,gossipers, SendBlock(signBox((b,covertHead), sessionId, keys.sk_sig, keys.pk_sig)))
-      honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
-      covertTine = Array()
-      covertHead = honestPrefix
       println(Console.RED + s"Holder $holderIndex released covert Tine" + Console.WHITE)
+      covertTine = Array()
     }
   }
 
@@ -546,52 +552,54 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     val rho: Rho = vrf.vrfProofToHash(pi)
     val h: Hash = hash(pb)
     val ledger = blockBox::chooseLedger(forgerKeys.pkw,memPool,stateIn)
-    val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo)
+    val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo+",tag:covert")
     val sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
     (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
   }
 
-  def covertlyForge = {
-    if (honestPrefix._1 == -1) honestPrefix = localChain(lastActiveSlot(localChain,localSlot))
-    if (covertHead._1 == -1) covertHead = honestPrefix
-    val data:(State,Eta) = history.get(covertHead._2) match {case value:(State,Eta) => value}
-    if (leaderTest(keys,localSlot,eta)) {
-      val parentBlock:Block = getBlock(covertHead) match {case value:Block => value}
-      //(forgerKeys:Keys,pb:Block,slot:Int,stateIn:State,etaIn:Eta)
-      val covertBlock = forgeBlock(keys,parentBlock,localSlot,data._1,eta)
-      roundBlock = covertBlock
-    } else {
-      roundBlock = -1
-    }
-    roundBlock match {
-      case b: Block => {
-        val hb = hash(b)
-        val bn = b._9
-        if (printFlag) {
-          println("Holder " + holderIndex.toString + s" forged block $bn with id:"+Base58.encode(hb.data))
-        }
-        blocks.update(localSlot, blocks(localSlot) + (hb -> b))
-        blocksForged += 1
-        updateLocalState(data._1, Array((localSlot,hb))) match {
-          case value:State => {
-            covertHead = (localSlot,hb)
-            covertTine = covertTine ++ Array(covertHead)
-            history.add(hb,value,eta)
-          }
-          case _ => {
-            sharedData.throwError
-            println("error: invalid ledger in forged block")
-          }
-        }
+  def covertlyForge(keys:Keys) = {
+
+    if (predictive_selfish_mining_logic) {
+      val data:(State,Eta) = history.get(covertHead._2) match {case value:(State,Eta) => value}
+      if (leaderTest(keys,localSlot,eta)) {
+        val parentBlock:Block = getBlock(covertHead) match {case value:Block => value}
+        //(forgerKeys:Keys,pb:Block,slot:Int,stateIn:State,etaIn:Eta)
+        val covertBlock = forgeBlock(keys,parentBlock,localSlot,data._1,eta)
+        roundBlock = covertBlock
+      } else {
+        roundBlock = -1
       }
-      case _ =>
+      roundBlock match {
+        case b: Block => {
+          val hb = hash(b)
+          val bn = b._9
+          if (printFlag) {
+            println("Holder " + holderIndex.toString + s" forged block $bn with id:"+Base58.encode(hb.data))
+          }
+          blocks.update(localSlot, blocks(localSlot) + (hb -> b))
+          blocksForged += 1
+          updateLocalState(data._1, Array((localSlot,hb))) match {
+            case value:State => {
+              covertHead = (localSlot,hb)
+              covertTine = covertTine ++ Array(covertHead)
+              history.add(hb,value,eta)
+            }
+            case _ => {
+              sharedData.throwError
+              println("error: invalid ledger in forged block")
+            }
+          }
+        }
+        case _ =>
+      }
+    } else {
+      forgeBlock(keys)
     }
   }
 
   def predictLeaderSlots(currentSlot:Slot) = {
     if (leaderPredict.isEmpty) {
       for (i <- currentSlot to currentSlot + numFutureSlots) {
-        println(i,leaderTest(keys,i,eta))
         leaderPredict += (i -> leaderTest(keys,i,eta))
       }
     } else {
@@ -621,23 +629,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               updateSlot
             }
           } else if (roundBlock == 0 && candidateTines.isEmpty) {
-            if (holderIndex == sharedData.printingHolder && printFlag) {
-              println("Holder " + holderIndex.toString + " Forging")
-            }
             if(covert) {
-              predictLeaderSlots(localSlot)
-              if (leaderPredict(localSlot)) println("*********************************************")
-              if (!withhold && leaderPredict(localSlot)) {
-                withhold = true
-                println(Console.RED + s"Holder $holderIndex starting covert Tine" + Console.WHITE)
-              } else if (withhold) {
-                withhold = predictive_selfish_mining_logic
-              }
-              if (withhold) {
-                covertlyForge
-              } else {
-                forgeBlock(keys)
-              }
+              covertlyForge(keys)
             } else {
               forgeBlock(keys)
             }
