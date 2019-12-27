@@ -460,6 +460,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
   var covertHead:BlockId = (-1,ByteArrayWrapper(Array()))
   var covertTine:Chain = Array()
   var leaderPredict:Map[Slot,Boolean] = Map()
+  var allTines:Set[BlockId] = Set()
   val numFutureSlots = 100
   val probability_threshold = 0.5
   val maxCovertLength = 10
@@ -597,6 +598,45 @@ class Stakeholder(seed:Array[Byte]) extends Actor
     }
   }
 
+  def forgeEveryTine(keys:Keys) = {
+    if (leaderTest(keys,localSlot,eta)) {
+      var newTines:Set[BlockId] = Set()
+      for (entry <- allTines) {
+        val data: (State, Eta) = history.get(entry._2) match {
+          case value: (State, Eta) => value
+        }
+        val parentBlock: Block = getBlock(entry) match {
+          case value: Block => value
+        }
+        forgeBlock(keys, parentBlock, localSlot, data._1, eta) match {
+          case b: Block => {
+            val hb = hash(b)
+            val bn = b._9
+            if (printFlag) {
+              println(Console.RED + "Holder " + holderIndex.toString + s" forged block $bn with id:" + Base58.encode(hb.data) + Console.WHITE)
+            }
+            blocks.update(localSlot, blocks(localSlot) + (hb -> b))
+            blocksForged += 1
+            updateLocalState(data._1, Array((localSlot, hb))) match {
+              case value: State => {
+                history.add(hb, value, eta)
+                newTines ++= Set((localSlot,hb))
+                send(self,holders, SendBlock(signBox((b,(localSlot, hb)), sessionId, keys.sk_sig, keys.pk_sig)))
+              }
+              case _ => {
+                sharedData.throwError
+                println(Console.RED + "error: invalid ledger in forged block" + Console.WHITE)
+              }
+            }
+          }
+          case _ =>
+        }
+      }
+      allTines = newTines
+    }
+    roundBlock = -1
+  }
+
   def predictLeaderSlots(currentSlot:Slot) = {
     if (leaderPredict.isEmpty) {
       for (i <- currentSlot to currentSlot + numFutureSlots) {
@@ -629,7 +669,9 @@ class Stakeholder(seed:Array[Byte]) extends Actor
               updateSlot
             }
           } else if (roundBlock == 0 && candidateTines.isEmpty) {
-            if(covert) {
+            if (forgeAll) {
+              forgeEveryTine(keys)
+            } else if (covert) {
               covertlyForge(keys)
             } else {
               forgeBlock(keys)
@@ -641,6 +683,7 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             if (holderIndex == sharedData.printingHolder && printFlag) {
               println("Holder " + holderIndex.toString + " Checking Tine")
             }
+            if (forgeAll) allTines ++= Set(candidateTines.last._1.last)
             time(maxValidBG)
             while (globalSlot > localSlot) {
               localSlot += 1
@@ -714,6 +757,15 @@ class Stakeholder(seed:Array[Byte]) extends Actor
           } else {
             adversary=true
             covert=true
+          }
+        }
+        case "nas" => {
+          if (forgeAll) {
+            adversary = false
+            forgeAll = false
+          } else {
+            adversary = true
+            forgeAll = true
           }
         }
         case _ => "error: Adversary command unknown"

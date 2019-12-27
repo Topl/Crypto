@@ -55,5 +55,7 @@ trait StakeholderVariables
   var adversary:Boolean = false
   //toggle for covert mining
   var covert:Boolean = false
+  //toggle for nothing-at-stake forging
+  var forgeAll:Boolean = false
 }
 
