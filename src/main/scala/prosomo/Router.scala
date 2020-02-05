@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import akka.actor.{Actor, ActorRef, Props, Timers}
 import akka.util.Timeout

@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import akka.actor.{Actor, ActorPath, ActorRef, Props, Timers}
 import bifrost.crypto.hash.FastCryptographicHash
@@ -52,8 +52,8 @@ class Stakeholder(seed:Array[Byte]) extends Actor
         val h: Hash = hash(pb)
         val ledger = blockBox::chooseLedger(forgerKeys.pkw,memPool,localState)
         val cert: Cert = (forgerKeys.pk_vrf, y, pi_y, forgerKeys.pk_sig, forgerKeys.threshold,blockInfo)
-        val sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
-        (h, ledger, slot, cert, rho, pi, sig, forgerKeys.pk_kes,bn,ps)
+        val kes_sig: KesSignature = forgerKeys.sk_kes.sign(kes,h.data++serialize(ledger)++serialize(slot)++serialize(cert)++rho++pi++serialize(bn)++serialize(ps))
+        (h, ledger, slot, cert, rho, pi, kes_sig, forgerKeys.pk_kes,bn,ps)
       }
     } else {
       roundBlock = -1
@@ -683,6 +683,13 @@ class Stakeholder(seed:Array[Byte]) extends Actor
             if (holderIndex == sharedData.printingHolder && printFlag) {
               println("Holder " + holderIndex.toString + " Checking Tine")
             }
+            assert(history.get(candidateTines.last._1.last._2) match {
+              case value:(State, Eta) => true
+              case _ => {
+                sharedData.throwError
+                false
+              }
+            })
             if (forgeAll) allTines ++= Set(candidateTines.last._1.last)
             time(maxValidBG)
             while (globalSlot > localSlot) {

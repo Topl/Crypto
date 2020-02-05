@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import akka.actor.ActorSystem
 import scala.io.StdIn

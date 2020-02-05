@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import bifrost.crypto.hash.FastCryptographicHash
 import org.bouncycastle.math.ec.rfc8032.Ed25519

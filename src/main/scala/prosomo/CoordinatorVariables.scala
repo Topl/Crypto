@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import akka.actor.ActorRef
 import bifrost.crypto.hash.FastCryptographicHash

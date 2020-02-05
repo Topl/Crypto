@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 class MalkinKey {
   private var L:Tree[Array[Byte]] = Leaf(Array())

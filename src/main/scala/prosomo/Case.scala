@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 // case objects and classes for pattern matching messages between actors
 case object Diffuse

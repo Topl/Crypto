@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import scala.concurrent.duration._
 import com.typesafe.config.{Config, ConfigFactory}

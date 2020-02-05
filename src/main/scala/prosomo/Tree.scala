@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 /**
   * D Holbrook

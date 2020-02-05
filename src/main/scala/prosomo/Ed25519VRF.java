@@ -1,4 +1,4 @@
-package crypto.ouroboros;
+package prosomo;
 
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;

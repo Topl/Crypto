@@ -3,7 +3,7 @@ package crypto.crypto.malkinKES
 import bifrost.crypto.hash.FastCryptographicHash
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import scorex.crypto.hash.Sha512
-import crypto.ouroboros.{Tree,Node,Leaf,Empty}
+import prosomo.{Tree,Node,Leaf,Empty}
 import scala.math.BigInt
 
 

@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import scala.language.postfixOps
 import bifrost.crypto.hash.FastCryptographicHash

@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import scala.math.BigInt
 import io.iohk.iodb.ByteArrayWrapper

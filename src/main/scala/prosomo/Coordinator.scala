@@ -1,4 +1,4 @@
-package crypto.ouroboros
+package prosomo
 
 import java.io.{BufferedWriter, FileWriter}
 import java.io.File
