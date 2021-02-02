@@ -31,7 +31,7 @@ trait SimpleTypes {
   type Hash = ByteArrayWrapper
   type Eta = Array[Byte]
   type Signature = Array[Byte]
-  type Slot = Int
+  type Slot = Long
   type BlockNumber = Int
   type Rho = Array[Byte]
   type PublicKey = Array[Byte]
