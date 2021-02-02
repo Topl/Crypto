@@ -8,89 +8,61 @@ scalaVersion := "2.12.8"
 
 mainClass in (Compile, run) := Some("crypto.Crypto")
 
-val circeVersion = "0.7+"
+val circeVersion = "0.9.0"
+val akkaVersion = "2.5.24"
+val akkaHttpVersion = "10.1.9"
+
+resolvers ++= Seq("Bintray" at "https://jcenter.bintray.com/")
+
+libraryDependencies += "org.scala-lang.modules" %% "scala-swing" % "2.1.1"
+libraryDependencies += "com.formdev" % "flatlaf" % "0.38"
+libraryDependencies ++= Seq(
+  "org.scorexfoundation" %% "iodb" % "0.3.+",
+  "org.iq80.leveldb" % "leveldb" % "0.12"
+)
 
 val networkDependencies = Seq(
-  "com.typesafe.akka" %% "akka-actor" % "2.5.23",
-  "org.bitlet" % "weupnp" % "0.1.+",
-  "commons-net" % "commons-net" % "3.+"
+  "com.typesafe.akka" %% "akka-actor" % akkaVersion,
+  "com.typesafe.akka" %% "akka-http-core" % akkaHttpVersion,
+  "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
+  "com.typesafe.akka" %% "akka-parsing" % akkaHttpVersion,
+  "com.typesafe.akka" %% "akka-protobuf" % akkaVersion,
+  "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+  "org.bitlet" % "weupnp" % "0.1.4",
+  "commons-net" % "commons-net" % "3.6"
 )
 
 val apiDependencies = Seq(
   "io.circe" %% "circe-core" % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
   "io.circe" %% "circe-parser" % circeVersion,
-  "io.swagger" %% "swagger-scala-module" % "1.0.3",
-  // "io.swagger" % "swagger-core" % "1.5.10",
-  // "io.swagger" % "swagger-annotations" % "1.5.10",
-  // "io.swagger" % "swagger-models" % "1.5.10",
-  // "io.swagger" % "swagger-jaxrs" % "1.5.10",
-  "com.github.swagger-akka-http" %% "swagger-akka-http" % "0.+",
-  "com.typesafe.akka" %% "akka-http" % "10.+"
+  "de.heikoseeberger" %% "akka-http-circe" % "1.20.0"
 )
 
 val loggingDependencies = Seq(
-  "ch.qos.logback" % "logback-classic" % "1.+",
-  "ch.qos.logback" % "logback-core" % "1.+",
-  "com.typesafe.akka" % "akka-slf4j_2.12" % "2.5.23"
+  "ch.qos.logback" % "logback-classic" % "1.3.0-alpha4"
 )
+
+val scorexUtil = "org.scorexfoundation" %% "scorex-util" % "0.1.6"
 
 val testingDependencies = Seq(
-  "com.typesafe.akka" %% "akka-testkit" % "2.5.23" % "test",
-  "org.scalactic" %% "scalactic" % "3.0.+",
-  "org.scalatest" %% "scalatest" % "3.0.+" % "test",
-  "org.scalacheck" %% "scalacheck" % "1.13.+" % "test",
-  "net.databinder.dispatch" %% "dispatch-core" % "+" % "test"
+  "com.typesafe.akka" %% "akka-testkit" % akkaVersion % "test",
+  "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion % "test",
+  "org.scalactic" %% "scalactic" % "3.0.3" % "test",
+  "org.scalatest" %% "scalatest" % "3.0.3" % "test",
+  "org.scalacheck" %% "scalacheck" % "1.13.+",
+  scorexUtil, (scorexUtil % Test).classifier("tests")
 )
 
 libraryDependencies ++= Seq(
-  "com.chuusai" %% "shapeless" % "2.+",
-  "org.consensusresearch" %% "scrypto" % "1.2.+",
-  "io.circe" %% "circe-optics" % circeVersion
+  "com.iheart" %% "ficus" % "1.4.2",
+  "org.scorexfoundation" %% "scrypto" % "2.1.7",
+  scorexUtil
 ) ++ networkDependencies ++ apiDependencies ++ loggingDependencies ++ testingDependencies
 
-libraryDependencies ++= Seq(
-  "org.scorexfoundation" %% "iodb" % "0.3.+",
-  "com.typesafe.akka" %% "akka-testkit" % "2.5.23" % "test",
-  "com.typesafe.akka" %% "akka-http-testkit" % "10.0.7",
-  "net.databinder.dispatch" %% "dispatch-core" % "+" % "test",
-  "org.bouncycastle" % "bcprov-jdk15on" % "1.61"
-)
-
-libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.19"
-
-
-libraryDependencies += "org.json4s" %% "json4s-native" % "3.5.2"
-libraryDependencies += "com.thesamet.scalapb" %% "scalapb-json4s" % "0.7.0"
-
-// https://mvnrepository.com/artifact/org.whispersystems/curve25519-java
-libraryDependencies += "org.whispersystems" % "curve25519-java" % "0.5.0"
-
-val consoleDependencies = Seq(
-  // https://mvnrepository.com/artifact/org.apache.httpcomponents/httpclient
-  "org.apache.httpcomponents" % "httpclient" % "4.5.3",
-  // https://mvnrepository.com/artifact/org.apache.httpcomponents/httpasyncclient
-  "org.apache.httpcomponents" % "httpasyncclient" % "4.1.3",
-  // https://mvnrepository.com/artifact/org.apache.commons/commons-pool2
-  "org.apache.commons" % "commons-pool2" % "2.4.2"
-)
-
-libraryDependencies += "org.graalvm" % "graal-sdk" % "1.0.0+"
-// https://mvnrepository.com/artifact/com.oracle.truffle/truffle-api
-libraryDependencies += "com.oracle.truffle" % "truffle-api" % "1.0.0-rc7"
-
-libraryDependencies ++= consoleDependencies
-
-
-libraryDependencies  ++= Seq(
-  // Last snapshot
-  "org.scalanlp" %% "breeze" % "latest.integration"
-)
-
-scalacOptions ++= Seq("-feature", "-deprecation")
-
-javaOptions ++= Seq(
-  "-Dcom.sun.management.jmxremote"
-)
+scalacOptions ++= Seq(
+  "-Xfatal-warnings",
+  "-feature",
+  "-deprecation")
 
 enablePlugins(JavaAppPackaging)
