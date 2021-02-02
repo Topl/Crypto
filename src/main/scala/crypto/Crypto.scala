@@ -1,3 +1,9 @@
 package crypto
 
-case class Benchmark()
+class Crypto {
+  println("Topl Crypto Testbed")
+}
+
+object Crypto extends App {
+  new Crypto
+}

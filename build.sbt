@@ -1,12 +1,12 @@
 
 
-name := "prosomo"
+name := "Crypto"
 
-version := "0.4"
+version := "1.0"
 
 scalaVersion := "2.12.8"
 
-mainClass in (Compile, run) := Some("crypto.ouroboros.Prosomo")
+mainClass in (Compile, run) := Some("crypto.Crypto")
 
 val circeVersion = "0.7+"
 
