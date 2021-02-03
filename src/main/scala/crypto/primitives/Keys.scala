@@ -1,6 +1,7 @@
 package crypto.primitives
 
 import io.iohk.iodb.ByteArrayWrapper
+
 import scala.util.Try
 
 /**

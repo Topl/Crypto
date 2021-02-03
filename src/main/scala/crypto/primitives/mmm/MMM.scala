@@ -1,12 +1,9 @@
-package crypto.primitives
-
-import org.bouncycastle.math.ec.rfc8032.Ed25519
-import scorex.util.encode.Base58
+package crypto.primitives.mmm
 
 import scala.math.BigInt
 
 /**
-  * AMS 2020:
+  * AMS 2021:
   * Implementation of the MMM construction:
   * Malkin, T., Micciancio, D. and Miner, S. (2002) ‘Efficient generic
   * forward-secure signatures with an unbounded number of time
@@ -15,20 +12,21 @@ import scala.math.BigInt
   *
   * Provides forward secure signatures that cannot be reforged with a leaked private key that has been updated
   * Number of time steps is determined by logl argument upon key generation, practically unbounded for logl = 7
-  * Sum compostion is based on underlying Ed25519 signing routine provided by Bouncy Castle,
-  * F_KES functionality
+  * Sum compostion is based on underlying signing routine
   */
 
-class Kes {
+abstract class MMM {
 
-  val seedBytes = 32
-  val pkBytes = Ed25519.PUBLIC_KEY_SIZE
-  val skBytes = Ed25519.SECRET_KEY_SIZE
-  val sigBytes = Ed25519.SIGNATURE_SIZE
-  val hashBytes = 32
-  val keyLength = hashBytes
+  val fch:Fch
+  val sig:Sig
+  val seedBytes:Int
+  val pkBytes:Int
+  val skBytes:Int
+  val sigBytes:Int
+  val hashBytes:Int
+  val mmmPkLength:Int = hashBytes
+
   val logl = 7
-  val fch = new Fch
 
   type KesKeyBytes = (Tree[Array[Byte]],Tree[Array[Byte]],Array[Byte],Array[Byte],Array[Byte])
   type KesSignature = (Array[Byte],Array[Byte],Array[Byte])
@@ -46,8 +44,8 @@ class Kes {
     * Pseudorandom number generator used for seed doubling
     * Input must be non-recoverable from output
     * Each output cannot be used to determine one from the other
-    * @param k
-    * @return
+    * @param k input seed
+    * @return tuple of two new seeds
     */
 
   private def PRNG(k: Array[Byte]): (Array[Byte],Array[Byte]) = {
@@ -57,59 +55,38 @@ class Kes {
   }
 
   /**
-    * generates a keypair for Ed25519 signing and returns it in a single byte array
+    * generates a keypair for underlying SIG functionality returns it in a single byte array
     * @param seed input entropy for keypair generation
     * @return byte array sk||pk
     */
   private def sKeypairFast(seed: Array[Byte]): Array[Byte] = {
     val sk = fch.hash(seed)
-    var pk = Array.fill(32){0x00.toByte}
-    Ed25519.generatePublicKey(sk,0,pk,0)
+    val pk = Array.fill(32){0x00.toByte}
+    sig.generatePublicKey(sk,0,pk,0)
     sk++pk
   }
 
   /**
-    * Returns only the public key for a given seed
-    * @param seed input entropy for keypair generation
-    * @return byte array pk
-    */
-  private def sPublic(seed: Array[Byte]): Array[Byte] = {
-    val sk = fch.hash(seed)
-    var pk = Array.fill(32){0x00.toByte}
-    Ed25519.generatePublicKey(sk,0,pk,0)
-    pk
-  }
-
-  /**
-    * Returns only the private key for a given seed
-    * @param seed input entropy for keypair generation
-    * @return byte array sk
-    */
-  private def sPrivate(seed: Array[Byte]): Array[Byte] = {
-    fch.hash(seed)
-  }
-
-  /**
-    * Signing routine for Ed25519
+    * Signing routine for underlying SIG functionality
     * @param m message to be signed
     * @param sk Ed25519 secret key to be signed
     * @return Ed25519 signature
     */
   private def sSign(m: Array[Byte], sk: Array[Byte]): Array[Byte] = {
-    var sig: Array[Byte] = Array.fill(sigBytes){0x00.toByte}
-    Ed25519.sign(sk,0,m,0,m.length,sig,0)
-    sig
+    val signature: Array[Byte] = Array.fill(sigBytes){0x00.toByte}
+    sig.sign(sk,0,m,0,m.length,signature,0)
+    signature
   }
 
   /**
-    * Verify routine for Ed25519
+    * Verify routine for underlying SIG functionality
     * @param m message for given signature
-    * @param sig signature to be verified
+    * @param signature signature to be verified
     * @param pk public key corresponding to signature
     * @return true if valid signature, false if otherwise
     */
-  private def sVerify(m: Array[Byte], sig: Array[Byte], pk: Array[Byte]): Boolean = {
-    Ed25519.verify(sig,0,pk,0,m,0,m.length)
+  private def sVerify(m: Array[Byte], signature: Array[Byte], pk: Array[Byte]): Boolean = {
+    sig.verify(signature,0,pk,0,m,0,m.length)
   }
 
   /**
@@ -119,14 +96,12 @@ class Kes {
     */
   private def sumGetPublicKey(t: Tree[Array[Byte]]): Array[Byte] = {
     t match {
-      case n: Node[Array[Byte]] => {
+      case n: Node[Array[Byte]] =>
         val pk0 = n.v.slice(seedBytes, seedBytes + pkBytes)
         val pk1 = n.v.slice(seedBytes + pkBytes, seedBytes + 2 * pkBytes)
         fch.hash(pk0 ++ pk1)
-      }
-      case l: Leaf[Array[Byte]] => {
+      case l: Leaf[Array[Byte]] =>
         fch.hash(fch.hash(l.v.slice(seedBytes, seedBytes + pkBytes))++fch.hash(l.v.slice(seedBytes, seedBytes + pkBytes)))
-      }
       case _ => Array()
     }
   }
@@ -153,15 +128,12 @@ class Kes {
     // generates the Ed25519 keypairs on each leaf
     def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
-        case n: Node[Array[Byte]] => {
+        case n: Node[Array[Byte]] =>
           Node(n.v,populateLeaf(n.l),populateLeaf(n.r))
-        }
-        case l: Leaf[Array[Byte]] => {
+        case l: Leaf[Array[Byte]] =>
           Leaf(l.v++sKeypairFast(l.v))
-        }
-        case _ => {
+        case _ =>
           Empty
-        }
       }
     }
 
@@ -169,7 +141,7 @@ class Kes {
     def merklePublicKeys(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       def loop(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
         t match {
-          case n: Node[Array[Byte]] => {
+          case n: Node[Array[Byte]] =>
             var sk0: Array[Byte] = Array()
             var pk0: Array[Byte] = Array()
             var pk00: Array[Byte] = Array()
@@ -178,33 +150,28 @@ class Kes {
             var pk1: Array[Byte] = Array()
             var pk10: Array[Byte] = Array()
             var pk11: Array[Byte] = Array()
-            var pk: Array[Byte] = Array()
             var r0: Array[Byte] = Array()
             var r1: Array[Byte] = Array()
             var leftVal: Array[Byte] = Array()
             var rightVal: Array[Byte] = Array()
             var leafLevel = false
             val left = loop(n.l) match {
-              case nn: Node[Array[Byte]] => {
+              case nn: Node[Array[Byte]] =>
                 leftVal = nn.v
                 nn
-              }
-              case ll: Leaf[Array[Byte]] => {
+              case ll: Leaf[Array[Byte]] =>
                 leafLevel = true
                 leftVal = ll.v
                 ll
-              }
             }
             val right = loop(n.r) match {
-              case nn: Node[Array[Byte]] => {
+              case nn: Node[Array[Byte]] =>
                 rightVal = nn.v
                 nn
-              }
-              case ll: Leaf[Array[Byte]] => {
+              case ll: Leaf[Array[Byte]] =>
                 leafLevel = true
                 rightVal = ll.v
                 ll
-              }
             }
             if (leafLevel) {
               r0 = leftVal.slice(0, seedBytes)
@@ -213,7 +180,7 @@ class Kes {
               r1 = rightVal.slice(0, seedBytes)
               sk1 = rightVal.slice(seedBytes, seedBytes + skBytes)
               pk1 = rightVal.slice(seedBytes + skBytes, seedBytes + skBytes + pkBytes)
-              assert(n.v.deep == r1.deep)
+              assert(n.v sameElements r1)
               Node(n.v ++ fch.hash(pk0) ++ fch.hash(pk1), Leaf(sk0 ++ pk0), Leaf(sk1 ++ pk1))
             } else {
               pk00 = leftVal.slice(seedBytes, seedBytes + pkBytes)
@@ -224,40 +191,31 @@ class Kes {
               pk1 = fch.hash(pk10 ++ pk11)
               Node(n.v ++ pk0 ++ pk1, left, right)
             }
-          }
-          case l: Leaf[Array[Byte]] => {
+          case l: Leaf[Array[Byte]] =>
             l
-          }
-          case _ => {
+          case _ =>
             Empty
-          }
         }
       }
       t match {
-        case n: Node[Array[Byte]] => {
+        case n: Node[Array[Byte]] =>
           loop(n)
-        }
-        case l: Leaf[Array[Byte]] => {
+        case l: Leaf[Array[Byte]] =>
           Leaf(l.v.drop(seedBytes))
-        }
-        case _ => {
+        case _ =>
           Empty
-        }
       }
     }
 
     //removes all but the leftmost branch leaving the leftmost leaf
     def trimTree(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
-        case n: Node[Array[Byte]] => {
+        case n: Node[Array[Byte]] =>
           Node(n.v,trimTree(n.l),Empty)
-        }
-        case l: Leaf[Array[Byte]] => {
+        case l: Leaf[Array[Byte]] =>
           l
-        }
-        case _ => {
+        case _ =>
           Empty
-        }
       }
     }
 
@@ -275,7 +233,7 @@ class Kes {
     //loops through the tree to verify Merkle witness path
     def loop(t: Tree[Array[Byte]]): Boolean = {
       t match {
-        case n: Node[Array[Byte]] =>{
+        case n: Node[Array[Byte]] =>
           var pk0:Array[Byte] = Array()
           var pk00:Array[Byte] = Array()
           var pk01:Array[Byte] = Array()
@@ -283,36 +241,32 @@ class Kes {
           var pk10:Array[Byte] = Array()
           var pk11:Array[Byte] = Array()
           val left = n.l match {
-            case nn: Node[Array[Byte]] => {
+            case nn: Node[Array[Byte]] =>
               pk00 = nn.v.slice(seedBytes,seedBytes+pkBytes)
               pk01 = nn.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
               pk0 = fch.hash(pk00++pk01)
-              loop(nn) && (pk0.deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep)
-            }
-            case ll: Leaf[Array[Byte]] => {
-              fch.hash(ll.v.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes,seedBytes+pkBytes).deep
-            }
+              loop(nn) && (pk0 sameElements n.v.slice(seedBytes,seedBytes+pkBytes))
+            case ll: Leaf[Array[Byte]] =>
+              fch.hash(ll.v.slice(skBytes,skBytes+pkBytes)) sameElements n.v.slice(seedBytes,seedBytes+pkBytes)
             case _ => true
           }
           val right = n.r match {
-            case nn: Node[Array[Byte]] => {
+            case nn: Node[Array[Byte]] =>
               pk10 = nn.v.slice(seedBytes,seedBytes+pkBytes)
               pk11 = nn.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
               pk1 = fch.hash(pk10++pk11)
-              loop(nn) && (pk1.deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
-            }
-            case ll: Leaf[Array[Byte]] => {
-              fch.hash(ll.v.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep
-            }
+              loop(nn) && (pk1 sameElements n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes))
+            case ll: Leaf[Array[Byte]] =>
+              fch.hash(ll.v.slice(skBytes,skBytes+pkBytes)) sameElements n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes)
             case _ => true
           }
           left && right
-        }
-        case l: Leaf[Array[Byte]] => fch.hash(fch.hash(l.v.slice(skBytes,skBytes+pkBytes))++fch.hash(l.v.slice(skBytes,skBytes+pkBytes))).deep == pk.deep
+        case l: Leaf[Array[Byte]] =>
+          fch.hash(fch.hash(l.v.slice(skBytes,skBytes+pkBytes))++fch.hash(l.v.slice(skBytes,skBytes+pkBytes))) sameElements pk
         case _ => false
       }
     }
-    (pk.deep == sumGetPublicKey(t).deep) && loop(t)
+    (pk sameElements sumGetPublicKey(t)) && loop(t)
   }
 
   /**
@@ -325,20 +279,19 @@ class Kes {
     //checks if the sub tree is right most
     def isRightBranch(t: Tree[Array[Byte]]): Boolean = {
       t match {
-        case n: Node[Array[Byte]] =>{
+        case n: Node[Array[Byte]] =>
           val left = n.l match {
-            case n: Node[Array[Byte]] => false
-            case l: Leaf[Array[Byte]] => false
+            case _: Node[Array[Byte]] => false
+            case _: Leaf[Array[Byte]] => false
             case _ => true
           }
           val right = n.r match {
             case n: Node[Array[Byte]] => isRightBranch(n)
-            case l: Leaf[Array[Byte]] => true
+            case _: Leaf[Array[Byte]] => true
             case _ => false
           }
           left && right
-        }
-        case l: Leaf[Array[Byte]] => false
+        case _: Leaf[Array[Byte]] => false
         case _ => false
       }
     }
@@ -346,7 +299,7 @@ class Kes {
     //main loop that steps the tree to the next time step
     def loop(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
-        case n: Node[Array[Byte]] => {
+        case n: Node[Array[Byte]] =>
           var leftIsEmpty = false
           var leftIsLeaf = false
           var leftIsNode = false
@@ -356,19 +309,19 @@ class Kes {
           var rightIsNode = false
           var rightVal: Array[Byte] = Array()
           val left = n.l match {
-            case n: Node[Array[Byte]] => {leftIsNode = true;leftVal=n.v;n}
-            case l: Leaf[Array[Byte]] => {leftIsLeaf = true;leftVal=l.v;l}
-            case _ => {leftIsEmpty = true; n.l}
+            case n: Node[Array[Byte]] => leftIsNode = true; leftVal=n.v; n
+            case l: Leaf[Array[Byte]] => leftIsLeaf = true; leftVal=l.v; l
+            case _ => leftIsEmpty = true; n.l
           }
           val right = n.r match {
-            case n: Node[Array[Byte]] => {rightIsNode=true;rightVal=n.v;n}
-            case l: Leaf[Array[Byte]] => {rightIsLeaf=true;rightVal=l.v;l}
-            case _ => {rightIsEmpty = true; n.r}
+            case n: Node[Array[Byte]] => rightIsNode=true; rightVal=n.v; n
+            case l: Leaf[Array[Byte]] => rightIsLeaf=true; rightVal=l.v; l
+            case _ => rightIsEmpty = true; n.r
           }
           val cutBranch = isRightBranch(left)
           if (rightIsEmpty && leftIsLeaf) {
             val keyPair = sKeypairFast(n.v.slice(0,seedBytes))
-            assert(fch.hash(keyPair.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
+            assert(fch.hash(keyPair.slice(skBytes,skBytes+pkBytes)) sameElements n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes))
             Node(n.v,Empty,Leaf(keyPair))
           } else if (cutBranch) {
             Node(n.v,Empty,sumGenerateKey(n.v.slice(0,seedBytes),n.height-1))
@@ -379,7 +332,6 @@ class Kes {
           } else {
             n
           }
-        }
         case l: Leaf[Array[Byte]] => l
         case _ => t
       }
@@ -389,7 +341,7 @@ class Kes {
     //steps key through time steps one at a time until key step == t
     if (t<T && keyTime < t){
       var tempKey = key
-      for(i <- keyTime+1 to t) {
+      for(_ <- keyTime+1 to t) {
         tempKey = loop(tempKey)
       }
       tempKey
@@ -412,7 +364,7 @@ class Kes {
     if (t<T && keyTime < t){
       def constructKey(step:Int,input:Tree[Array[Byte]]):Tree[Array[Byte]] = {
         input match {
-          case n: Node[Array[Byte]] => {
+          case n: Node[Array[Byte]] =>
             var leftIsEmpty = false
             var leftIsLeaf = false
             var leftIsNode = false
@@ -422,21 +374,21 @@ class Kes {
             var rightIsNode = false
             var rightVal: Array[Byte] = Array()
             val left = n.l match {
-              case n: Node[Array[Byte]] => {leftIsNode = true;leftVal=n.v;n}
-              case l: Leaf[Array[Byte]] => {leftIsLeaf = true;leftVal=l.v;l}
-              case _ => {leftIsEmpty = true; n.l}
+              case n: Node[Array[Byte]] => leftIsNode = true; leftVal=n.v; n
+              case l: Leaf[Array[Byte]] => leftIsLeaf = true; leftVal=l.v; l
+              case _ => leftIsEmpty = true; n.l
             }
             val right = n.r match {
-              case n: Node[Array[Byte]] => {rightIsNode=true;rightVal=n.v;n}
-              case l: Leaf[Array[Byte]] => {rightIsLeaf=true;rightVal=l.v;l}
-              case _ => {rightIsEmpty = true; n.r}
+              case n: Node[Array[Byte]] => rightIsNode=true; rightVal=n.v; n
+              case l: Leaf[Array[Byte]] => rightIsLeaf=true; rightVal=l.v; l
+              case _ => rightIsEmpty = true; n.r
             }
             val e = exp(n.height-1)
             val nextStep = step%e
             if (step>=e) {
               if (rightIsEmpty && leftIsLeaf) {
                 val keyPair = sKeypairFast(n.v.slice(0,seedBytes))
-                assert(fch.hash(keyPair.slice(skBytes,skBytes+pkBytes)).deep == n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes).deep)
+                assert(fch.hash(keyPair.slice(skBytes,skBytes+pkBytes)) sameElements n.v.slice(seedBytes+pkBytes,seedBytes+2*pkBytes))
                 Node(n.v,Empty,Leaf(keyPair))
               } else if (leftIsEmpty && rightIsNode) {
                 Node(n.v, Empty, constructKey(nextStep,right))
@@ -455,7 +407,6 @@ class Kes {
                 n
               }
             }
-          }
           case l: Leaf[Array[Byte]] => l
           case _ => input
         }
@@ -483,33 +434,26 @@ class Kes {
     //loop that generates the signature of m++step and stacks up the witness path of the key
     def loop(t: Tree[Array[Byte]]): Array[Byte] = {
       t match {
-        case n: Node[Array[Byte]] => {
+        case n: Node[Array[Byte]] =>
           val left = n.l match {
-            case nn: Node[Array[Byte]] => {
+            case nn: Node[Array[Byte]] =>
               loop(nn)
-            }
-            case ll: Leaf[Array[Byte]] => {
+            case ll: Leaf[Array[Byte]] =>
               sSign(m++stepBytes,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)++stepBytes
-            }
             case _ => Array()
           }
           val right = n.r match {
-            case nn: Node[Array[Byte]] => {
+            case nn: Node[Array[Byte]] =>
               loop(nn)
-            }
-            case ll: Leaf[Array[Byte]] => {
+            case ll: Leaf[Array[Byte]] =>
               sSign(m++stepBytes,ll.v.slice(0,skBytes))++ll.v.slice(skBytes,skBytes+pkBytes)++stepBytes
-            }
             case _ => Array()
           }
           left++right++n.v.slice(seedBytes,seedBytes+2*pkBytes)
-        }
-        case l: Leaf[Array[Byte]] => {
+        case l: Leaf[Array[Byte]] =>
           sSign(m++stepBytes,l.v.slice(0,skBytes))++l.v.slice(skBytes,skBytes+pkBytes)++stepBytes++fch.hash(l.v.slice(skBytes,skBytes+pkBytes))++fch.hash(l.v.slice(skBytes,skBytes+pkBytes))
-        }
-        case _ => {
+        case _ =>
           Array()
-        }
       }
     }
     loop(sk)
@@ -528,9 +472,9 @@ class Kes {
     val step = BigInt(stepBytes)
     var pkLogic = true
     if (step % 2 == 0) {
-      pkLogic &= fch.hash(sig.slice(sigBytes,sigBytes+pkBytes)).deep == pkSeq.slice(0,pkBytes).deep
+      pkLogic &= fch.hash(sig.slice(sigBytes,sigBytes+pkBytes)) sameElements pkSeq.slice(0,pkBytes)
     } else {
-      pkLogic &= fch.hash(sig.slice(sigBytes,sigBytes+pkBytes)).deep == pkSeq.slice(pkBytes,2*pkBytes).deep
+      pkLogic &= fch.hash(sig.slice(sigBytes,sigBytes+pkBytes)) sameElements pkSeq.slice(pkBytes,2*pkBytes)
     }
     for (i <- 0 to pkSeq.length/pkBytes-4 by 2) {
       val pk0:Array[Byte] = pkSeq.slice((i+2)*pkBytes,(i+3)*pkBytes)
@@ -540,12 +484,12 @@ class Kes {
       val pk10:Array[Byte] = pkSeq.slice(i*pkBytes,(i+1)*pkBytes)
       val pk11:Array[Byte] = pkSeq.slice((i+1)*pkBytes,(i+2)*pkBytes)
       if((step.toInt/exp(i/2+1)) % 2 == 0) {
-        pkLogic &= pk0.deep == fch.hash(pk00++pk01).deep
+        pkLogic &= pk0 sameElements fch.hash(pk00++pk01)
       } else {
-        pkLogic &= pk1.deep == fch.hash(pk10++pk11).deep
+        pkLogic &= pk1 sameElements fch.hash(pk10++pk11)
       }
     }
-    pkLogic &= pk.deep == fch.hash(pkSeq.slice(pkSeq.length-2*pkBytes,pkSeq.length)).deep
+    pkLogic &= pk sameElements fch.hash(pkSeq.slice(pkSeq.length-2*pkBytes,pkSeq.length))
     sVerify(m++stepBytes,sig.slice(0,sigBytes),sig.slice(sigBytes,sigBytes+pkBytes)) && pkLogic
   }
 
@@ -556,20 +500,19 @@ class Kes {
     */
   private def sumGetKeyTimeStep(key: Tree[Array[Byte]]): Int = {
     key match {
-      case n: Node[Array[Byte]] => {
+      case n: Node[Array[Byte]] =>
         val left = n.l match {
-          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)}
-          case l: Leaf[Array[Byte]] => {0}
+          case n: Node[Array[Byte]] => sumGetKeyTimeStep(n)
+          case _: Leaf[Array[Byte]] => 0
           case _ => 0
         }
         val right = n.r match {
-          case n: Node[Array[Byte]] => {sumGetKeyTimeStep(n)+exp(n.height)}
-          case l: Leaf[Array[Byte]] => {1}
+          case n: Node[Array[Byte]] => sumGetKeyTimeStep(n)+exp(n.height)
+          case _: Leaf[Array[Byte]] => 1
           case _ => 0
         }
         left+right
-      }
-      case l: Leaf[Array[Byte]] => 0
+      case _: Leaf[Array[Byte]] => 0
       case _ => 0
     }
   }
@@ -611,7 +554,7 @@ class Kes {
     var tl = sumGetKeyTimeStep(L)
     var ti = sumGetKeyTimeStep(Si)
     if (keyTime < t) {
-      for(i <- keyTime+1 to t) {
+      for(_ <- keyTime+1 to t) {
         tl = sumGetKeyTimeStep(L)
         ti = sumGetKeyTimeStep(Si)
         if (ti+1 < Ti) {
@@ -635,8 +578,8 @@ class Kes {
 
   /**
     * Fast version on updateKey, should be equivalent input and output
-    * @param key
-    * @param t_in
+    * @param key input key
+    * @param t_in input desired time step
     * @return  updated key
     */
   def updateKeyFast(key: KesKeyBytes, t_in:Int): KesKeyBytes = {
@@ -711,7 +654,7 @@ class Kes {
     exp(tl)-1+ti
   }
 
-  def getKeyTimeStep(key: ForgingKey): Long = {
+  def getKeyTimeStep(key: PrivateKey): Long = {
     val L = key.L
     val Si = key.Si
     val tl = sumGetKeyTimeStep(L)
@@ -727,13 +670,10 @@ class Kes {
     */
   def sign(key: KesKeyBytes, m: Array[Byte]): KesSignature = {
     val keyTime = BigInt(getKeyTimeStep(key)).toByteArray
-    val L = key._1
     val Si = key._2
     val sigi = key._3
     val pki = key._4
-    val seed = key._5
     val ti = sumGetKeyTimeStep(Si)
-    val tl = sumGetKeyTimeStep(L)
     val sigm = sumSign(Si,m++keyTime,ti)
     (sigi,sigm,pki)
   }
@@ -756,47 +696,11 @@ class Kes {
 
   /**
     * Get the public key of an MMM private key
-    * @param key
-    * @return
+    * @param key input key
+    * @return public key
     */
   def publicKey(key: KesKeyBytes):  Array[Byte] = {
     sumGetPublicKey(key._1)
-  }
-
-  //print a tree for debugging
-  private def printTree(t:Tree[Array[Byte]]):Unit = {
-    t match {
-      case n:Node[Array[Byte]] => {
-        println("["+Base58.encode(n.v)+"]")
-        n.l match {
-          case nn:Node[Array[Byte]] => {
-            println("/")
-            printTree(nn)
-          }
-          case ll:Leaf[Array[Byte]] => {
-            println("|")
-            println("["+Base58.encode(ll.v)+"]")
-          }
-          case _ =>
-        }
-        n.r match {
-          case nn:Node[Array[Byte]] => {
-            println("\\")
-            printTree(nn)
-          }
-          case ll:Leaf[Array[Byte]] => {
-            println("|")
-            println("["+Base58.encode(ll.v)+"]")
-          }
-          case _ =>
-        }
-      }
-      case l:Leaf[Array[Byte]] => {
-        println("|")
-        println("["+Base58.encode(l.v)+"]")
-      }
-      case _ =>
-    }
   }
 
 }

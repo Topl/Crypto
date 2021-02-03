@@ -6,6 +6,7 @@ import java.security.{SecureRandom,MessageDigest}
   * AMS 2021:
   * ECVRF-ED25519-SHA512-TAI
   * Elliptic curve Verifiable Random Function based on EdDSA
+  * https://tools.ietf.org/html/draft-irtf-cfrg-vrf-04
   */
 
 class ECVRF25519 extends EC {
