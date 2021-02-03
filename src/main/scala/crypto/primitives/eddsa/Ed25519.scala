@@ -3,6 +3,11 @@ package crypto.primitives.eddsa
 import java.security.SecureRandom
 import java.util.Arrays
 
+/**
+  * AMS 2021:
+  * Ed25519 ported from BouncyCastle
+  */
+
 class Ed25519 extends EC {
 
   def dom2(d: SHA512Digest, phflag: Byte, ctx: Array[Byte]): Unit = {

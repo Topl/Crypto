@@ -2,6 +2,11 @@ package crypto.primitives.eddsa
 
 import java.security.SecureRandom
 
+/**
+  * AMS 2021:
+  * X25519 ported from BouncyCastle
+  */
+
 class X25519 extends EC {
   val POINT_SIZE = 32
   val SCALAR_SIZE = 32

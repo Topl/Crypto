@@ -3,7 +3,7 @@ package crypto.primitives.eddsa
 import java.security.SecureRandom
 
 /**
-  * AMS 2020:
+  * AMS 2021:
   * Key exchange using X25519
   * Implements RFC7748 Section 6.1 Diffie-Hellman key exchange with base point 9
   */

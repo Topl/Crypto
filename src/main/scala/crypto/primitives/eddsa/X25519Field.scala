@@ -1,5 +1,10 @@
 package crypto.primitives.eddsa
 
+/**
+  * AMS 2021:
+  * Curve point operations ported from BouncyCastle used in all EC primitives in crypto.primitives.eddsa
+  */
+
 class X25519Field {
 
   val SIZE = 10

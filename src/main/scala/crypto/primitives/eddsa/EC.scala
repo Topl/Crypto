@@ -4,6 +4,34 @@ import java.security.MessageDigest
 import java.util.Arrays
 import scala.util.control.Breaks._
 
+/*
+  Ed25519 is EdDSA instantiated with:
++-----------+-------------------------------------------------------+
+| Parameter |                                                 Value |
++-----------+-------------------------------------------------------+
+|     p     |     p of edwards25519 in [RFC7748] (i.e., 2^255 - 19) |
+|     b     |                                                   256 |
+|  encoding |    255-bit little-endian encoding of {0, 1, ..., p-1} |
+|  of GF(p) |                                                       |
+|    H(x)   |            SHA-512(dom2(phflag,context)||x) [RFC6234] |
+|     c     |       base 2 logarithm of cofactor of edwards25519 in |
+|           |                                   [RFC7748] (i.e., 3) |
+|     n     |                                                   254 |
+|     d     |  d of edwards25519 in [RFC7748] (i.e., -121665/121666 |
+|           | = 370957059346694393431380835087545651895421138798432 |
+|           |                           19016388785533085940283555) |
+|     a     |                                                    -1 |
+|     B     | (X(P),Y(P)) of edwards25519 in [RFC7748] (i.e., (1511 |
+|           | 22213495354007725011514095885315114540126930418572060 |
+|           | 46113283949847762202, 4631683569492647816942839400347 |
+|           |      5163141307993866256225615783033603165251855960)) |
+|     L     |             order of edwards25519 in [RFC7748] (i.e., |
+|           |        2^252+27742317777372353535851937790883648493). |
+|    PH(x)  |                       x (i.e., the identity function) |
++-----------+-------------------------------------------------------+
+Table 1: Parameters of Ed25519
+  */
+
 trait EC {
 
   val x25519Field:X25519Field = new X25519Field
