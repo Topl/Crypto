@@ -38,13 +38,13 @@ class Sig {
   }
 
   def getPkFromSk(sk:Array[Byte]):Array[Byte] = {
-    var pk_out = Array.fill(keyLength){0x00.toByte}
+    val pk_out = Array.fill(keyLength){0x00.toByte}
     Ed25519.generatePublicKey(sk,0,pk_out,0)
     pk_out
   }
 
   def sign(privateKey: Array[Byte], message: Array[Byte]): Array[Byte] = {
-    var sig:Array[Byte] = Array.fill(signatureLength){0x00.toByte}
+    val sig:Array[Byte] = Array.fill(signatureLength){0x00.toByte}
     Ed25519.sign(privateKey,0,message,0,message.length,sig,0)
     sig
   }
