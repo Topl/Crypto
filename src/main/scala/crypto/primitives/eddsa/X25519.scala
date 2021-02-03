@@ -32,9 +32,9 @@ class X25519 extends EC {
 
   def generatePrivateKey(random: SecureRandom, k: Array[Byte]): Unit = {
     random.nextBytes(k)
-    k(0) &= 0xF8
-    k(SCALAR_SIZE - 1) &= 0x7F
-    k(SCALAR_SIZE - 1) |= 0x40
+    k(0) = (k(0) & 0xF8).toByte
+    k(SCALAR_SIZE - 1) = (k(SCALAR_SIZE - 1) & 0x7F).toByte
+    k(SCALAR_SIZE - 1) = (k(SCALAR_SIZE - 1)| 0x40).toByte
   }
 
   def generatePublicKey(k: Array[Byte], kOff: Int, r: Array[Byte], rOff: Int): Unit = {

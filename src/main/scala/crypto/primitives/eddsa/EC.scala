@@ -1,9 +1,13 @@
 package crypto.primitives.eddsa
 
 import java.security.MessageDigest
+import java.util.Arrays
+import scala.util.control.Breaks._
 
 trait EC {
+
   val x25519Field:X25519Field = new X25519Field
+
   val M28L = 0x0FFFFFFFL
   val M32L = 0xFFFFFFFFL
   val POINT_BYTES:Int = 32
@@ -64,7 +68,7 @@ trait EC {
     val xyd:Array[Int] = x25519Field.create
   }
 
-  def createDigest:SHA512Digest = new SHA512Digest {
+  class SHA512Digest {
 
     val digest = MessageDigest.getInstance("SHA-512")
 
@@ -73,52 +77,23 @@ trait EC {
       digest.update(bytes)
       digest.digest()
     }
-    /**
-      * return the algorithm name
-      *
-      * @return the algorithm name
-      */
-    override def getAlgorithmName: String = "SHA-512"
 
-    /**
-      * return the size, in bytes, of the digest produced by this message digest.
-      *
-      * @return the size, in bytes, of the digest produced by this message digest.
-      */
-    override def getDigestSize: Int = 512
+    def getAlgorithmName: String = "SHA-512"
 
-    /**
-      * update the message digest with a single byte.
-      *
-      * @param in the input byte to be entered.
-      */
-    override def update(in: Byte): Unit = digest.update(in)
+    def getDigestSize: Int = 512
 
-    /**
-      * update the message digest with a block of bytes.
-      *
-      * @param in    the byte array containing the data.
-      * @param inOff the offset into the byte array where the data starts.
-      * @param len   the length of the data.
-      */
-    override def update(in: Array[Byte], inOff: Int, len: Int): Unit = digest.update(in,inOff,len)
+    def update(in: Byte): Unit = digest.update(in)
 
-    /**
-      * close the digest, producing the final digest value. The doFinal
-      * call leaves the digest reset.
-      *
-      * @param out    the array the digest is to be copied into.
-      * @param outOff the offset into the out array the digest is to start at.
-      */
-    override def doFinal(out: Array[Byte], outOff: Int): Int = ???
+    def update(in: Array[Byte], inOff: Int, len: Int): Unit = digest.update(in,inOff,len)
 
-    /**
-      * reset the digest back to it's initial state.
-      */
-    override def reset(): Unit = digest.reset()
+    def doFinal(out: Array[Byte], outOff: Int): Int = {
+      digest.digest(out,outOff,out.length)
+    }
+
+    def reset(): Unit = digest.reset()
   }
 
-  def createPrehash: Digest = createDigest
+  def createDigest:SHA512Digest = new SHA512Digest
 
   def mulAddTo256(x: Array[Int], y: Array[Int], zz: Array[Int]): Int = {
     val y_0 = y(0) & M
@@ -133,31 +108,31 @@ trait EC {
     for (i <- 0 until 8) {
       var c = 0
       val x_i = x(i) & M
-      c += x_i * y_0 + (zz(i + 0) & M)
+      c += (x_i * y_0 + (zz(i + 0) & M)).toInt
       zz(i + 0) = c
       c >>>= 32
-      c += x_i * y_1 + (zz(i + 1) & M)
+      c += (x_i * y_1 + (zz(i + 1) & M)).toInt
       zz(i + 1) = c
       c >>>= 32
-      c += x_i * y_2 + (zz(i + 2) & M)
+      c += (x_i * y_2 + (zz(i + 2) & M)).toInt
       zz(i + 2) = c
       c >>>= 32
-      c += x_i * y_3 + (zz(i + 3) & M)
+      c += (x_i * y_3 + (zz(i + 3) & M)).toInt
       zz(i + 3) = c
       c >>>= 32
-      c += x_i * y_4 + (zz(i + 4) & M)
+      c += (x_i * y_4 + (zz(i + 4) & M)).toInt
       zz(i + 4) = c
       c >>>= 32
-      c += x_i * y_5 + (zz(i + 5) & M)
+      c += (x_i * y_5 + (zz(i + 5) & M)).toInt
       zz(i + 5) = c
       c >>>= 32
-      c += x_i * y_6 + (zz(i + 6) & M)
+      c += (x_i * y_6 + (zz(i + 6) & M)).toInt
       zz(i + 6) = c
       c >>>= 32
-      c += x_i * y_7 + (zz(i + 7) & M)
+      c += (x_i * y_7 + (zz(i + 7) & M)).toInt
       zz(i + 7) = c
       c >>>= 32
-      zc += c + (zz(i + 8) & M)
+      zc += c + (zz(i + 8) & M).toInt
       zz(i + 8) = zc
       zc >>>= 32
     }
@@ -189,7 +164,7 @@ trait EC {
     val MASK = -(mask & 1) & M
     var c = 0
     for (i <- 0 until len) {
-      c += (x(i) & M) + (y(i) & MASK)
+      c += ((x(i) & M) + (y(i) & MASK)).toInt
       z(i) = c
       c >>>= 32
     }
@@ -198,6 +173,7 @@ trait EC {
 
   def shiftDownBit(len: Int, z: Array[Int], c: Int): Int = {
     var i = len
+    var cv = c
     while ( {
       {
         i -= 1; i
@@ -205,22 +181,23 @@ trait EC {
     }) {
       val next = z(i)
       z(i) = (next >>> 1) | (c << 31)
-      c = next
+      cv = next
     }
-    c << 31
+    cv << 31
   }
 
   def shuffle2(x: Int): Int = { // "shuffle" (twice) low half to even bits and high half to odd bits
     var t = 0
-    t = (x ^ (x >>> 7)) & 0x00AA00AA
-    x ^= (t ^ (t << 7))
-    t = (x ^ (x >>> 14)) & 0x0000CCCC
-    x ^= (t ^ (t << 14))
-    t = (x ^ (x >>> 4)) & 0x00F000F0
-    x ^= (t ^ (t << 4))
-    t = (x ^ (x >>> 8)) & 0x0000FF00
-    x ^= (t ^ (t << 8))
-    x
+    var xv = x
+    t = (xv ^ (xv >>> 7)) & 0x00AA00AA
+    xv ^= (t ^ (t << 7))
+    t = (xv ^ (xv >>> 14)) & 0x0000CCCC
+    xv ^= (t ^ (t << 14))
+    t = (xv ^ (xv >>> 4)) & 0x00F000F0
+    xv ^= (t ^ (t << 4))
+    t = (xv ^ (xv >>> 8)) & 0x0000FF00
+    xv ^= (t ^ (t << 8))
+    xv
   }
 
   def areAllZeroes(buf: Array[Byte], off: Int, len: Int): Boolean = {
@@ -286,7 +263,7 @@ trait EC {
     val py = Arrays.copyOfRange(p, pOff, pOff + POINT_BYTES)
     if (!checkPointVar(py)) return false
     val x_0 = (py(POINT_BYTES - 1) & 0x80) >>> 7
-    py(POINT_BYTES - 1) &= 0x7F
+    py(POINT_BYTES - 1) = (py(POINT_BYTES - 1) & 0x7F).toByte
     x25519Field.decode(py, 0, r.y)
     val u = x25519Field.create
     val v = x25519Field.create
@@ -304,15 +281,6 @@ trait EC {
 
   def decodeScalar(k: Array[Byte], kOff: Int, n: Array[Int]): Unit = {
     decode32(k, kOff, n, 0, SCALAR_INTS)
-  }
-
-  def dom2(d: Digest, phflag: Byte, ctx: Array[Byte]): Unit = {
-    if (ctx != null) {
-      d.update(DOM2_PREFIX, 0, DOM2_PREFIX.length)
-      d.update(phflag)
-      d.update(ctx.length.toByte)
-      d.update(ctx, 0, ctx.length)
-    }
   }
 
   def encode24(n: Int, bs: Array[Byte], off: Int): Unit = {
@@ -342,7 +310,7 @@ trait EC {
     x25519Field.normalize(x)
     x25519Field.normalize(y)
     x25519Field.encode(y, r, rOff)
-    r(rOff + POINT_BYTES - 1) |= ((x(0) & 1) << 7)
+    r(rOff + POINT_BYTES - 1) = (r(rOff + POINT_BYTES - 1) | ((x(0) & 1) << 7)).toByte
   }
 
   def getWNAF(n: Array[Int], width: Int) = {
@@ -351,19 +319,11 @@ trait EC {
     var tPos = t.length
     var c = 0
     var i = SCALAR_INTS
-
-    while ( {
-      {
-        i -= 1; i
-      } >= 0
-    }) {
+    while ({{i -= 1; i} >= 0}) {
       val next = n(i)
-      t({
-        tPos -= 1; tPos
-      }) = (next >>> 16) | (c << 16)
-      t({
-        tPos -= 1; tPos
-      }) = c = next
+      t({tPos -= 1; tPos}) = (next >>> 16) | (c << 16)
+      c = next
+      t({tPos -= 1; tPos}) = c
     }
     val ws = new Array[Byte](256)
     val pow2 = 1 << width
@@ -371,20 +331,15 @@ trait EC {
     val sign = pow2 >>> 1
     var j = 0
     var carry = 0
-    var i = 0
-    while ( {
-      i < t.length
-    }) {
+    i = 0
+    while ({i < t.length}) {
       val word = t(i)
-      while ( {
-        j < 16
-      }) {
+      while ({j < 16}) breakable{
         val word16 = word >>> j
         val bit = word16 & 1
         if (bit == carry) {
           j += 1
-          continue //todo: continue is not supported
-
+          break
         }
         var digit = (word16 & mask) + carry
         carry = digit & sign
@@ -393,7 +348,6 @@ trait EC {
         ws((i << 4) + j) = digit.toByte
         j += width
       }
-
       i += 1
       j -= 16
     }
@@ -567,7 +521,8 @@ trait EC {
     x25519Field.mul(p.x, p.y, p.t)
   }
 
-  def pointLookup(block: Int, index: Int, p:PointPrecomp): Unit = { //        assert 0 <= block && block < PRECOMP_BLOCKS;
+  def pointLookup(block: Int, index: Int, p:PointPrecomp): Unit = {
+    //        assert 0 <= block && block < PRECOMP_BLOCKS;
     //        assert 0 <= index && index < PRECOMP_POINTS;
     var off = block * PRECOMP_POINTS * 3 * x25519Field.SIZE
     for (i <- 0 until PRECOMP_POINTS) {
@@ -587,7 +542,8 @@ trait EC {
     val table = new Array[PointExt](count)
     table(0) = pointCopy(p)
     for (i <- 1 until count) {
-      pointAddVar(false, table(i - 1), d, table(i) = new PointExt)
+      table(i) = new PointExt
+      pointAddVar(false, table(i - 1), d, table(i))
     }
     table
   }
@@ -648,8 +604,8 @@ trait EC {
           while ( {
             j < size
           }) {
-            pointAddVar(false, points(k - size), ds(t), points(k) = new PointExt)
-
+            points(k) = new PointExt
+            pointAddVar(false, points(k - size), ds(t), points(k))
             j += 1
             k += 1
           }
@@ -660,7 +616,6 @@ trait EC {
           val x = x25519Field.create
           val y = x25519Field.create
           x25519Field.add(q.z, q.z, x)
-          // TODO[ed25519] Batch inversion
           x25519Field.inv(x, y)
           x25519Field.mul(q.x, y, x)
           x25519Field.mul(q.y, y, y)
@@ -684,9 +639,9 @@ trait EC {
 
   def pruneScalar(n: Array[Byte], nOff: Int, r: Array[Byte]): Unit = {
     System.arraycopy(n, nOff, r, 0, SCALAR_BYTES)
-    r(0) &= 0xF8
-    r(SCALAR_BYTES - 1) &= 0x7F
-    r(SCALAR_BYTES - 1) |= 0x40
+    r(0) = (r(0) & 0xF8).toByte
+    r(SCALAR_BYTES - 1) = (r(SCALAR_BYTES - 1) & 0x7F).toByte
+    r(SCALAR_BYTES - 1) = (r(SCALAR_BYTES - 1) | 0x40).toByte
   }
 
   def reduceScalar(n: Array[Byte]): Array[Byte] = {
@@ -844,26 +799,24 @@ trait EC {
     for (i <- 0 until SCALAR_INTS) {
       n(i) = shuffle2(n(i))
     }
-
     val p = new PointPrecomp
     var cOff = (PRECOMP_SPACING - 1) * PRECOMP_TEETH
-
-    while ( {
-      true
-    }) {
-      for (b <- 0 until PRECOMP_BLOCKS) {
-        val w = n(b) >>> cOff
-        val sign = (w >>> (PRECOMP_TEETH - 1)) & 1
-        val abs = (w ^ -sign) & PRECOMP_MASK
-        //                assert sign == 0 || sign == 1;
-        //                assert 0 <= abs && abs < PRECOMP_POINTS;
-        pointLookup(b, abs, p)
-        x25519Field.cswap(sign, p.ypx_h, p.ymx_h)
-        x25519Field.cnegate(sign, p.xyd)
-        pointAddPrecomp(p, r)
+    breakable{
+      while ({true}) {
+        for (b <- 0 until PRECOMP_BLOCKS) {
+          val w = n(b) >>> cOff
+          val sign = (w >>> (PRECOMP_TEETH - 1)) & 1
+          val abs = (w ^ -sign) & PRECOMP_MASK
+          //                assert sign == 0 || sign == 1;
+          //                assert 0 <= abs && abs < PRECOMP_POINTS;
+          pointLookup(b, abs, p)
+          x25519Field.cswap(sign, p.ypx_h, p.ymx_h)
+          x25519Field.cnegate(sign, p.xyd)
+          pointAddPrecomp(p, r)
+        }
+        if ({cOff -= PRECOMP_TEETH;cOff} < 0) break
+        pointDouble(r)
       }
-      if ((cOff -= PRECOMP_TEETH) < 0) break //todo: break is not supported
-      pointDouble(r)
     }
   }
 
@@ -881,29 +834,24 @@ trait EC {
     val tp = pointPrecompVar(p, 1 << (width - 2))
     pointSetNeutral(r)
     var bit = 255
-    while ( {
-      bit > 0 && (ws_b(bit) | ws_p(bit)) == 0
-    }) bit -= 1
-
-    while ( {
-      true
-    }) {
-      val wb = ws_b(bit)
-      if (wb != 0) {
-        val sign = wb >> 31
-        val index = (wb ^ sign) >>> 1
-        pointAddVar(sign != 0, precompBaseTable(index), r)
+    while ({bit > 0 && (ws_b(bit) | ws_p(bit)) == 0}) bit -= 1
+    breakable{
+      while (true) {
+        val wb = ws_b(bit)
+        if (wb != 0) {
+          val sign = wb >> 31
+          val index = (wb ^ sign) >>> 1
+          pointAddVar(sign != 0, precompBaseTable(index), r)
+        }
+        val wp = ws_p(bit)
+        if (wp != 0) {
+          val sign = wp >> 31
+          val index = (wp ^ sign) >>> 1
+          pointAddVar(sign != 0, tp(index), r)
+        }
+        if ({bit -= 1; bit} < 0) break
+        pointDouble(r)
       }
-      val wp = ws_p(bit)
-      if (wp != 0) {
-        val sign = wp >> 31
-        val index = (wp ^ sign) >>> 1
-        pointAddVar(sign != 0, tp(index), r)
-      }
-      if ( {
-        bit -= 1; bit
-      } < 0) break //todo: break is not supported
-      pointDouble(r)
     }
   }
 }
