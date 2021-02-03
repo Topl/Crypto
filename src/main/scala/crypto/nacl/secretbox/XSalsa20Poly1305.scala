@@ -1,7 +1,7 @@
-package crypto.secretbox
+package crypto.nacl.secretbox
 
-import crypto.onetimeauth.Poly1305
-import crypto.stream.XSalsa20
+import crypto.nacl.onetimeauth.Poly1305
+import crypto.nacl.stream.XSalsa20
 
 object XSalsa20Poly1305 {
 

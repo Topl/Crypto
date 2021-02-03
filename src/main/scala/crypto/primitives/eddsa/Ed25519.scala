@@ -1,7 +1,7 @@
 package crypto.primitives.eddsa
 
 import java.security.SecureRandom
-import java.util.Arrays
+import java.util
 
 /**
   * AMS 2021:
@@ -78,12 +78,12 @@ class Ed25519 extends EC {
 
   def implVerify(sig: Array[Byte], sigOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], phflag: Byte, m: Array[Byte], mOff: Int, mLen: Int): Boolean = {
     if (!checkContextVar(ctx, phflag)) throw new IllegalArgumentException("ctx")
-    val R = Arrays.copyOfRange(sig, sigOff, sigOff + POINT_BYTES)
-    val S = Arrays.copyOfRange(sig, sigOff + POINT_BYTES, sigOff + SIGNATURE_SIZE)
+    val R = util.Arrays.copyOfRange(sig, sigOff, sigOff + POINT_BYTES)
+    val S = util.Arrays.copyOfRange(sig, sigOff + POINT_BYTES, sigOff + SIGNATURE_SIZE)
     if (!checkPointVar(R)) return false
     if (!checkScalarVar(S)) return false
     val pA = new PointExt
-    if (!decodePointVar(pk, pkOff, true, pA)) return false
+    if (!decodePointVar(pk, pkOff, negate = true, pA)) return false
     val d = createDigest
     val h = new Array[Byte](d.getDigestSize)
     dom2(d, phflag, ctx)
@@ -100,7 +100,7 @@ class Ed25519 extends EC {
     scalarMultStraussVar(nS, nA, pA, pR)
     val check = new Array[Byte](POINT_BYTES)
     encodePoint(pR, check, 0)
-    Arrays.equals(check, R)
+    util.Arrays.equals(check, R)
   }
 
   def sign(sk: Array[Byte], skOff: Int, m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {

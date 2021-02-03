@@ -1,9 +1,9 @@
-package crypto.sign
+package crypto.nacl.sign
 
-import crypto.Utils._
-import crypto.hash.Sha512
-import crypto.hash.Sha512.State
-import crypto.verify.Verify
+import crypto.nacl.Utils._
+import crypto.nacl.hash.Sha512
+import crypto.nacl.hash.Sha512.State
+import crypto.nacl.verify.Verify
 
 object Ed25519 {
 

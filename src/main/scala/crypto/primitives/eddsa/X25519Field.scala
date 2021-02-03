@@ -53,7 +53,6 @@ class X25519Field {
     z4 &= M25
     z8 += (z7 >> 25)
     z7 &= M25
-    //        z0 += (z9 >> 24) * 19; z9 &= M24;
     z0 += (z9 >> 25) * 38
     z9 &= M25
     z1 += (z0 >> 26)
@@ -81,7 +80,6 @@ class X25519Field {
   }
 
   def cmov(cond: Int, x: Array[Int], xOff: Int, z: Array[Int], zOff: Int): Unit = {
-    //        assert 0 == cond || -1 == cond;
     for (i <- 0 until SIZE) {
       var z_i = z(zOff + i)
       val diff = z_i ^ x(xOff + i)
@@ -91,7 +89,6 @@ class X25519Field {
   }
 
   def cnegate(negate: Int, z: Array[Int]): Unit = {
-    //      assert negate >>> 1 == 0;
     val mask = 0 - negate
     for (i <- 0 until SIZE) {
       z(i) = (z(i) ^ mask) - mask
@@ -109,8 +106,6 @@ class X25519Field {
   def createTable(n: Int) = new Array[Int](SIZE * n)
 
   def cswap(swap: Int, a: Array[Int], b: Array[Int]): Unit = {
-    //        assert swap >>> 1 == 0;
-    //        assert a != b;
     val mask = 0 - swap
     for (i <- 0 until SIZE) {
       val ai = a(i)
@@ -176,7 +171,6 @@ class X25519Field {
   }
 
   def inv(x: Array[Int], z: Array[Int]): Unit = {
-    // z = x^(p-2) = x^7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEB
     // (250 1s) (1 0s) (1 1s) (1 0s) (2 1s)
     // Addition chain: [1] [2] 3 5 10 15 25 50 75 125 [250]
     val x2 = create
@@ -221,8 +215,6 @@ class X25519Field {
     c2 = x7.toLong * y
     x7 = c2.toInt & M25
     c2 >>= 25
-    //        c3  = (long)x9 * y; x9 = (int)c3 & M24; c3 >>= 24;
-    //        c3 *= 19;
     c3 = x9.toLong * y
     x9 = c3.toInt & M25
     c3 >>= 25
@@ -305,7 +297,6 @@ class X25519Field {
     b6 += u3.toLong * v3
     val b7 = u3.toLong * v4 + u4.toLong * v3
     val b8 = u4.toLong * v4
-    //        b8     <<= 1;
     a0 -= b5 * 76
     a1 -= b6 * 38
     a2 -= b7 * 38
@@ -314,7 +305,6 @@ class X25519Field {
     a6 -= b1
     a7 -= b2
     a8 -= b3
-    //        long a9 = -b4;
     x0 += u0
     y0 += v0
     x1 += u1
@@ -348,10 +338,7 @@ class X25519Field {
     t = a8 + (c3 - a3)
     z8 = t.toInt & M26
     t >>= 26
-    //        t       += a9 + (c4 - a4);
     t += (c4 - a4) - b4
-    //        z9       = (int)t & M24; t >>= 24;
-    //        t        = a0 + (t + ((c5 - a5) << 1)) * 19;
     z9 = t.toInt & M25
     t >>= 25
     t = a0 + (t + c5 - a5) * 38
@@ -366,7 +353,6 @@ class X25519Field {
     t += a3 + (c8 - a8) * 38
     z(3) = t.toInt & M26
     t >>= 26
-    //        t       += a4 - a9 * 38;
     t += a4 + b4 * 38
     z(4) = t.toInt & M25
     t >>= 25
@@ -395,7 +381,6 @@ class X25519Field {
     val x = (z(9) >>> 23) & 1
     reduce(z, x)
     reduce(z, -x)
-    //        assert z[9] >>> 24 == 0;
   }
 
   def one(z: Array[Int]): Unit = {
@@ -406,7 +391,6 @@ class X25519Field {
   }
 
   def powPm5d8(x: Array[Int], rx2: Array[Int], rz: Array[Int]): Unit = {
-    // z = x^((p-5)/8) = x^FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD
     // (250 1s) (1 0s) (1 1s)
     // Addition chain: [1] 2 3 5 10 15 25 50 75 125 [250]
     val x2 = rx2
@@ -527,7 +511,6 @@ class X25519Field {
     a6 -= b1
     a7 -= b2
     a8 -= b3
-    //        long a9 = -b4;
     x0 += u0
     x1 += u1
     x2 += u2
@@ -552,10 +535,7 @@ class X25519Field {
     t = a8 + (c3 - a3)
     z8 = t.toInt & M26
     t >>= 26
-    //        t       += a9 + (c4 - a4);
     t += (c4 - a4) - b4
-    //        z9       = (int)t & M24; t >>= 24;
-    //        t        = a0 + (t + ((c5 - a5) << 1)) * 19;
     z9 = t.toInt & M25
     t >>= 25
     t = a0 + (t + c5 - a5) * 38
@@ -570,7 +550,6 @@ class X25519Field {
     t += a3 + (c8 - a8) * 38
     z(3) = t.toInt & M26
     t >>= 26
-    //        t       += a4 - a9 * 38;
     t += a4 + b4 * 38
     z(4) = t.toInt & M25
     t >>= 25
@@ -590,7 +569,6 @@ class X25519Field {
   }
 
   def sqr(x: Array[Int], n: Int, z: Array[Int]): Unit = {
-    //        assert n > 0;
     var nv = n
     sqr(x, z)
     while ( {

@@ -1,4 +1,4 @@
-package crypto.sign
+package crypto.nacl.sign
 
 import scala.util.control.Breaks._
 

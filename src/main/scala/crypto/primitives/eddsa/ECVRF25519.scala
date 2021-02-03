@@ -16,7 +16,7 @@ class ECVRF25519 extends EC {
   val np: Array[Int] = Array.fill(SCALAR_INTS){0}
   val nb: Array[Int] = Array.fill(SCALAR_INTS){0}
   val C_BYTES = 16
-  val PI_BYTES = POINT_BYTES+SCALAR_BYTES+C_BYTES
+  val PI_BYTES: Int = POINT_BYTES+SCALAR_BYTES+C_BYTES
   val neutralPointBytes: Array[Byte] = Array.fill(POINT_BYTES){0x00.toByte}
   val NP = new PointAccum
   cofactor.update(0,0x08.toByte)
@@ -103,7 +103,7 @@ class ECVRF25519 extends EC {
     if (pk.length == PUBLIC_KEY_SIZE) {
       val Y = new PointExt
       val CY = new PointAccum
-      val decoded = decodePointVar(pk,0,false,Y)
+      val decoded = decodePointVar(pk,0,negate = false,Y)
       if (decoded) {
         decodeScalar(cofactor, 0, np)
         decodeScalar(zeroScalar, 0, nb)
@@ -154,7 +154,7 @@ class ECVRF25519 extends EC {
     while (!isPoint) {
       val ctr_byte = Array(ctr.toByte)
       hash = Sha512(suite++one++Y++a++ctr_byte).take(POINT_BYTES)
-      isPoint = decodePointVar(hash,0,false,H)
+      isPoint = decodePointVar(hash,0,negate = false,H)
       if (isPoint){
         isPoint != isNeutralPoint(H)
       }
@@ -310,8 +310,8 @@ class ECVRF25519 extends EC {
     val H: (PointAccum, Array[Byte]) = ECVRF_hash_to_curve_try_and_increment(pk,alpha)
     val gamma = new PointExt
     val Y = new PointExt
-    decodePointVar(gamma_str,0,false,gamma)
-    decodePointVar(pk,0,false,Y)
+    decodePointVar(gamma_str,0,negate = false,gamma)
+    decodePointVar(pk,0,negate = false,Y)
     val A = new PointAccum //s*B
     val B = new PointAccum //c*Y
     val C = new PointAccum //s*H
@@ -332,9 +332,9 @@ class ECVRF25519 extends EC {
     scalarMultStraussVar(nb,np,gamma,D)
     decodeScalar(oneScalar,0,np)
     decodeScalar(zeroScalar,0,nb)
-    pointAddVar(true,pointCopy(A),pointCopy(B),t)
+    pointAddVar(negate = true,pointCopy(A),pointCopy(B),t)
     scalarMultStraussVar(nb,np,t,U)
-    pointAddVar(true,pointCopy(C),pointCopy(D),t)
+    pointAddVar(negate = true,pointCopy(C),pointCopy(D),t)
     scalarMultStraussVar(nb,np,t,V)
     scalarMultStraussVar(nb,np,gamma,g)
     val cp = ECVRF_hash_points(H._1,g,U,V)
@@ -374,7 +374,7 @@ class ECVRF25519 extends EC {
     assert(checkScalarVar(s))
     val gamma = new PointExt
     val cg = new PointAccum
-    decodePointVar(gamma_str,0,false,gamma)
+    decodePointVar(gamma_str,0,negate = false,gamma)
     decodeScalar(cofactor,0,np)
     decodeScalar(zeroScalar,0,nb)
     scalarMultStraussVar(nb,np,gamma,cg)

@@ -1,7 +1,7 @@
-package crypto.core
+package crypto.nacl.core
 
-import crypto.Utils._
-import crypto.core.Salsa20.rotate
+import crypto.nacl.Utils._
+import crypto.nacl.core.Salsa20.rotate
 
 object HSalsa20 {
 

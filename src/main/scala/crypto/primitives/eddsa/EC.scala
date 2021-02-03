@@ -1,7 +1,7 @@
 package crypto.primitives.eddsa
 
 import java.security.MessageDigest
-import java.util.Arrays
+import java.util
 import scala.util.control.Breaks._
 
 /*
@@ -98,7 +98,7 @@ trait EC {
 
   class SHA512Digest {
 
-    val digest = MessageDigest.getInstance("SHA-512")
+    val digest: MessageDigest = MessageDigest.getInstance("SHA-512")
 
     def Sha512(bytes: Array[Byte]):Array[Byte] = {
       digest.reset()
@@ -189,10 +189,10 @@ trait EC {
   }
 
   def cadd(len: Int, mask: Int, x: Array[Int], y: Array[Int], z: Array[Int]): Int = {
-    val MASK = -(mask & 1) & M
+    val m = -(mask & 1) & M
     var c = 0
     for (i <- 0 until len) {
-      c += ((x(i) & M) + (y(i) & MASK)).toInt
+      c += ((x(i) & M) + (y(i) & m)).toInt
       z(i) = c
       c >>>= 32
     }
@@ -202,11 +202,7 @@ trait EC {
   def shiftDownBit(len: Int, z: Array[Int], c: Int): Int = {
     var i = len
     var cv = c
-    while ( {
-      {
-        i -= 1; i
-      } >= 0
-    }) {
+    while ({i -= 1; i} >= 0) {
       val next = z(i)
       z(i) = (next >>> 1) | (c << 31)
       cv = next
@@ -245,13 +241,13 @@ trait EC {
     decodeScalar(s, 0, v)
     mulAddTo256(u, v, t)
     val result = new Array[Byte](SCALAR_BYTES * 2)
-    for (i <- 0 until t.length) {
+    for (i <- t.indices) {
       encode32(t(i), result, i * 4)
     }
     reduceScalar(result)
   }
 
-  def checkContextVar(ctx: Array[Byte], phflag: Byte) = ctx == null && phflag == 0x00 || ctx != null && ctx.length < 256
+  def checkContextVar(ctx: Array[Byte], phflag: Byte): Boolean = ctx == null && phflag == 0x00 || ctx != null && ctx.length < 256
 
   def checkPointVar(p: Array[Byte]): Boolean = {
     val t = new Array[Int](8)
@@ -288,7 +284,7 @@ trait EC {
   }
 
   def decodePointVar(p: Array[Byte], pOff: Int, negate: Boolean, r:PointExt): Boolean = {
-    val py = Arrays.copyOfRange(p, pOff, pOff + POINT_BYTES)
+    val py = util.Arrays.copyOfRange(p, pOff, pOff + POINT_BYTES)
     if (!checkPointVar(py)) return false
     val x_0 = (py(POINT_BYTES - 1) & 0x80) >>> 7
     py(POINT_BYTES - 1) = (py(POINT_BYTES - 1) & 0x7F).toByte
@@ -341,13 +337,12 @@ trait EC {
     r(rOff + POINT_BYTES - 1) = (r(rOff + POINT_BYTES - 1) | ((x(0) & 1) << 7)).toByte
   }
 
-  def getWNAF(n: Array[Int], width: Int) = {
-    //        assert n[SCALAR_INTS - 1] >>> 31 == 0;
+  def getWNAF(n: Array[Int], width: Int): Array[Byte] = {
     val t = new Array[Int](SCALAR_INTS * 2)
     var tPos = t.length
     var c = 0
     var i = SCALAR_INTS
-    while ({{i -= 1; i} >= 0}) {
+    while ({i -= 1; i} >= 0) {
       val next = n(i)
       t({tPos -= 1; tPos}) = (next >>> 16) | (c << 16)
       c = next
@@ -360,9 +355,9 @@ trait EC {
     var j = 0
     var carry = 0
     i = 0
-    while ({i < t.length}) {
+    while (i < t.length) {
       val word = t(i)
-      while ({j < 16}) breakable{
+      while (j < 16) breakable{
         val word16 = word >>> j
         val bit = word16 & 1
         if (bit == carry) {
@@ -379,7 +374,6 @@ trait EC {
       i += 1
       j -= 16
     }
-    //        assert carry == 0;
     ws
   }
 
@@ -506,7 +500,7 @@ trait EC {
     r
   }
 
-  def pointCopy(p: PointExt) = {
+  def pointCopy(p: PointExt): PointExt = {
     val r = new PointExt
     x25519Field.copy(p.x, 0, r.x, 0)
     x25519Field.copy(p.y, 0, r.y, 0)
@@ -550,8 +544,6 @@ trait EC {
   }
 
   def pointLookup(block: Int, index: Int, p:PointPrecomp): Unit = {
-    //        assert 0 <= block && block < PRECOMP_BLOCKS;
-    //        assert 0 <= index && index < PRECOMP_POINTS;
     var off = block * PRECOMP_POINTS * 3 * x25519Field.SIZE
     for (i <- 0 until PRECOMP_POINTS) {
       val mask = ((i ^ index) - 1) >> 31
@@ -564,14 +556,14 @@ trait EC {
     }
   }
 
-  def pointPrecompVar(p:PointExt, count: Int):Array[PointExt] = { //        assert count > 0;
+  def pointPrecompVar(p:PointExt, count: Int):Array[PointExt] = {
     val d = new PointExt
-    pointAddVar(false, p, p, d)
+    pointAddVar(negate = false, p, p, d)
     val table = new Array[PointExt](count)
     table(0) = pointCopy(p)
     for (i <- 1 until count) {
       table(i) = new PointExt
-      pointAddVar(false, table(i - 1), d, table(i))
+      pointAddVar(negate = false, table(i - 1), d, table(i))
     }
     table
   }
@@ -601,7 +593,6 @@ trait EC {
       x25519Field.copy(B_y, 0, b.y, 0)
       pointExtendXY(b)
       precompBaseTable = pointPrecompVar(b, 1 << (WNAF_WIDTH_BASE - 2))
-
       val p = new PointAccum
       x25519Field.copy(B_x, 0, p.x, 0)
       x25519Field.copy(B_y, 0, p.y, 0)
@@ -614,10 +605,10 @@ trait EC {
         pointSetNeutral(sum)
         for (t <- 0 until PRECOMP_TEETH) {
           val q = pointCopy(p)
-          pointAddVar(true, sum, q, sum)
+          pointAddVar(negate = true, sum, q, sum)
           pointDouble(p)
           ds(t) = pointCopy(p)
-          if (b + t != PRECOMP_BLOCKS + PRECOMP_TEETH - 2) for (s <- 1 until PRECOMP_SPACING) {
+          if (b + t != PRECOMP_BLOCKS + PRECOMP_TEETH - 2) for (_ <- 1 until PRECOMP_SPACING) {
             pointDouble(p)
           }
         }
@@ -633,12 +624,11 @@ trait EC {
             j < size
           }) {
             points(k) = new PointExt
-            pointAddVar(false, points(k - size), ds(t), points(k))
+            pointAddVar(negate = false, points(k - size), ds(t), points(k))
             j += 1
             k += 1
           }
         }
-        //                assert k == PRECOMP_POINTS;
         for (i <- 0 until PRECOMP_POINTS) {
           val q = points(i)
           val x = x25519Field.create
@@ -653,7 +643,6 @@ trait EC {
           x25519Field.mul(r.xyd, C_d4, r.xyd)
           x25519Field.normalize(r.ypx_h)
           x25519Field.normalize(r.ymx_h)
-          //                    X25519Field.normalize(r.xyd);
           x25519Field.copy(r.ypx_h, 0, precompBase, off)
           off += x25519Field.SIZE
           x25519Field.copy(r.ymx_h, 0, precompBase, off)
@@ -693,7 +682,6 @@ trait EC {
     var x17 = (decode24(n, 60) << 4) & M32L // x17:28/--
     val x18 = n(63) & 0xFFL // x18:08/--
     var t = 0L
-    //        x18 += (x17 >> 28); x17 &= M28L;
     x09 -= x18 * L0 // x09:34/28
     x10 -= x18 * L1 // x10:33/30
     x11 -= x18 * L2 // x11:35/28
@@ -706,7 +694,6 @@ trait EC {
     x10 -= x17 * L2 // x10:55/34
     x11 -= x17 * L3 // x11:51/36
     x12 -= x17 * L4 // x12:41/--
-    //        x16 += (x15 >> 28); x15 &= M28L;
     x07 -= x16 * L0 // x07:54/28
     x08 -= x16 * L1 // x08:54/53
     x09 -= x16 * L2 // x09:55/53
@@ -719,7 +706,6 @@ trait EC {
     x08 -= x15 * L2 // x08:56/--
     x09 -= x15 * L3 // x09:55/54
     x10 -= x15 * L4 // x10:55/53
-    //        x14 += (x13 >> 28); x13 &= M28L;
     x05 -= x14 * L0 // x05:54/28
     x06 -= x14 * L1 // x06:54/53
     x07 -= x14 * L2 // x07:56/--
@@ -783,7 +769,6 @@ trait EC {
     x09 = x08 >> 28
     x08 &= M28L
     x09 -= t
-    //        assert x09 == 0L || x09 == -1L;
     x00 += x09 & L0
     x01 += x09 & L1
     x02 += x09 & L2
@@ -820,9 +805,7 @@ trait EC {
     val n = new Array[Int](SCALAR_INTS)
     decodeScalar(k, 0, n)
     // Recode the scalar into signed-digit form, then group comb bits in each block
-    //            int c1 = Nat.cadd(SCALAR_INTS, ~n[0] & 1, n, L, n);     assert c1 == 0;
     cadd(SCALAR_INTS, ~n(0) & 1, n, L, n)
-    //            int c2 = Nat.shiftDownBit(SCALAR_INTS, n, 1);           assert c2 == (1 << 31);
     shiftDownBit(SCALAR_INTS, n, 1)
     for (i <- 0 until SCALAR_INTS) {
       n(i) = shuffle2(n(i))
@@ -835,8 +818,6 @@ trait EC {
           val w = n(b) >>> cOff
           val sign = (w >>> (PRECOMP_TEETH - 1)) & 1
           val abs = (w ^ -sign) & PRECOMP_MASK
-          //                assert sign == 0 || sign == 1;
-          //                assert 0 <= abs && abs < PRECOMP_POINTS;
           pointLookup(b, abs, p)
           x25519Field.cswap(sign, p.ypx_h, p.ymx_h)
           x25519Field.cnegate(sign, p.xyd)

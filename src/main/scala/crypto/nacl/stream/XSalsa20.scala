@@ -1,7 +1,7 @@
-package crypto.stream
+package crypto.nacl.stream
 
-import crypto.Utils._
-import crypto.core.{HSalsa20, Salsa20}
+import crypto.nacl.Utils._
+import crypto.nacl.core.{HSalsa20, Salsa20}
 
 object XSalsa20 {
 

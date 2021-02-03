@@ -1,7 +1,7 @@
-package crypto.sign
+package crypto.nacl.sign
 
-import crypto.sign.Scalar._
-import crypto.verify.Verify
+import crypto.nacl.sign.Scalar._
+import crypto.nacl.verify.Verify
 
 object FieldElement {
 

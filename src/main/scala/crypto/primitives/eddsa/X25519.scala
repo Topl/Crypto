@@ -18,14 +18,6 @@ class X25519 extends EC {
     !areAllZeroes(r, rOff, POINT_SIZE)
   }
 
-  override def decode32(bs: Array[Byte], off: Int) = {
-    var n = bs(off) & 0xFF
-    n |= (bs(off+1) & 0xFF) << 8
-    n |= (bs(off+2) & 0xFF) << 16
-    n |= bs(off+3) << 24
-    n
-  }
-
   override def decodeScalar(k: Array[Byte], kOff: Int, n: Array[Int]): Unit = {
     for (i <- 0 until 8) {
       n(i) = decode32(k, kOff + i * 4)

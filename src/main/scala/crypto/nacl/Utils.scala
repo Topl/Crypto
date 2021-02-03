@@ -1,7 +1,6 @@
-package crypto
+package crypto.nacl
 
 import java.security.SecureRandom
-
 
 object Utils {
 

@@ -1,6 +1,6 @@
-package crypto.core
+package crypto.nacl.core
 
-import crypto.Utils._
+import crypto.nacl.Utils._
 
 object Salsa20 {
 

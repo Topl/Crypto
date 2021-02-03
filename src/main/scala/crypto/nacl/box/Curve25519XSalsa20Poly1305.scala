@@ -1,9 +1,9 @@
-package crypto.box
+package crypto.nacl.box
 
-import crypto.Utils._
-import crypto.core.HSalsa20
-import crypto.scalarmult.Curve25519
-import crypto.secretbox.XSalsa20Poly1305
+import crypto.nacl.Utils._
+import crypto.nacl.core.HSalsa20
+import crypto.nacl.scalarmult.Curve25519
+import crypto.nacl.secretbox.XSalsa20Poly1305
 
 object Curve25519XSalsa20Poly1305 {
 

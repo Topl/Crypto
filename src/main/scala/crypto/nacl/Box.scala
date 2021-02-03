@@ -1,15 +1,9 @@
-package crypto
+package crypto.nacl
 
-import crypto.secretbox.XSalsa20Poly1305._
-import crypto.Utils._
+import crypto.nacl.Utils._
+import crypto.nacl.box.Curve25519XSalsa20Poly1305._
 
-object SecretBox {
-
-  def withRandomKey() = {
-    val key = new Array[Byte](keyBytes)
-    random.nextBytes(key)
-    SecretBox(key)
-  }
+object Box {
 
   def randomNonce() = {
     val nonce = new Array[Byte](nonceBytes)
@@ -19,21 +13,22 @@ object SecretBox {
 
 }
 
-case class SecretBox(key: Array[Byte]) {
+case class Box(publicKey: Array[Byte], privateKey: Array[Byte]) {
 
-  checkLength(key, keyBytes)
+  checkLength(publicKey, publicKeyBytes)
+  checkLength(privateKey, secretKeyBytes)
 
   def encrypt(nonce: Array[Byte], message: Array[Byte]): Array[Byte] = {
     checkLength(nonce, nonceBytes)
     val msg = new Array[Byte](zeroBytes) ++ message
-    cryptoSecretBox(msg, msg, msg.length, nonce, key)
+    cryptoBox(msg, msg, msg.length, nonce, publicKey, privateKey)
     msg.drop(boxZeroBytes)
   }
 
   def decrypt(nonce: Array[Byte], message: Array[Byte]): Array[Byte] = {
     checkLength(nonce, nonceBytes)
     val msg = new Array[Byte](boxZeroBytes) ++ message
-    cryptoSecretBoxOpen(msg, msg, msg.length, nonce, key)
+    cryptoBoxOpen(msg, msg, msg.length, nonce, publicKey, privateKey)
     msg.drop(zeroBytes)
   }
 

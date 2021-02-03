@@ -1,4 +1,4 @@
-package crypto.scalarmult
+package crypto.nacl.scalarmult
 
 object Curve25519 {
 

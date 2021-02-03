@@ -1,8 +1,8 @@
-package crypto
+package crypto.nacl
 
-import crypto.box.Curve25519XSalsa20Poly1305._
-import crypto.scalarmult.Curve25519
-import crypto.Utils._
+import crypto.nacl.Utils._
+import crypto.nacl.box.Curve25519XSalsa20Poly1305._
+import crypto.nacl.scalarmult.Curve25519
 
 object KeyPair {
 

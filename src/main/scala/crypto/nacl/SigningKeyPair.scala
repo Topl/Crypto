@@ -1,7 +1,7 @@
-package crypto
+package crypto.nacl
 
-import crypto.sign.Ed25519._
-import crypto.Utils._
+import crypto.nacl.Utils._
+import crypto.nacl.sign.Ed25519._
 
 object SigningKeyPair {
 

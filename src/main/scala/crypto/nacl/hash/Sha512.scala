@@ -1,4 +1,4 @@
-package crypto.hash
+package crypto.nacl.hash
 
 object Sha512 {
 

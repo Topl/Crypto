@@ -1,7 +1,7 @@
-package crypto.onetimeauth
+package crypto.nacl.onetimeauth
 
-import crypto.Utils._
-import crypto.verify.Verify._
+import crypto.nacl.Utils._
+import crypto.nacl.verify.Verify._
 
 object Poly1305 {
 
