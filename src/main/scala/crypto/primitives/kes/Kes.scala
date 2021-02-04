@@ -11,7 +11,7 @@ import crypto.primitives.B2b256
 
 class Sig extends mmm.Sig {
   val ec = new Ed25519
-  override def generatePublicKey(sk:Array[Byte],skOff:Int,pk:Array[Byte],pkOff: Int):Unit =
+  override def generatePublicKey(sk:Array[Byte],skOff:Int,pk:Array[Byte],pkOff:Int):Unit =
     ec.generatePublicKey(sk:Array[Byte],skOff:Int,pk:Array[Byte],pkOff: Int)
 
   override def sign(sk:Array[Byte],skOff:Int,m:Array[Byte],mOff:Int,mLen:Int,sig:Array[Byte],sigOff:Int):Unit =
@@ -23,7 +23,7 @@ class Sig extends mmm.Sig {
 
 class Fch extends mmm.Fch {
   val b2b = new B2b256
-  override def hash(input: Array[Byte]): Array[Byte] = {
+  override def hash(input:Array[Byte]):Array[Byte] = {
     b2b.hash(input)
   }
 }

@@ -49,7 +49,7 @@ class ECVRF25519 extends EC {
     if (pk.length == PUBLIC_KEY_SIZE && sk.length == SECRET_KEY_SIZE) {
       val pkt: Array[Byte] = Array.fill[Byte](PUBLIC_KEY_SIZE)(0)
       generatePublicKey(sk, 0, pkt, 0)
-      pkt.deep == pk.deep
+      pkt sameElements pk
     } else {
       false
     }
@@ -58,7 +58,7 @@ class ECVRF25519 extends EC {
   def isNeutralPoint(p: PointAccum): Boolean = {
     val pBytes: Array[Byte] = Array.fill(POINT_BYTES){0x00.toByte}
     encodePoint(p,pBytes,0)
-    pBytes.deep == neutralPointBytes.deep
+    pBytes sameElements neutralPointBytes
   }
 
   def isNeutralPoint(p: PointExt): Boolean = {
@@ -68,7 +68,7 @@ class ECVRF25519 extends EC {
     decodeScalar(zeroScalar,0,nb)
     scalarMultStraussVar(nb,np,p,pA)
     encodePoint(pA,pBytes,0)
-    pBytes.deep == neutralPointBytes.deep
+    pBytes sameElements neutralPointBytes
   }
 
   def pruneHash(s: Array[Byte]): Array[Byte] = {
@@ -339,7 +339,7 @@ class ECVRF25519 extends EC {
     scalarMultStraussVar(nb,np,t,V)
     scalarMultStraussVar(nb,np,gamma,g)
     val cp = ECVRF_hash_points(H._1,g,U,V)
-    c.deep == cp.deep
+    c sameElements cp
   }
 
   /*

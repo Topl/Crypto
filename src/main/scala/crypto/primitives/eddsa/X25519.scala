@@ -70,7 +70,6 @@ class X25519 extends EC {
     val z3 = x25519Field.create
     val t1 = x25519Field.create
     val t2 = x25519Field.create
-    //        assert n[7] >>> 30 == 1;
     var bit = 254
     var swap = 1
     do {
@@ -100,7 +99,6 @@ class X25519 extends EC {
     } while ( {
       bit >= 3
     })
-    //        assert swap == 0;
     for (i <- 0 until 3) {
       pointDouble(x2, z2)
     }
