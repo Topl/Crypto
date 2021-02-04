@@ -631,9 +631,7 @@ trait EC {
         for (t <- 0 until (PRECOMP_TEETH - 1)) {
           val size = 1 << t
           var j = 0
-          while ( {
-            j < size
-          }) {
+          while (j < size) {
             points(k) = new PointExt
             pointAddVar(negate = false, points(k - size), ds(t), points(k))
             j += 1
@@ -824,7 +822,7 @@ trait EC {
     val p = new PointPrecomp
     var cOff = (PRECOMP_SPACING - 1) * PRECOMP_TEETH
     breakable{
-      while ({true}) {
+      while (true) {
         for (b <- 0 until PRECOMP_BLOCKS) {
           val w = n(b) >>> cOff
           val sign = (w >>> (PRECOMP_TEETH - 1)) & 1
@@ -854,7 +852,7 @@ trait EC {
     val tp = pointPrecompVar(p, 1 << (width - 2))
     pointSetNeutral(r)
     var bit = 255
-    while ({bit > 0 && (ws_b(bit) | ws_p(bit)) == 0}) bit -= 1
+    while (bit > 0 && (ws_b(bit) | ws_p(bit)) == 0) bit -= 1
     breakable{
       while (true) {
         val wb = ws_b(bit)

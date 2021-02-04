@@ -296,7 +296,6 @@ class X25519Field {
     b4 <<= 1
     b4 += u0.toLong * v4 + u1.toLong * v3 + u3.toLong * v1 + u4.toLong * v0
     val b5 = u1.toLong * v4 + u2.toLong * v3 + u3.toLong * v2 + u4.toLong * v1
-    //        b5     <<= 1;
     var b6 = u2.toLong * v4 + u4.toLong * v2
     b6 <<= 1
     b6 += u3.toLong * v3
@@ -576,11 +575,7 @@ class X25519Field {
   def sqr(x: Array[Int], n: Int, z: Array[Int]): Unit = {
     var nv = n
     sqr(x, z)
-    while ( {
-      {
-        nv -= 1; nv
-      } > 0
-    }) sqr(z, z)
+    while ({nv -= 1; nv} > 0) sqr(z, z)
   }
 
   def sqrtRatioVar(u: Array[Int], v: Array[Int], z: Array[Int]): Boolean = {

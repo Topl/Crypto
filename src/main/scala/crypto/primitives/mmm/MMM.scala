@@ -69,8 +69,8 @@ abstract class MMM {
   /**
     * Signing routine for underlying SIG functionality
     * @param m message to be signed
-    * @param sk Ed25519 secret key to be signed
-    * @return Ed25519 signature
+    * @param sk SIG secret key to be signed
+    * @return SIG signature
     */
   private def sSign(m: Array[Byte], sk: Array[Byte]): Array[Byte] = {
     val signature: Array[Byte] = Array.fill(sigBytes){0x00.toByte}
@@ -125,7 +125,7 @@ abstract class MMM {
       }
     }
 
-    // generates the Ed25519 keypairs on each leaf
+    // generates the SIG keypairs on each leaf
     def populateLeaf(t: Tree[Array[Byte]]): Tree[Array[Byte]] = {
       t match {
         case n: Node[Array[Byte]] =>

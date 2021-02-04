@@ -96,10 +96,8 @@ class X25519 extends EC {
       x25519Field.cswap(swap, x2, x3)
       x25519Field.cswap(swap, z2, z3)
       swap = kt
-    } while ( {
-      bit >= 3
-    })
-    for (i <- 0 until 3) {
+    } while (bit >= 3)
+    for (_ <- 0 until 3) {
       pointDouble(x2, z2)
     }
     x25519Field.inv(z2, z2)
