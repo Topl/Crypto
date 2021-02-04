@@ -1,10 +1,17 @@
-package crypto
+package crypto.primitives.eddsa
 
-import org.scalatest._
+import java.security.SecureRandom
 
-class MMMSpec extends FlatSpec {
-// def uuid: String = java.util.UUID.randomUUID.toString
-//  val keys = sKeypairFast(uuid)
+import org.scalatest.FlatSpec
+//import crypto.primitives.Sig
+
+class KesTest extends FlatSpec {
+  def uuid: SecureRandom = new SecureRandom()
+  var sk = Array.fill(32){0x00.toByte}
+  //val keys =  createKeyPair(uuid)
+   val p = new Ed25519()
+   val key = p.generatePrivateKey(uuid,sk)
+  println("key: " + sk)
 //  var t = 0
 //  var message = FastCryptographicHash(uuid)
 //  println("MMM construction sum composition")
@@ -12,7 +19,7 @@ class MMMSpec extends FlatSpec {
 //  val l = scala.math.pow(2, logl).toInt
 //  println(l.toString + " time steps")
 //  t = 0
-//  val seed1 = FastCryptographicHash(uuid)
+//  val seed1 = FastCryptogrCD ./aphicHash(uuid)
 //  val seed2 = FastCryptographicHash(uuid)
 //  var sk = MalkinKES.sumGenerateKey(seed1, logl)
 //  var sk2 = MalkinKES.sumGenerateKey(seed2, logl)
