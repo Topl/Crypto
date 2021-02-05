@@ -17,7 +17,7 @@ import java.util
 class Ed25519 extends EC {
 
   def dom2(d: SHA512Digest, phflag: Byte, ctx: Array[Byte]): Unit = {
-    if (ctx != null) {
+    if (ctx.nonEmpty) {
       d.update(DOM2_PREFIX, 0, DOM2_PREFIX.length)
       d.update(phflag)
       d.update(ctx.length.toByte)
@@ -36,6 +36,7 @@ class Ed25519 extends EC {
     d.doFinal(h, 0)
     val s = new Array[Byte](SCALAR_BYTES)
     pruneScalar(h, 0, s)
+
     scalarMultBaseEncoded(s, pk, pkOff)
   }
 
@@ -110,64 +111,64 @@ class Ed25519 extends EC {
   }
 
   def sign(sk: Array[Byte], skOff: Int, m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val ctx = null
-    val phflag = 0x00.toByte
+    val ctx:Array[Byte] = Array.empty
+    val phflag:Byte = 0x00
     implSign(sk, skOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def sign(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int, m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val ctx = null
-    val phflag = 0x00.toByte
+    val ctx:Array[Byte] = Array.empty
+    val phflag:Byte = 0x00
     implSign(sk, skOff, pk, pkOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def sign(sk: Array[Byte], skOff: Int, ctx: Array[Byte], m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val phflag = 0x00.toByte
+    val phflag:Byte = 0x00
     implSign(sk, skOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def sign(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val phflag = 0x00.toByte
+    val phflag:Byte = 0x00
     implSign(sk, skOff, pk, pkOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def signPrehash(sk: Array[Byte], skOff: Int, ctx: Array[Byte], ph: Array[Byte], phOff: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val phflag = 0x01.toByte
+    val phflag:Byte = 0x01
     implSign(sk, skOff, ctx, phflag, ph, phOff, PREHASH_SIZE, sig, sigOff)
   }
 
   def signPrehash(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], ph: Array[Byte], phOff: Int, sig: Array[Byte], sigOff: Int): Unit = {
-    val phflag = 0x01.toByte
+    val phflag:Byte = 0x01
     implSign(sk, skOff, pk, pkOff, ctx, phflag, ph, phOff, PREHASH_SIZE, sig, sigOff)
   }
 
   def signPrehash(sk: Array[Byte], skOff: Int, ctx: Array[Byte], ph: SHA512Digest, sig: Array[Byte], sigOff: Int): Unit = {
     val m = new Array[Byte](PREHASH_SIZE)
     if (PREHASH_SIZE != ph.doFinal(m, 0)) throw new IllegalArgumentException("ph")
-    val phflag = 0x01.toByte
+    val phflag:Byte = 0x01
     implSign(sk, skOff, ctx, phflag, m, 0, m.length, sig, sigOff)
   }
 
   def signPrehash(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], ph: SHA512Digest, sig: Array[Byte], sigOff: Int): Unit = {
     val m = new Array[Byte](PREHASH_SIZE)
     if (PREHASH_SIZE != ph.doFinal(m, 0)) throw new IllegalArgumentException("ph")
-    val phflag = 0x01.toByte
+    val phflag:Byte = 0x01
     implSign(sk, skOff, pk, pkOff, ctx, phflag, m, 0, m.length, sig, sigOff)
   }
 
   def verify(sig: Array[Byte], sigOff: Int, pk: Array[Byte], pkOff: Int, m: Array[Byte], mOff: Int, mLen: Int): Boolean = {
-    val ctx = null
-    val phflag = 0x00.toByte
+    val ctx:Array[Byte] = Array.empty
+    val phflag:Byte = 0x00
     implVerify(sig, sigOff, pk, pkOff, ctx, phflag, m, mOff, mLen)
   }
 
   def verify(sig: Array[Byte], sigOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], m: Array[Byte], mOff: Int, mLen: Int): Boolean = {
-    val phflag = 0x00.toByte
+    val phflag:Byte = 0x00
     implVerify(sig, sigOff, pk, pkOff, ctx, phflag, m, mOff, mLen)
   }
 
   def verifyPrehash(sig: Array[Byte], sigOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], ph: Array[Byte], phOff: Int): Boolean = {
-    val phflag = 0x01.toByte
+    val phflag:Byte = 0x01
     implVerify(sig, sigOff, pk, pkOff, ctx, phflag, ph, phOff, PREHASH_SIZE)
   }
 

@@ -1,12 +1,11 @@
-//package crypto.primitives.eddsa
-//import crypto.primitives.Sig
+package crypto.primitives.eddsa
 
 import java.security.SecureRandom
 
 import org.scalatest.FunSuite
 //import junit.framework.TestCase
 //import org.bouncycastle.crypto.Digest
-import org.bouncycastle.math.ec.rfc8032.Ed25519
+import org.bouncycastle.math.ec.rfc8032
 //import org.bouncycastle.util.Arrays
 //import org.bouncycastle.util.encoders.Hex
 
@@ -109,7 +108,7 @@ object Ed25519JavaTest {
  class Ed25519JavaSpec extends FunSuite { //    @BeforeClass
    //    public static void init()
    def setUp(): Unit = {
-     Ed25519.precompute()
+     rfc8032.Ed25519.precompute()
    }
 
    //    @Test
@@ -146,31 +145,63 @@ object Ed25519JavaTest {
      }
    }
 */
-   test ("Test consistency"){
-     val sk = new Array[Byte](Ed25519.SECRET_KEY_SIZE)
-     val pk = new Array[Byte](Ed25519.PUBLIC_KEY_SIZE)
+   test ("Test consistency Java"){
+     val sk = new Array[Byte](rfc8032.Ed25519.SECRET_KEY_SIZE)
+     val pk = new Array[Byte](rfc8032.Ed25519.PUBLIC_KEY_SIZE)
      val m = new Array[Byte](255)
-     val sig1 = new Array[Byte](Ed25519.SIGNATURE_SIZE)
-     val sig2 = new Array[Byte](Ed25519.SIGNATURE_SIZE)
+     val sig1 = new Array[Byte](rfc8032.Ed25519.SIGNATURE_SIZE)
+     val sig2 = new Array[Byte](rfc8032.Ed25519.SIGNATURE_SIZE)
      Ed25519JavaTest.RANDOM.nextBytes(m)
      for (i <- 0 until 10) {
        Ed25519JavaTest.RANDOM.nextBytes(sk)
-       Ed25519.generatePublicKey(sk, 0, pk, 0)
+       rfc8032.Ed25519.generatePublicKey(sk, 0, pk, 0)
        val mLen = Ed25519JavaTest.RANDOM.nextInt & 255
-       Ed25519.sign(sk, 0, m, 0, mLen, sig1, 0)
-       Ed25519.sign(sk, 0, pk, 0, m, 0, mLen, sig2, 0)
+       rfc8032.Ed25519.sign(sk, 0, m, 0, mLen, sig1, 0)
+       rfc8032.Ed25519.sign(sk, 0, pk, 0, m, 0, mLen, sig2, 0)
        //assertTrue("Ed25519 consistent signatures #" + i, Arrays.areEqual(sig1, sig2))
 
        assert(sig1.deep === sig2.deep)
        //Console.err.println("Sig 1: "+sig1.deep)
        //Console.err.println("Sig 2: "+sig2.deep)
-       val shouldVerify = Ed25519.verify(sig1, 0, pk, 0, m, 0, mLen)
+       val shouldVerify = rfc8032.Ed25519.verify(sig1, 0, pk, 0, m, 0, mLen)
        //assertTrue("Ed25519 consistent sign/verify #" + i, shouldVerify)
 
        assert(shouldVerify === true)
 
-       sig1(Ed25519.PUBLIC_KEY_SIZE - 1) = (sig1(Ed25519.PUBLIC_KEY_SIZE - 1) ^ 0x80.toByte).toByte
-       val shouldNotVerify = Ed25519.verify(sig1, 0, pk, 0, m, 0, mLen)
+       sig1(rfc8032.Ed25519.PUBLIC_KEY_SIZE - 1) = (sig1(rfc8032.Ed25519.PUBLIC_KEY_SIZE - 1) ^ 0x80.toByte).toByte
+       val shouldNotVerify = rfc8032.Ed25519.verify(sig1, 0, pk, 0, m, 0, mLen)
+       //assertFalse("Ed25519 consistent verification failure #" + i, shouldNotVerify)
+
+       assert(shouldNotVerify === false)
+     }
+   }
+
+   test ("Test consistency Scala"){
+     val ec = new Ed25519
+     val sk = new Array[Byte](ec.SECRET_KEY_SIZE)
+     val pk = new Array[Byte](ec.PUBLIC_KEY_SIZE)
+     val m = new Array[Byte](255)
+     val sig1 = new Array[Byte](ec.SIGNATURE_SIZE)
+     val sig2 = new Array[Byte](ec.SIGNATURE_SIZE)
+     Ed25519JavaTest.RANDOM.nextBytes(m)
+     for (i <- 0 until 10) {
+       Ed25519JavaTest.RANDOM.nextBytes(sk)
+       ec.generatePublicKey(sk, 0, pk, 0)
+       val mLen = Ed25519JavaTest.RANDOM.nextInt & 255
+       ec.sign(sk, 0, m, 0, mLen, sig1, 0)
+       ec.sign(sk, 0, pk, 0, m, 0, mLen, sig2, 0)
+       //assertTrue("Ed25519 consistent signatures #" + i, Arrays.areEqual(sig1, sig2))
+
+       assert(sig1.deep === sig2.deep)
+       //Console.err.println("Sig 1: "+sig1.deep)
+       //Console.err.println("Sig 2: "+sig2.deep)
+       val shouldVerify = ec.verify(sig1, 0, pk, 0, m, 0, mLen)
+       //assertTrue("Ed25519 consistent sign/verify #" + i, shouldVerify)
+
+       assert(shouldVerify === true)
+
+       sig1(ec.PUBLIC_KEY_SIZE - 1) = (sig1(ec.PUBLIC_KEY_SIZE - 1) ^ 0x80.toByte).toByte
+       val shouldNotVerify = ec.verify(sig1, 0, pk, 0, m, 0, mLen)
        //assertFalse("Ed25519 consistent verification failure #" + i, shouldNotVerify)
 
        assert(shouldNotVerify === false)

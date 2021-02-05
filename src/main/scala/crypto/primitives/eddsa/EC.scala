@@ -1,5 +1,7 @@
 package crypto.primitives.eddsa
 
+import scorex.util.encode.{Base16, Base58}
+
 import java.security.MessageDigest
 import java.util
 import scala.util.control.Breaks._
@@ -44,6 +46,38 @@ Table 1: Parameters of Ed25519
   */
 
 trait EC {
+
+  def prnt(input:Array[Byte]):Unit = {
+    println(Base16.encode(input))
+  }
+
+  def prnt(input:Array[Int]):Unit = {
+    println(input.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointExt: PointExt): Unit = {
+    println("pExt:")
+    println(pointExt.x.mkString("[", ", ", "]"))
+    println(pointExt.y.mkString("[", ", ", "]"))
+    println(pointExt.z.mkString("[", ", ", "]"))
+    println(pointExt.t.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointAccum: PointAccum): Unit = {
+    println("pAccum:")
+    println(pointAccum.x.mkString("[", ", ", "]"))
+    println(pointAccum.y.mkString("[", ", ", "]"))
+    println(pointAccum.z.mkString("[", ", ", "]"))
+    println(pointAccum.u.mkString("[", ", ", "]"))
+    println(pointAccum.v.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointPrecomp: PointPrecomp): Unit = {
+    println("pAccum:")
+    println(pointPrecomp.ypx_h.mkString("[", ", ", "]"))
+    println(pointPrecomp.ymx_h.mkString("[", ", ", "]"))
+    println(pointPrecomp.xyd.mkString("[", ", ", "]"))
+  }
 
   val x25519Field:X25519Field = new X25519Field
 
@@ -119,7 +153,7 @@ trait EC {
 
     def getAlgorithmName: String = "SHA-512"
 
-    def getDigestSize: Int = 512
+    def getDigestSize: Int = 64
 
     def update(in: Byte): Unit = digest.update(in)
 
@@ -135,47 +169,47 @@ trait EC {
   def createDigest:SHA512Digest = new SHA512Digest
 
   def mulAddTo256(x: Array[Int], y: Array[Int], zz: Array[Int]): Int = {
-    val y_0 = y(0) & M
-    val y_1 = y(1) & M
-    val y_2 = y(2) & M
-    val y_3 = y(3) & M
-    val y_4 = y(4) & M
-    val y_5 = y(5) & M
-    val y_6 = y(6) & M
-    val y_7 = y(7) & M
-    var zc = 0
+    val y_0:Long = y(0) & M
+    val y_1:Long = y(1) & M
+    val y_2:Long = y(2) & M
+    val y_3:Long = y(3) & M
+    val y_4:Long = y(4) & M
+    val y_5:Long = y(5) & M
+    val y_6:Long = y(6) & M
+    val y_7:Long = y(7) & M
+    var zc:Long = 0
     for (i <- 0 until 8) {
-      var c = 0
+      var c:Long = 0
       val x_i = x(i) & M
-      c += (x_i * y_0 + (zz(i + 0) & M)).toInt
-      zz(i + 0) = c
+      c += x_i * y_0 + (zz(i + 0) & M)
+      zz(i + 0) = c.toInt
       c >>>= 32
-      c += (x_i * y_1 + (zz(i + 1) & M)).toInt
-      zz(i + 1) = c
+      c += x_i * y_1 + (zz(i + 1) & M)
+      zz(i + 1) = c.toInt
       c >>>= 32
-      c += (x_i * y_2 + (zz(i + 2) & M)).toInt
-      zz(i + 2) = c
+      c += x_i * y_2 + (zz(i + 2) & M)
+      zz(i + 2) = c.toInt
       c >>>= 32
-      c += (x_i * y_3 + (zz(i + 3) & M)).toInt
-      zz(i + 3) = c
+      c += x_i * y_3 + (zz(i + 3) & M)
+      zz(i + 3) = c.toInt
       c >>>= 32
-      c += (x_i * y_4 + (zz(i + 4) & M)).toInt
-      zz(i + 4) = c
+      c += x_i * y_4 + (zz(i + 4) & M)
+      zz(i + 4) = c.toInt
       c >>>= 32
-      c += (x_i * y_5 + (zz(i + 5) & M)).toInt
-      zz(i + 5) = c
+      c += x_i * y_5 + (zz(i + 5) & M)
+      zz(i + 5) = c.toInt
       c >>>= 32
-      c += (x_i * y_6 + (zz(i + 6) & M)).toInt
-      zz(i + 6) = c
+      c += x_i * y_6 + (zz(i + 6) & M)
+      zz(i + 6) = c.toInt
       c >>>= 32
-      c += (x_i * y_7 + (zz(i + 7) & M)).toInt
-      zz(i + 7) = c
+      c += x_i * y_7 + (zz(i + 7) & M)
+      zz(i + 7) = c.toInt
       c >>>= 32
-      zc += c + (zz(i + 8) & M).toInt
-      zz(i + 8) = zc
+      zc += c + zz(i + 8) & M
+      zz(i + 8) = zc.toInt
       zc >>>= 32
     }
-    zc
+    zc.toInt
   }
 
   def gte256(x: Array[Int], y: Array[Int]): Boolean = {
@@ -201,21 +235,21 @@ trait EC {
 
   def cadd(len: Int, mask: Int, x: Array[Int], y: Array[Int], z: Array[Int]): Int = {
     val m = -(mask & 1) & M
-    var c = 0
+    var c = 0L
     for (i <- 0 until len) {
-      c += ((x(i) & M) + (y(i) & m)).toInt
-      z(i) = c
+      c += (x(i) & M) + (y(i) & m)
+      z(i) = c.toInt
       c >>>= 32
     }
-    c
+    c.toInt
   }
 
   def shiftDownBit(len: Int, z: Array[Int], c: Int): Int = {
-    var i = len
+    var i:Int = len
     var cv = c
     while ({i -= 1; i} >= 0) {
       val next = z(i)
-      z(i) = (next >>> 1) | (c << 31)
+      z(i) = (next >>> 1) | (cv << 31)
       cv = next
     }
     cv << 31
