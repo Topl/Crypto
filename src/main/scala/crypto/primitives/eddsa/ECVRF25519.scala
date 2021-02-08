@@ -1,6 +1,6 @@
 package crypto.primitives.eddsa
 
-import java.security.{SecureRandom,MessageDigest}
+import java.security.SecureRandom
 
 /**
   * AMS 2021:
@@ -25,11 +25,6 @@ class ECVRF25519 extends EC {
   pointSetNeutral(NP)
   encodePoint(NP,neutralPointBytes,0)
 
-  def Sha512(bytes: Array[Byte]):Array[Byte] = {
-    val digest = MessageDigest.getInstance("SHA-512")
-    digest.update(bytes)
-    digest.digest()
-  }
 
   def generatePrivateKey(random: SecureRandom, k: Array[Byte]): Unit = {
     random.nextBytes(k)
@@ -72,7 +67,8 @@ class ECVRF25519 extends EC {
   }
 
   def pruneHash(s: Array[Byte]): Array[Byte] = {
-    val h: Array[Byte] = Sha512(s).take(SCALAR_BYTES)
+    val d = createDigest
+    val h: Array[Byte] = d.Sha512(s).take(SCALAR_BYTES)
     h.update(0,(h(0) & 0xF8).toByte)
     h.update(SCALAR_BYTES-1,(h(SCALAR_BYTES-1) & 0x7F).toByte)
     h.update(SCALAR_BYTES-1,(h(SCALAR_BYTES-1) | 0x40).toByte)
@@ -146,6 +142,7 @@ class ECVRF25519 extends EC {
   //This leads to side channel attack (timing attack) if alpha is a secret
 
   private def ECVRF_hash_to_curve_try_and_increment(Y: Array[Byte],a: Array[Byte]): (PointAccum, Array[Byte]) = {
+    val d = createDigest
     var ctr = 0
     val one = Array(0x01.toByte)
     var hash: Array[Byte] = Array()
@@ -154,7 +151,7 @@ class ECVRF25519 extends EC {
     var isPoint = false
     while (!isPoint) {
       val ctr_byte = Array(ctr.toByte)
-      hash = Sha512(suite++one++Y++a++ctr_byte).take(POINT_BYTES)
+      hash = d.Sha512(suite++one++Y++a++ctr_byte).take(POINT_BYTES)
       isPoint = decodePointVar(hash,0,negate = false,H)
       if (isPoint){
         isPoint != isNeutralPoint(H)
@@ -187,6 +184,7 @@ class ECVRF25519 extends EC {
   */
 
   private def ECVRF_hash_points(p1: PointAccum, p2: PointAccum, p3: PointAccum, p4: PointAccum): Array[Byte] ={
+    val d = createDigest
     val two: Array[Byte] = Array(0x02.toByte)
     var str: Array[Byte] = suite++two
     val r: Array[Byte] = Array.fill(POINT_BYTES){0x00.toByte}
@@ -198,7 +196,7 @@ class ECVRF25519 extends EC {
     str = str++r
     encodePoint(p4,r,0)
     str = str++r
-    Sha512(str).take(C_BYTES)++Array.fill(SCALAR_BYTES-C_BYTES){0x00.toByte}
+    d.Sha512(str).take(C_BYTES)++Array.fill(SCALAR_BYTES-C_BYTES){0x00.toByte}
   }
 
   /*
@@ -217,8 +215,9 @@ class ECVRF25519 extends EC {
   */
 
   private def ECVRF_nonce_generation_RFC8032(sk: Array[Byte],h: Array[Byte]): Array[Byte] = {
-    val trunc_hashed_sk = Sha512(sk).drop(SCALAR_BYTES)
-    val k_string = Sha512(trunc_hashed_sk++h)
+    val d = createDigest
+    val trunc_hashed_sk = d.Sha512(sk).drop(SCALAR_BYTES)
+    val k_string = d.Sha512(trunc_hashed_sk++h)
     reduceScalar(k_string)
   }
 
@@ -366,6 +365,7 @@ class ECVRF25519 extends EC {
 
   def vrfProofToHash(pi: Array[Byte]): Array[Byte] = {
     assert(pi.length == PI_BYTES)
+    val d = createDigest
     val gamma_str = pi.take(POINT_BYTES)
     val c = pi.slice(POINT_BYTES,POINT_BYTES+C_BYTES)++Array.fill(SCALAR_BYTES-C_BYTES){0x00.toByte}
     val s = pi.drop(POINT_BYTES+C_BYTES)
@@ -381,7 +381,7 @@ class ECVRF25519 extends EC {
     scalarMultStraussVar(nb,np,gamma,cg)
     val cg_enc = Array.fill(POINT_BYTES){0x00.toByte}
     encodePoint(cg,cg_enc,0)
-    Sha512(suite++three++cg_enc)
+    d.Sha512(suite++three++cg_enc)
   }
 
 }
