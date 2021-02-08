@@ -55,9 +55,9 @@ import scorex.util.encode.Base16
      //println("---------------------------------------------------------")
      if (true) {
        val t0 = System.nanoTime()
+       val ec = new eddsa.Ed25519
        for( a <- 1 to 10000) {
          val RANDOM = new SecureRandom(Array(1L.toByte))
-         val ec = new eddsa.Ed25519
          val sk = new Array[Byte](ec.SECRET_KEY_SIZE)
          val pk = new Array[Byte](ec.PUBLIC_KEY_SIZE)
          val m = new Array[Byte](255)
