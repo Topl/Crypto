@@ -1,8 +1,11 @@
 package crypto.primitives.eddsa
 
 
+
 import java.security.SecureRandom
 
+import crypto.nacl.SigningKey
+import crypto.nacl.SigningKeyPair
 import crypto.primitives.{Ed25519Debug, eddsa}
 import org.scalatest.FunSuite
 import scorex.util.encode.Base16
@@ -78,6 +81,27 @@ import scorex.util.encode.Base16
        val outTime = (t1 - t0)*1.0e-9
        val tString = "%6.6f".format(outTime)
        Console.err.println("Elapsed time Scala code: " + tString +"s")
+     }
+
+     if (true) {
+       val t0 = System.nanoTime()
+       val ec = new eddsa.Ed25519
+       for( a <- 1 to 10000) {
+         val RANDOM = new SecureRandom(Array(1L.toByte))
+
+         val m = new Array[Byte](255)
+
+         RANDOM.nextBytes(m)
+
+
+         val keys = SigningKeyPair()
+         val signature = SigningKey(keys.privateKey).sign(m)
+
+       }
+       val t1 = System.nanoTime()
+       val outTime = (t1 - t0)*1.0e-9
+       val tString = "%6.6f".format(outTime)
+       Console.err.println("Elapsed time Scala Nacl4s code: " + tString +"s")
      }
 
    }
