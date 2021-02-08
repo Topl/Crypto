@@ -12,7 +12,7 @@ import scala.collection.mutable
 
 class RsaAccumulator {
   val keySize = 3072
-  val primeSize = keySize/2
+  val primeSize: Int = keySize/2
   val accumulatorSize = 128
   val primeCertainty = 5
   val rnd:SecureRandom = new SecureRandom
