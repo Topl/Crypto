@@ -1,7 +1,5 @@
 package crypto.primitives.eddsa
 
-import scorex.util.encode.{Base16, Base58}
-
 import java.security.MessageDigest
 import java.util
 import scala.util.control.Breaks._
@@ -46,38 +44,6 @@ Table 1: Parameters of Ed25519
   */
 
 trait EC {
-
-  def prnt(input:Array[Byte]):Unit = {
-    println(Base16.encode(input))
-  }
-
-  def prnt(input:Array[Int]):Unit = {
-    println(input.mkString("[", ", ", "]"))
-  }
-
-  def printPoint(pointExt: PointExt): Unit = {
-    println("pExt:")
-    println(pointExt.x.mkString("[", ", ", "]"))
-    println(pointExt.y.mkString("[", ", ", "]"))
-    println(pointExt.z.mkString("[", ", ", "]"))
-    println(pointExt.t.mkString("[", ", ", "]"))
-  }
-
-  def printPoint(pointAccum: PointAccum): Unit = {
-    println("pAccum:")
-    println(pointAccum.x.mkString("[", ", ", "]"))
-    println(pointAccum.y.mkString("[", ", ", "]"))
-    println(pointAccum.z.mkString("[", ", ", "]"))
-    println(pointAccum.u.mkString("[", ", ", "]"))
-    println(pointAccum.v.mkString("[", ", ", "]"))
-  }
-
-  def printPoint(pointPrecomp: PointPrecomp): Unit = {
-    println("pAccum:")
-    println(pointPrecomp.ypx_h.mkString("[", ", ", "]"))
-    println(pointPrecomp.ymx_h.mkString("[", ", ", "]"))
-    println(pointPrecomp.xyd.mkString("[", ", ", "]"))
-  }
 
   val x25519Field:X25519Field = new X25519Field
 
@@ -906,4 +872,49 @@ trait EC {
       }
     }
   }
+
+  /**
+  def prnt(input:Array[Byte]):Unit = {
+    def bytesToHex(bytes: Array[Byte]): String = {
+      val HEX_ARRAY = "0123456789abcdef".toCharArray
+      val hexChars = new Array[Char](bytes.length * 2)
+      for (j <- bytes.indices) {
+        val v = bytes(j) & 0xFF
+        hexChars(j * 2) = HEX_ARRAY(v >>> 4)
+        hexChars(j * 2 + 1) = HEX_ARRAY(v & 0x0F)
+      }
+      new String(hexChars)
+    }
+    println(bytesToHex(input))
+  }
+
+  def prnt(input:Array[Int]):Unit = {
+    println(input.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointExt: PointExt): Unit = {
+    println("pExt:")
+    println(pointExt.x.mkString("[", ", ", "]"))
+    println(pointExt.y.mkString("[", ", ", "]"))
+    println(pointExt.z.mkString("[", ", ", "]"))
+    println(pointExt.t.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointAccum: PointAccum): Unit = {
+    println("pAccum:")
+    println(pointAccum.x.mkString("[", ", ", "]"))
+    println(pointAccum.y.mkString("[", ", ", "]"))
+    println(pointAccum.z.mkString("[", ", ", "]"))
+    println(pointAccum.u.mkString("[", ", ", "]"))
+    println(pointAccum.v.mkString("[", ", ", "]"))
+  }
+
+  def printPoint(pointPrecomp: PointPrecomp): Unit = {
+    println("pAccum:")
+    println(pointPrecomp.ypx_h.mkString("[", ", ", "]"))
+    println(pointPrecomp.ymx_h.mkString("[", ", ", "]"))
+    println(pointPrecomp.xyd.mkString("[", ", ", "]"))
+  }
+  **/
+
 }
