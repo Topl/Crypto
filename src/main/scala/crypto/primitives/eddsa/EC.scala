@@ -132,7 +132,7 @@ trait EC {
     def reset(): Unit = digest.reset()
   }
 
-  def createDigest:SHA512Digest = new SHA512Digest
+  val shaDigest:SHA512Digest = new SHA512Digest
 
   def mulAddTo256(x: Array[Int], y: Array[Int], zz: Array[Int]): Int = {
     val y_0:Long = y(0) & M

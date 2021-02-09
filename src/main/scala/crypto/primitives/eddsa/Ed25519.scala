@@ -30,10 +30,9 @@ class Ed25519 extends EC {
   }
 
   def generatePublicKey(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int): Unit = {
-    val d = createDigest
-    val h = new Array[Byte](d.getDigestSize)
-    d.update(sk, skOff, SECRET_KEY_SIZE)
-    d.doFinal(h, 0)
+    val h = new Array[Byte](shaDigest.getDigestSize)
+    shaDigest.update(sk, skOff, SECRET_KEY_SIZE)
+    shaDigest.doFinal(h, 0)
     val s = new Array[Byte](SCALAR_BYTES)
     pruneScalar(h, 0, s)
 
@@ -61,26 +60,24 @@ class Ed25519 extends EC {
 
   def implSign(sk: Array[Byte], skOff: Int, ctx: Array[Byte], phflag: Byte, m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
     if (!checkContextVar(ctx, phflag)) throw new IllegalArgumentException("ctx")
-    val d = createDigest
-    val h = new Array[Byte](d.getDigestSize)
-    d.update(sk, skOff, SECRET_KEY_SIZE)
-    d.doFinal(h, 0)
+    val h = new Array[Byte](shaDigest.getDigestSize)
+    shaDigest.update(sk, skOff, SECRET_KEY_SIZE)
+    shaDigest.doFinal(h, 0)
     val s = new Array[Byte](SCALAR_BYTES)
     pruneScalar(h, 0, s)
     val pk = new Array[Byte](POINT_BYTES)
     scalarMultBaseEncoded(s, pk, 0)
-    implSign(d, h, s, pk, 0, ctx, phflag, m, mOff, mLen, sig, sigOff)
+    implSign(shaDigest, h, s, pk, 0, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def implSign(sk: Array[Byte], skOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], phflag: Byte, m: Array[Byte], mOff: Int, mLen: Int, sig: Array[Byte], sigOff: Int): Unit = {
     if (!checkContextVar(ctx, phflag)) throw new IllegalArgumentException("ctx")
-    val d = createDigest
-    val h = new Array[Byte](d.getDigestSize)
-    d.update(sk, skOff, SECRET_KEY_SIZE)
-    d.doFinal(h, 0)
+    val h = new Array[Byte](shaDigest.getDigestSize)
+    shaDigest.update(sk, skOff, SECRET_KEY_SIZE)
+    shaDigest.doFinal(h, 0)
     val s = new Array[Byte](SCALAR_BYTES)
     pruneScalar(h, 0, s)
-    implSign(d, h, s, pk, pkOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
+    implSign(shaDigest, h, s, pk, pkOff, ctx, phflag, m, mOff, mLen, sig, sigOff)
   }
 
   def implVerify(sig: Array[Byte], sigOff: Int, pk: Array[Byte], pkOff: Int, ctx: Array[Byte], phflag: Byte, m: Array[Byte], mOff: Int, mLen: Int): Boolean = {
@@ -91,13 +88,12 @@ class Ed25519 extends EC {
     if (!checkScalarVar(S)) return false
     val pA = new PointExt
     if (!decodePointVar(pk, pkOff, negate = true, pA)) return false
-    val d = createDigest
-    val h = new Array[Byte](d.getDigestSize)
-    dom2(d, phflag, ctx)
-    d.update(R, 0, POINT_BYTES)
-    d.update(pk, pkOff, POINT_BYTES)
-    d.update(m, mOff, mLen)
-    d.doFinal(h, 0)
+    val h = new Array[Byte](shaDigest.getDigestSize)
+    dom2(shaDigest, phflag, ctx)
+    shaDigest.update(R, 0, POINT_BYTES)
+    shaDigest.update(pk, pkOff, POINT_BYTES)
+    shaDigest.update(m, mOff, mLen)
+    shaDigest.doFinal(h, 0)
     val k = reduceScalar(h)
     val nS = new Array[Int](SCALAR_INTS)
     decodeScalar(S, 0, nS)
