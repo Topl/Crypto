@@ -67,3 +67,4 @@ scalacOptions ++= Seq(
 
 enablePlugins(JavaAppPackaging)
 enablePlugins(TestNGPlugin)
+testNGSuites := Seq("src/test/resources/testng.xml")

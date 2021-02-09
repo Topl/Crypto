@@ -83,7 +83,7 @@ import scorex.util.encode.Base16
        Console.err.println("Elapsed time Scala code: " + tString +"s")
      }
 
-     if (true) {
+     if (false) {
        val t0 = System.nanoTime()
        val ec = new eddsa.Ed25519
        for( a <- 1 to 10000) {
