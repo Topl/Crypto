@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="Testing B2B256">
+    <test name="Regression">
+        <classes>
+            <class name="ove.crypto.digest.Blake2bTestsBase"/>
+            <class name="ove.crypto.digest.Blake2BTestUtils"/>
+            <class name="ove.crypto.digest.TestClonedParam"/>
+            <class name="ove.crypto.digest.TestCodecs"/>
+            <class name="ove.crypto.digest.TestDigest_KAT_DefaultParams"/>
+            <class name="ove.crypto.digest.TestDigest_KAT_ExplicitDefaultParams"/>
+            <class name="ove.crypto.digest.TestDigest_KAT_ImplicitDefaultParams"/>
+            <class name="ove.crypto.digest.TestDigestAbstractBase"/>
+            <class name="ove.crypto.digest.TestMAC_KeyedKAT_DefaultParam"/>
+            <class name="ove.crypto.digest.TestMACAbstractBase"/>
+            <class name="ove.crypto.digest.TestParamAccessors"/>
+            <class name="ove.crypto.digest.TestResumability"/>
+        </classes>
+    </test> <!-- Test -->
+</suite> <!-- Suite -->

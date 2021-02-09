@@ -66,3 +66,4 @@ scalacOptions ++= Seq(
   "-deprecation")
 
 enablePlugins(JavaAppPackaging)
+enablePlugins(TestNGPlugin)
