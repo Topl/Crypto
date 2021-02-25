@@ -289,10 +289,10 @@ object DeterministicWallet {
 
            val bigIntKey = BigInt( IL.bytes.toArray)
            val bigIntParKey = BigInt(parent.sk.toArray)
-           val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
+           //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
 
-           if (bigIntKey.compareTo(N.toBigInt())>= 0) {
+           if (bigIntKey.compareTo(ecSpec.getN())>= 0) {
                  throw new RuntimeException("cannot generated child private key")
            }
 
@@ -326,10 +326,10 @@ object DeterministicWallet {
 
            val bigIntPubKey = new BigInteger(1,IL.bytes.toArray)
            val bigIntParPubKey = new BigInteger(1, parent.pk.toArray)
-           val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
+           //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
 
-           if (bigIntPubKey.compareTo(N.toBigInt())>= 0) {
+           if (bigIntPubKey.compareTo(ecSpec.getN())>= 0) {
              throw new RuntimeException("cannot generated child private key")
            }
 
