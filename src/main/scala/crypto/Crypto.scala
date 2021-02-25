@@ -1,10 +1,9 @@
 package crypto
 
-import crypto.primitives.{Ed25519Debug, eddsa}
-import scorex.util.encode.{Base16, Base58}
-
 import java.security.SecureRandom
-import scala.util.{Failure, Success, Try}
+
+import crypto.primitives.{Ed25519Debug, eddsa}
+import scorex.util.encode.Base16
 
 class Crypto {
   println("Topl Crypto Performance Testbed")
@@ -68,7 +67,7 @@ class Crypto {
     println("Elapsed time Scala code: " + tString +"s")
   }
 
-  if (true) {
+  /*if (true) {
     val RANDOM = new SecureRandom(Array(1L.toByte))
     val t0 = System.nanoTime()
     for( _ <- 1 to numTrials) {
@@ -85,7 +84,7 @@ class Crypto {
     val outTime = (t1 - t0)*1.0e-9
     val tString = "%6.6f".format(outTime)
     println("Elapsed time Scala Nacl4s code: " + tString +"s")
-  }
+  }*/
 
 }
 

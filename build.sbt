@@ -13,6 +13,7 @@ val akkaVersion = "2.5.24"
 val akkaHttpVersion = "10.1.9"
 
 resolvers ++= Seq("Bintray" at "https://jcenter.bintray.com/")
+resolvers += "Sonatype Public" at "https://oss.sonatype.org/content/groups/public/"
 
 libraryDependencies += "org.scala-lang.modules" %% "scala-swing" % "2.1.1"
 libraryDependencies += "com.formdev" % "flatlaf" % "0.38"
@@ -20,7 +21,7 @@ libraryDependencies ++= Seq(
   "org.scorexfoundation" %% "iodb" % "0.3.+",
   "org.iq80.leveldb" % "leveldb" % "0.12"
 )
-
+libraryDependencies += "org.scodec" %% "scodec-bits" % "1.1.6"
 val networkDependencies = Seq(
   "com.typesafe.akka" %% "akka-actor" % akkaVersion,
   "com.typesafe.akka" %% "akka-http-core" % akkaHttpVersion,
