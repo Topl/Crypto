@@ -1,7 +1,7 @@
 package crypto
 
 
-import java.io.{ByteArrayInputStream, IOException, InputStream, OutputStream}
+import java.io._
 import java.math.BigInteger
 import java.nio.{ByteBuffer, ByteOrder}
 import java.security.{KeyFactory, Security}
@@ -12,9 +12,9 @@ import org.bouncycastle.crypto.digests.{RIPEMD160Digest, SHA1Digest, SHA256Diges
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.{ECDomainParameters, KeyParameter}
 import org.bouncycastle.jce.ECNamedCurveTable
-import org.bouncycastle.jce.interfaces.ECPrivateKey
 import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.jce.spec.ECPrivateKeySpec
+import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec
+import org.bouncycastle.math.ec.ECPoint
 import scodec.bits._
 /**
   * see https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
@@ -41,6 +41,9 @@ object DeterministicWallet {
       val f = KeyFactory.getInstance("ECDSA", "BC");
       val ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1")
       val ecDomain = new ECDomainParameters(ecSpec.getCurve, ecSpec.getG, ecSpec.getN)
+
+
+      val spec: ECNamedCurveParameterSpec = ECNamedCurveTable.getParameterSpec("secp256k1")
 
       case class KeyPath(path: Seq[Long]) {
            def lastChildNumber: Long = if (path.isEmpty) 0L else path.last
@@ -140,7 +143,6 @@ object DeterministicWallet {
                  val secretkeybytes = ByteVector32(Protocol.bytes(bis, 32))
                  (prefix, ExtendedPrivateKey(secretkeybytes, chaincode, depth, parentPath.derive(childNumber), parent))*/
 
-
                  val bis = new ByteArrayInputStream(input.getBytes)
                  val depth = uint8(bis)
                  val parent = uint32(bis, ByteOrder.BIG_ENDIAN)
@@ -193,13 +195,19 @@ object DeterministicWallet {
            Base58Check.encode(prefix, buffer)
      }*/
 
-     /*def write(input: ExtendedPublicKey, output: OutputStream): Unit = {
+     def writeUInt8(input: Int, out: OutputStream): Unit = out.write(input & 0xff)
+
+      def writeBytes(input: Array[Byte], out: OutputStream): Unit = out.write(input)
+
+      def writeBytes(input: ByteVector, out: OutputStream): Unit = out.write(input.toArray)
+
+     def write(input: ExtendedPublicKey, output: OutputStream): Unit = {
            writeUInt8(input.depth, output)
            writeUInt32(input.parent.toInt, output, ByteOrder.BIG_ENDIAN)
            writeUInt32(input.path.lastChildNumber.toInt, output, ByteOrder.BIG_ENDIAN)
-           writeBytes(input.chaincode.toArray, output)
+           writeBytes(input.chaincode.bytes.toArray, output)
            writeBytes(input.publickeybytes.toArray, output)
-     }*/
+     }
 
     def hmac512(key: ByteVector, data: ByteVector): ByteVector = {
       val mac = new HMac(new SHA512Digest())
@@ -209,6 +217,37 @@ object DeterministicWallet {
       mac.doFinal(out, 0)
       ByteVector.view(out)
     }
+
+      protected val hexArray: Array[Char] = "0123456789ABCDEF".toCharArray
+
+      def bytesToHex(bytes: Array[Byte]): String = {
+        val hexChars = new Array[Char](bytes.length * 2)
+        var v = 0
+        for (j <- 0 until bytes.length) {
+          v = bytes(j) & 0xFF
+          hexChars(j * 2) = hexArray(v >>> 4)
+          hexChars(j * 2 + 1) = hexArray(v & 0x0F)
+        }
+        new String(hexChars)
+      }
+
+      private def removeSignByte(arr: Array[Byte]): Array[Byte] = {
+        if (arr.length == 33) {
+          val newArr = new Array[Byte](32)
+          System.arraycopy(arr, 1, newArr, 0, newArr.length)
+          return newArr
+        }
+        arr
+      }
+
+
+      def getCompressed(pub: ECPoint): Array[Byte] = {
+        val bb = ByteBuffer.allocate(33)
+        bb.put((if (pub.getYCoord.testBitZero()) 0x03 else 0x02).toByte) // 3 if odd, 2 if even
+        bb.put(pub.getXCoord().getEncoded())
+        bb.array
+      }
+
      /**
        *
        * @param seed random seed
@@ -218,8 +257,40 @@ object DeterministicWallet {
            val I = hmac512(ByteVector.view("Bitcoin seed".getBytes("UTF-8")), seed)
            val IL = ByteVector32(I.take(32))
            val IR = ByteVector32(I.takeRight(32))
-           val path: KeyPath = new KeyPath(List.empty[Long])
-           ExtendedPrivateKey(IL, IR, depth = 0, path, parent = 0L)
+           val path = new KeyPath(List.empty[Long])
+          // ExtendedPrivateKey(IL, IR, depth = 0, path, parent = 0L)
+       //Base58.encode("0488ade4000000000000000000873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d50800e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35".getBytes)
+           //val privkey = new BigInteger(1,IL.bytes.toArray).toString(16)
+            val privkey = new BigInteger(1,IL.bytes.toArray)
+
+
+             /*val privKey = new BigInteger(privateKey, 16)
+             val ecp = SECNamedCurves.getByName("secp256k1")
+             val curvePt = ecp.getG.multiply(privKey)
+             val x = curvePt.getXCoord.toBigInteger
+             val y = curvePt.getYCoord.toBigInteger
+             val xBytes = this.removeSignByte(x.toByteArray)
+             val yBytes = this.removeSignByte(y.toByteArray)
+             val pubKeyBytes = new Array[Byte](65)
+             pubKeyBytes(0) = new Byte("04")
+             System.arraycopy(xBytes, 0, pubKeyBytes, 1, xBytes.length)
+             System.arraycopy(yBytes, 0, pubKeyBytes, 33, yBytes.length)
+             return this.bytesToHex(pubKeyBytes)*/
+             println("Private key : "+privkey.toString(16))
+             println("G : "+ecSpec.getG)
+             println("G : "+spec.getG)
+
+             //val xInt = ecSpec.getG().multiply(privkey).getXCoord.toBigInteger
+//             //val pubKeyBytes = new Array[Byte](65)
+            //System.arraycopy(xBytes, 0, pubKeyBytes, 1, xBytes.length)
+             // xBytes
+
+            val pointQ = spec.getG().multiply(privkey).normalize()
+            val pKey = new BigInteger(1,getCompressed(pointQ)).toString(16)
+            println("Public key : "+ pKey)
+            ExtendedPrivateKey(IL, IR, depth = 0, path, parent = 0L)
+            //pointQ.getXCoord.toBigInteger.toString(16)
+
      }
 
      /**
@@ -228,7 +299,16 @@ object DeterministicWallet {
        * @return the public key for this private key
        */
      def publicKey(input: ExtendedPrivateKey): ExtendedPublicKey = {
-           ExtendedPublicKey(ByteVector(input.pk), input.chaincode, depth = input.depth, path = input.path, parent = input.parent)
+
+           val privkey = new BigInteger(1,input.secretkeybytes.bytes.toArray)
+
+
+           val pointQ = spec.getG().multiply(privkey).normalize()
+           val pKey = new BigInteger(1,getCompressed(pointQ))
+           val pKeyHex = new BigInteger(1,getCompressed(pointQ)).toString(16)
+           println("Public key : "+ pKeyHex)
+
+           ExtendedPublicKey(ByteVector(pKey.toByteArray), input.chaincode, depth = input.depth, path = input.path, parent = input.parent)
      }
 
 
@@ -269,7 +349,7 @@ object DeterministicWallet {
       }
 
       def writeUInt32(input: Long): ByteVector = writeUInt32(input, ByteOrder.LITTLE_ENDIAN)
-
+      def fixSize(data: ByteVector): ByteVector32 = ByteVector32(data.padLeft(32))
      /**
        *
        * @param parent extended private key
@@ -287,11 +367,11 @@ object DeterministicWallet {
            val IL = ByteVector32(I.take(32))
            val IR = ByteVector32(I.takeRight(32))
 
-           val bigIntKey = BigInt( IL.bytes.toArray)
-           val bigIntParKey = BigInt(parent.sk.toArray)
+           val bigIntKey = new BigInteger(1,IL.bytes.toArray)
+           val bigIntParKey = new BigInteger(1, parent.secretkeybytes.bytes.toArray)
            //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
-
+           println("Parent private key "+bigIntParKey.toString(16))
            if (bigIntKey.compareTo(ecSpec.getN())>= 0) {
                  throw new RuntimeException("cannot generated child private key")
            }
@@ -301,14 +381,18 @@ object DeterministicWallet {
 
 
 
-           val li = (bigIntKey + bigIntParKey).mod(ecSpec.getN())
-           val key = f.generatePrivate(new ECPrivateKeySpec(li.bigInteger, ecSpec)).asInstanceOf[ECPrivateKey]
+           val privChildBytes = bigIntKey.add(bigIntParKey).mod(ecSpec.getN())
+           //val key = f.generatePrivate(new ECPrivateKeySpec(li, ecSpec)).asInstanceOf[ECPrivateKey]
 
-           if (li == 0) {
+           if (privChildBytes == 0) {
              throw new RuntimeException("cannot generated child private key")
            }
-           val buffer = ByteVector32(ByteVector(key.getEncoded))
-           ExtendedPrivateKey(buffer, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
+
+            val privChildBytes32 = fixSize(ByteVector.view(privChildBytes.toByteArray.dropWhile(_ == 0.toByte)))
+
+           //ExtendedPrivateKey(buffer, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
+            //li.toString(16)
+            ExtendedPrivateKey(privChildBytes32, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
      }
 
      /**
