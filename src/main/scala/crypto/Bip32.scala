@@ -306,6 +306,7 @@ object DeterministicWallet {
            val pointQ = spec.getG().multiply(privkey).normalize()
            val pKey = new BigInteger(1,getCompressed(pointQ))
            val pKeyHex = new BigInteger(1,getCompressed(pointQ)).toString(16)
+
            println("Public key : "+ pKeyHex)
 
            ExtendedPublicKey(ByteVector(pKey.toByteArray), input.chaincode, depth = input.depth, path = input.path, parent = input.parent)
@@ -371,6 +372,7 @@ object DeterministicWallet {
            val bigIntParKey = new BigInteger(1, parent.secretkeybytes.bytes.toArray)
            //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
+
            println("Parent private key "+bigIntParKey.toString(16))
            if (bigIntKey.compareTo(ecSpec.getN())>= 0) {
                  throw new RuntimeException("cannot generated child private key")
@@ -409,22 +411,23 @@ object DeterministicWallet {
            val IR = ByteVector32(I.takeRight(32))
 
            val bigIntPubKey = new BigInteger(1,IL.bytes.toArray)
-           val bigIntParPubKey = new BigInteger(1, parent.pk.toArray)
+           //val bigIntParPubKey = new BigInteger(1, parent.publickeybytes.toArray)
            //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
-
+            val ecPoint = ecSpec.getCurve.decodePoint(parent.publickeybytes.toArray)
            if (bigIntPubKey.compareTo(ecSpec.getN())>= 0) {
              throw new RuntimeException("cannot generated child private key")
            }
 
-           val pubParKeyP = ecSpec.getG().multiply(bigIntParPubKey)
-           val pubKey = ecSpec.getG().multiply(bigIntPubKey).add(pubParKeyP).normalize()
+           //val pubParKeyP = ecSpec.getG().multiply(bigIntParPubKey)
+           val pubChildKeyPoint = ecSpec.getG().multiply(bigIntPubKey).add(ecPoint).normalize()
 
-           if (pubKey.isInfinity) {
+           if (pubChildKeyPoint.isInfinity) {
                  throw new RuntimeException("cannot generated child public key")
            }
-           val buffer = ByteVector(pubKey.getEncoded(false))
-           ExtendedPublicKey(buffer, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
+           val pubChildKey = new BigInteger(1,getCompressed(pubChildKeyPoint))
+
+           ExtendedPublicKey(ByteVector(pubChildKey.toByteArray), chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
      }
 
      //def derivePrivateKey(parent: ExtendedPrivateKey, chain: Seq[Long]): ExtendedPrivateKey = chain.foldLeft(parent)(derivePrivateKey)

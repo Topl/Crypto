@@ -1,6 +1,6 @@
 package crypto
 
-import crypto.DeterministicWallet.{derivePrivateKey, hardened, publicKey}
+import crypto.DeterministicWallet.{derivePrivateKey, derivePublicKey, hardened, publicKey}
 import org.scalatest.FlatSpec
 import scodec.bits._
 
@@ -40,7 +40,10 @@ class DeterministicWalletSpec extends FlatSpec {
     val m0h_1_pub = publicKey(m0h_1)
     assert(m0h_1_pub.publickeybytes.toHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
 
-
+    // check that we can also derive this public key from the parent's public key
+    val m0h_1_pub1 = derivePublicKey(m0h_pub, 1L)
+    assert(m0h_1_pub1.publickeybytes.toHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
+    Console.err.println(m0h_1_pub1)
 
     //Test [Chain m/0'/1/2'] secret key
     val m0h_1_2h = derivePrivateKey(m0h_1, hardened(2))
