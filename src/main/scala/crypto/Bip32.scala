@@ -167,19 +167,6 @@ object DeterministicWallet {
            Base58Check.encode(prefix, buffer)
      }*/
 
-     def writeUInt8(input: Int, out: OutputStream): Unit = out.write(input & 0xff)
-
-      def writeBytes(input: Array[Byte], out: OutputStream): Unit = out.write(input)
-
-      def writeBytes(input: ByteVector, out: OutputStream): Unit = out.write(input.toArray)
-
-     def write(input: ExtendedPublicKey, output: OutputStream): Unit = {
-           writeUInt8(input.depth, output)
-           writeUInt32(input.parent.toInt, output, ByteOrder.BIG_ENDIAN)
-           writeUInt32(input.path.lastChildNumber.toInt, output, ByteOrder.BIG_ENDIAN)
-           writeBytes(input.chaincode.bytes.toArray, output)
-           writeBytes(input.publickeybytes.toArray, output)
-     }
 
     def hmac512(key: ByteVector, data: ByteVector): ByteVector = {
       val mac = new HMac(new SHA512Digest())
@@ -214,10 +201,6 @@ object DeterministicWallet {
              println("G : "+ecSpec.getG)
              println("G : "+spec.getG)
 
-             //val xInt = ecSpec.getG().multiply(privkey).getXCoord.toBigInteger
-  //             //val pubKeyBytes = new Array[Byte](65)
-            //System.arraycopy(xBytes, 0, pubKeyBytes, 1, xBytes.length)
-             // xBytes
 
             val pointQ = spec.getG().multiply(privkey).normalize()
             val pKey = new BigInteger(1,getCompressed(pointQ)).toString(16)
@@ -313,10 +296,6 @@ object DeterministicWallet {
            }
 
 
-           //val key = ( bigIntKey + bigIntParKey).mod(N.toBigInt())
-
-
-
            val privChildBytes = bigIntKey.add(bigIntParKey).mod(ecSpec.getN())
            //val key = f.generatePrivate(new ECPrivateKeySpec(li, ecSpec)).asInstanceOf[ECPrivateKey]
 
@@ -326,8 +305,6 @@ object DeterministicWallet {
 
             val privChildBytes32 = fixSize(ByteVector.view(privChildBytes.toByteArray.dropWhile(_ == 0.toByte)))
 
-           //ExtendedPrivateKey(buffer, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
-            //li.toString(16)
             ExtendedPrivateKey(privChildBytes32, chaincode = IR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
      }
 

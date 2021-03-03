@@ -7,7 +7,7 @@ import scodec.bits._
 
 // BIP 0032 TestVectors are from https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 class DeterministicWalletSpec extends FlatSpec {
-  
+
 
   "Deterministic Wallet" should "generate and derive keys (test vector #1)" in {
     val m = DeterministicWallet.generate(hex"000102030405060708090a0b0c0d0e0f")
