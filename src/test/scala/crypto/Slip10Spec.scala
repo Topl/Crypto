@@ -6,7 +6,7 @@ import org.scalatest.FlatSpec
 import scodec.bits._
 
 
-// BIP 0032 TestVectors are from https://en.bitcoin.it/wiki/BIP_0032_TestVectors
+// SLIP 0010 TestVectors are from https://github.com/satoshilabs/slips/blob/master/slip-0010.md
 class Slip10Spec extends FlatSpec {
 
 
