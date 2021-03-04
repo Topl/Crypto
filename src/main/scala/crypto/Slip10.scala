@@ -18,7 +18,8 @@ object Slip10 {
 
      case class ExtendedPrivateKey(secretkeybytes: ByteVector32, chaincode: ByteVector32, depth: Int, path: KeyPath, parent: Long) {
 
-       def sk = secretkeybytes.bytes.toArray
+       def sk = new BigInteger(1, secretkeybytes.bytes.toArray)
+       def skHex = secretkeybytes.toString
 
      }
 
@@ -40,7 +41,8 @@ object Slip10 {
         require(publickeybytes.length == 33)
         require(chaincode.bytes.length == 32)
 
-        def pk  = publickeybytes.toArray
+        def pk  = new BigInteger (1, publickeybytes.toArray)
+        def pkHex = publickeybytes.toHex
 
 
       }
@@ -73,9 +75,8 @@ object Slip10 {
 
             val privkey = new BigInteger(1,IL.bytes.toArray)
 
-            println("Private key : "+privkey.toString(16))
             ExtendedPrivateKey(IL, IR, depth = 0, path, parent = 0L)
-            //pointQ.getXCoord.toBigInteger.toString(16)
+
 
      }
 
@@ -94,7 +95,7 @@ object Slip10 {
 
            val  out = ec.generatePublicKey(sk, 0, pk, 0)
            val pubKeyInt = new BigInteger(1, pk)
-           println("Public key : "+ pubKeyInt.toString(16))
+
            ExtendedPublicKey(ByteVector(pubKeyInt.toByteArray), input.chaincode, depth = input.depth, path = input.path, parent = input.parent)
      }
 
@@ -103,7 +104,7 @@ object Slip10 {
        * @param input extended public key
        * @return the fingerprint for this public key
        */
-     def fingerprint(input: ExtendedPublicKey): Long = uint32(new ByteArrayInputStream(hash160(ByteVector(input.pk)).take(4).reverse.toArray))
+     def fingerprint(input: ExtendedPublicKey): Long = uint32(new ByteArrayInputStream(hash160(ByteVector(input.pk.toByteArray)).take(4).reverse.toArray))
 
      /**
        *

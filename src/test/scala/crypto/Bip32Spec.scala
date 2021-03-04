@@ -12,62 +12,62 @@ class DeterministicWalletSpec extends FlatSpec {
   "Deterministic Wallet" should "generate and derive keys (test vector #1)" in {
     val m = DeterministicWallet.generate(hex"000102030405060708090a0b0c0d0e0f")
     //Test [Chain m] secret key
-    assert(m.secretkeybytes.toString === "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+    assert(m.skHex === "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
 
     //Test [Chain m] public key
     val m_pub = publicKey(m)
-    assert(m_pub.publickeybytes.toHex === "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2")
+    assert(m_pub.pkHex === "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2")
 
 
     //assert(fingerprint(m) === 876747070)
 
     //Test [Chain m/0'] secret key
     val m0h = derivePrivateKey(m, hardened(0))
-    assert(m0h.secretkeybytes.toString === "edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea")
+    assert(m0h.skHex === "edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea")
 
     //Test [Chain m/0'] public key
     val m0h_pub = publicKey(m0h)
-    assert(m0h_pub.publickeybytes.toHex === "035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56")
+    assert(m0h_pub.pkHex === "035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56")
 
 
     //Test [Chain m/0'/1] secret key
     val m0h_1 = derivePrivateKey(m0h, 1L)
-    assert(m0h_1.secretkeybytes.toString === "3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368")
+    assert(m0h_1.skHex === "3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368")
 
     //Test [Chain m/0'/1] public key
     val m0h_1_pub = publicKey(m0h_1)
-    assert(m0h_1_pub.publickeybytes.toHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
+    assert(m0h_1_pub.pkHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
 
     // check that we can also derive this public key from the parent's public key
     val m0h_1_pub1 = derivePublicKey(m0h_pub, 1L)
-    assert(m0h_1_pub1.publickeybytes.toHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
+    assert(m0h_1_pub1.pkHex === "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c")
     Console.err.println(m0h_1_pub1)
 
     //Test [Chain m/0'/1/2'] secret key
     val m0h_1_2h = derivePrivateKey(m0h_1, hardened(2))
-    assert(m0h_1_2h.secretkeybytes.toString === "cbce0d719ecf7431d88e6a89fa1483e02e35092af60c042b1df2ff59fa424dca")
+    assert(m0h_1_2h.skHex === "cbce0d719ecf7431d88e6a89fa1483e02e35092af60c042b1df2ff59fa424dca")
 
 
     //Test [Chain m/0'/1/2'] public key
     val m0h_1_2h_pub = publicKey(m0h_1_2h)
-    assert(m0h_1_2h_pub.publickeybytes.toHex === "0357bfe1e341d01c69fe5654309956cbea516822fba8a601743a012a7896ee8dc2")
+    assert(m0h_1_2h_pub.pkHex === "0357bfe1e341d01c69fe5654309956cbea516822fba8a601743a012a7896ee8dc2")
 
 
     //Test [Chain m/0'/1/2'/2] secret key
     val m0h_1_2h_2 = derivePrivateKey(m0h_1_2h, 2)
-    assert(m0h_1_2h_2.secretkeybytes.toString === "0f479245fb19a38a1954c5c7c0ebab2f9bdfd96a17563ef28a6a4b1a2a764ef4")
+    assert(m0h_1_2h_2.skHex === "0f479245fb19a38a1954c5c7c0ebab2f9bdfd96a17563ef28a6a4b1a2a764ef4")
 
     //Test [Chain m/0'/1/2'/2] public key
     val m0h_1_2h_2_pub = publicKey(m0h_1_2h_2)
-    assert(m0h_1_2h_2_pub.publickeybytes.toHex === "02e8445082a72f29b75ca48748a914df60622a609cacfce8ed0e35804560741d29")
+    assert(m0h_1_2h_2_pub.pkHex === "02e8445082a72f29b75ca48748a914df60622a609cacfce8ed0e35804560741d29")
 
     //Test [Chain m/0'/1/2'/2/1000000000] secret key
     val m0h_1_2h_2_1000000000 = derivePrivateKey(m0h_1_2h_2, 1000000000L)
-    assert(m0h_1_2h_2_1000000000.secretkeybytes.toString === "471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8")
+    assert(m0h_1_2h_2_1000000000.skHex === "471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8")
 
     //Test [Chain m/0'/1/2'/2/1000000000] public key
     val m0h_1_2h_2_1000000000_pub = publicKey(m0h_1_2h_2_1000000000)
-    assert(m0h_1_2h_2_1000000000_pub.publickeybytes.toHex === "022a471424da5e657499d1ff51cb43c47481a03b1e77f951fe64cec9f5a48f7011")
+    assert(m0h_1_2h_2_1000000000_pub.pkHex === "022a471424da5e657499d1ff51cb43c47481a03b1e77f951fe64cec9f5a48f7011")
 
 
     /*assert(encode(m0h_1, xprv) === "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs")

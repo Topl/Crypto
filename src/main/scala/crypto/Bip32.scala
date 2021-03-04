@@ -83,7 +83,8 @@ object DeterministicWallet {
 
      case class ExtendedPrivateKey(secretkeybytes: ByteVector32, chaincode: ByteVector32, depth: Int, path: KeyPath, parent: Long) {
 
-       def sk = secretkeybytes.bytes.toArray
+       def sk = new BigInteger(1, secretkeybytes.bytes.toArray)
+       def skHex = secretkeybytes.toString
 
      }
       def bytes(input: InputStream, size: Long): ByteVector = bytes(input, size.toInt)
@@ -142,8 +143,8 @@ object DeterministicWallet {
         require(publickeybytes.length == 33)
         require(chaincode.bytes.length == 32)
 
-        def pk  = publickeybytes.toArray
-
+        def pk  = new BigInteger (1, publickeybytes.toArray)
+        def pkHex = publickeybytes.toHex
 
       }
 
@@ -197,14 +198,11 @@ object DeterministicWallet {
 
             val privkey = new BigInteger(1,IL.bytes.toArray)
 
-             println("Private key : "+privkey.toString(16))
-             println("G : "+ecSpec.getG)
-             println("G : "+spec.getG)
 
 
             val pointQ = spec.getG().multiply(privkey).normalize()
             val pKey = new BigInteger(1,getCompressed(pointQ)).toString(16)
-            println("Public key : "+ pKey)
+
             ExtendedPrivateKey(IL, IR, depth = 0, path, parent = 0L)
             //pointQ.getXCoord.toBigInteger.toString(16)
 
@@ -224,7 +222,6 @@ object DeterministicWallet {
            val pKey = new BigInteger(1,getCompressed(pointQ))
            val pKeyHex = new BigInteger(1,getCompressed(pointQ)).toString(16)
 
-           println("Public key : "+ pKeyHex)
 
            ExtendedPublicKey(ByteVector(pKey.toByteArray), input.chaincode, depth = input.depth, path = input.path, parent = input.parent)
      }
@@ -247,7 +244,7 @@ object DeterministicWallet {
        * @param input extended public key
        * @return the fingerprint for this public key
        */
-     def fingerprint(input: ExtendedPublicKey): Long = uint32(new ByteArrayInputStream(hash160(ByteVector(input.pk)).take(4).reverse.toArray))
+     def fingerprint(input: ExtendedPublicKey): Long = uint32(new ByteArrayInputStream(hash160(ByteVector(input.pk.toByteArray)).take(4).reverse.toArray))
 
      /**
        *
@@ -290,7 +287,6 @@ object DeterministicWallet {
            //val N = Math.pow(2,252) + BigDecimal("27742317777372353535851937790883648493")
 
 
-           println("Parent private key "+bigIntParKey.toString(16))
            if (bigIntKey.compareTo(ecSpec.getN())>= 0) {
                  throw new RuntimeException("cannot generated child private key")
            }

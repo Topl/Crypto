@@ -21,12 +21,12 @@ class Slip10Spec extends FlatSpec {
     Console.err.println(m_pub.pk)
   //Test [Chain m/0'] secret key
     val m0h = derivePrivateKey(m, hardened(0))
-    assert(m0h.secretkeybytes.toString === "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3")
+    assert(m0h.skHex === "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3")
     Console.err.println(m0h.secretkeybytes)
 
     //Test [Chain m/0'] public key
     val m0h_pub = publicKey(m0h)
-    assert(m0h_pub.publickeybytes.toHex === "008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c")
+    assert(m0h_pub.pkHex === "008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c")
     Console.err.println(m0h_pub.publickeybytes.toHex)
 
     //Test [Chain m/0'/1] secret key
