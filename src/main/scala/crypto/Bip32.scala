@@ -114,18 +114,6 @@ object DeterministicWallet {
       def uint32(input: ByteVector, order: ByteOrder): Long = {
         input.toLong(signed = false, ByteOrdering.fromJava(order))
       }
-     object ExtendedPrivateKey {
-           def decode(input: String, parentPath: KeyPath = KeyPath.Root): (ExtendedPrivateKey) = {
-                 val bis = new ByteArrayInputStream(input.getBytes)
-                 val depth = uint8(bis)
-                 val parent = uint32(bis, ByteOrder.BIG_ENDIAN)
-                 val childNumber = uint32(bis, ByteOrder.BIG_ENDIAN)
-                 val chaincode = ByteVector32(bytes(bis, 32))
-                 require(bis.read() == 0)
-                 val secretkeybytes = ByteVector32(bytes(bis, 32))
-                 (ExtendedPrivateKey(secretkeybytes, chaincode, depth, parentPath.derive(childNumber), parent))
-           }
-     }
 
      /*def encode(input: ExtendedPrivateKey, prefix: Int): String = {
            val out = new ByteArrayOutputStream()
@@ -148,18 +136,6 @@ object DeterministicWallet {
 
       }
 
-      object ExtendedPublicKey {
-        def decode(input: String, parentPath: KeyPath = KeyPath.Root): (ExtendedPublicKey) = {
-         // val (prefix, bin) = Base58Check.decodeWithIntPrefix(input)
-          val bis = new ByteArrayInputStream(input.getBytes)
-          val depth = uint8(bis)
-          val parent = uint32(bis, ByteOrder.BIG_ENDIAN)
-          val childNumber = uint32(bis, ByteOrder.BIG_ENDIAN)
-          val chaincode = ByteVector32(bytes(bis, 32))
-          val publickeybytes = bytes(bis, 33)
-          (ExtendedPublicKey(publickeybytes, chaincode, depth, parentPath.derive(childNumber), parent))
-        }
-      }
 
      /*def encode(input: ExtendedPublicKey, prefix: Int): String = {
            val out = new ByteArrayOutputStream()
@@ -292,7 +268,9 @@ object DeterministicWallet {
            }
 
 
+           //val privChildBytes = bigIntKey.add(bigIntParKey).mod(ecSpec.getN())
            val privChildBytes = bigIntKey.add(bigIntParKey).mod(ecSpec.getN())
+
            //val key = f.generatePrivate(new ECPrivateKeySpec(li, ecSpec)).asInstanceOf[ECPrivateKey]
 
            if (privChildBytes == 0) {

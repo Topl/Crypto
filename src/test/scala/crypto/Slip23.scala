@@ -1,33 +1,67 @@
 package crypto
 
+import java.math.BigInteger
+
 import crypto.DeterministicWallet.hardened
-import crypto.Slip10.{derivePrivateKey, publicKey}
+import crypto.Slip23.{derivePrivateKey, publicKey,derivePublicKey}
 import org.scalatest.FlatSpec
 import scodec.bits._
 
 
-// SLIP 0010 TestVectors are from https://github.com/satoshilabs/slips/blob/master/slip-0010.md
-class Slip10Spec extends FlatSpec {
+// SLIP 0010 TestVectors are from https://github.com/satoshilabs/slips/blob/master/slip-0023.md
+class Slip23Spec extends FlatSpec {
 
 
-  "Slip10" should "generate and derive keys (test vector #1)" in {
-      val m = Slip10.generate(hex"000102030405060708090a0b0c0d0e0f")
-      Console.err.println(m.secretkeybytes.toString)
+  "Slip23" should "generate and derive keys (test vector #1)" in {
+      val m = Slip23.generate(hex"578d685d20b602683dc5171df411d3e2")
+    val bigIntkL = new BigInteger(1,m.secretkeybytes_left.bytes.toArray)
+    Console.err.println(m.secretkeybytes_left.toString)
+
+    Console.err.println(m.chaincode)
     //Test [Chain m] secret key
-    //assert(m.secretkeybytes.toString === "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+    //assert(m.sk === "38096432269777187972282727382530464140043628323029465813805073381215192153792")
+
+    val m_pub = publicKey(m)
+    Console.err.println(m_pub.publickeybytes.toHex)
+    assert(m_pub.publickeybytes.toHex === "83e3ecaf57f90f022c45e10d1b8cb78499c30819515ad9a81ad82139fdb12a90")
+    //Test [Chain m] chain code
+    assert(m.chaincode.toString === "22c12755afdd192742613b3062069390743ea232bc1b366c8f41e37292af9305")
+
+    Console.err.println(m.secretkeybytes_right.toString)
+    //Test [Chain m] secret key
+    assert(m.secretkeybytes_right.toString === "4064253ffefc4127489bce1b825a47329010c5afb4d21154ef949ef786204405")
+
+    //Test [m/44'] secret key
+    val m44h = derivePrivateKey(m, hardened(44))
+    //Test [m/44'/1815'/] [Chain m/0'/1/2'/2] secret key
+    val m44h_1815h = derivePrivateKey(m44h, hardened(1815))
+
+    //Test [m/44'/1815'/0'/0/0] [Chain m/0'/1/2'/2] secret key
+    val m44h_1815h_0h = derivePrivateKey(m44h_1815h, hardened(0))
+    //Test [m/44'/1815'/0'/0/] [Chain m/0'/1/2'/2] secret key
+    val m44h_1815h_0h_0 = derivePrivateKey(m44h_1815h_0h, 0)
+    val m44h_1815h_0h_0_pub0 = publicKey(m44h_1815h_0h_0)
+    //Test [m/44'/1815'/0'/0/0] [Chain m/0'/1/2'/2] secret key
+    val m44h_1815h_0h_0_0 = derivePrivateKey(m44h_1815h_0h_0, 0)
+    Console.err.println(m44h_1815h_0h_0.secretkeybytes_left.toString)
+    val m44h_1815h_0h_0_0_pub0 = publicKey(m44h_1815h_0h_0_0)
+    val m44h_1815h_0h_0_0_pub1 = derivePublicKey(publicKey(m44h_1815h_0h_0), 0,m44h_1815h_0h_0)
+    Console.err.println(publicKey(m44h_1815h_0h_0_0).publickeybytes.toHex)
+    Console.err.println(m44h_1815h_0h_0_0_pub1.publickeybytes.toHex)
+    Console.err.println(m44h_1815h_0h_0_pub0.publickeybytes.toHex)
 
     //Test [Chain m] public key
-    val m_pub = publicKey(m)
+    /*val m_pub = publicKey(m)
     Console.err.println(m_pub.publickeybytes.toHex)
   //Test [Chain m/0'] secret key
     val m0h = derivePrivateKey(m, hardened(0))
     assert(m0h.skHex === "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3")
-    Console.err.println(m0h.secretkeybytes)
+    Console.err.println(m0h.secretkeybytes_left)
 
     //Test [Chain m/0'] public key
     val m0h_pub = publicKey(m0h)
     assert(m0h_pub.pkHex === "008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c")
-    Console.err.println(m0h_pub.publickeybytes.toHex)
+    Console.err.println(m0h_pub.publickeybytes.toHex)*/
 
     //Test [Chain m/0'/1] secret key
     /*val m0h_1 = derivePrivateKey(m0h, 1L)
