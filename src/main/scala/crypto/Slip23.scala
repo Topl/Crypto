@@ -80,7 +80,7 @@ object Slip23 {
 
 
   case class ExtendedPublicKey(publickeybytes: ByteVector, chaincode: ByteVector32, depth: Int, path: KeyPath, parent: Long) {
-    require(publickeybytes.length == 33)
+    //require(publickeybytes.length == 33)
     require(chaincode.bytes.length == 32)
 
     def pk  = new BigInteger (1, publickeybytes.toArray)
