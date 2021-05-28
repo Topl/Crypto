@@ -9,8 +9,6 @@ import crypto.DeterministicWallet._
 import crypto.primitives.Ed25519Debug._
 import crypto.primitives.eddsa
 import org.bouncycastle.crypto.digests.{SHA256Digest, SHA512Digest}
-import org.bouncycastle.crypto.macs.HMac
-import org.bouncycastle.crypto.params.KeyParameter
 import scodec.bits.ByteVector
 /**
   * see https://github.com/satoshilabs/slips/blob/master/slip-0010.md
@@ -20,32 +18,8 @@ import scodec.bits.ByteVector
 object Slip23 {
 
 
-  //val ecSpec = ECNamedCurveTable.getParameterSpec("ed25519")
-
-   def scalar_multiply8( src: Array[Byte],  length: Int,  dst: Array[Byte]) {
-    var prev_acc = 0
-    for(i<-0 to  length - 1) {
-      dst(i) = ((src(i).toInt << 3) + (prev_acc & 0x7)).toByte
-      prev_acc = src(i).toInt >> 5
-    }
-    dst(length) = (src(length - 1).toInt >> 5).toByte
-  }
-
-
-  def scalar_add_256bits(src1: Array[Byte], src2:Array[Byte],
-                         dst: Array[Byte]) {
-    var r = 0;
-    for(i<-0 to  31) {
-      r = r + src1(i) + src2(i);
-      dst(i) = (r & 0xff).toByte;
-      r >>= 8;
-    }
-  }
 
   case class ExtendedPrivateKey(secretkeybytes_left: ByteVector32, secretkeybytes_right: ByteVector32, chaincode: ByteVector32, depth: Int, path: KeyPath, parent: Long) {
-
-    //val byteBuffer = ByteBuffer.wrap(secretkeybytes_left.bytes.toArray)
-
 
 
     def sk = new BigInteger(1,secretkeybytes_left.bytes.toArray)
@@ -69,15 +43,6 @@ object Slip23 {
     digest.doFinal(rsData, 0)
     rsData
   }
-  def hmac256(key: ByteVector, data: ByteVector): ByteVector = {
-    val mac = new HMac(new SHA256Digest())
-    mac.init(new KeyParameter(key.toArray))
-    mac.update(data.toArray, 0, data.length.toInt)
-    val out = new Array[Byte](32)
-    mac.doFinal(out, 0)
-    ByteVector.view(out)
-  }
-
 
   case class ExtendedPublicKey(publickeybytes: ByteVector, chaincode: ByteVector32, depth: Int, path: KeyPath, parent: Long) {
     //require(publickeybytes.length == 33)
@@ -107,15 +72,6 @@ object Slip23 {
     k(0) = (k(0) & 0xf8.toByte).toByte
     k(31) = ((k(31) & 0x1f.toByte) | 0x40.toByte).toByte
 
-    /*k(0) &= 0xf8.toByte
-    k(31) &= 0x1f.toByte
-    k(31) |= 0x40.toByte*/
-    //val kL = ByteVector32(ByteVector(k).take(32))
-
-
-
-
-
 
     val kL = ByteVector32(ByteVector(k).take(32))
 
@@ -139,10 +95,6 @@ object Slip23 {
     val ec = new eddsa.Ed25519
     val sk = privkey
     val pk = new Array[Byte](ec.PUBLIC_KEY_SIZE)
-
-
-    //pk(0) = 0
-    //pruneScalar(privkey.toArray, 0, s)
 
     scalarMultBaseEncoded(privkey.toArray, pk, 0)
 
@@ -279,7 +231,6 @@ object Slip23 {
 
 
     ExtendedPublicKey(ByteVector(pubChildKey), chaincode = ICR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
-    //ExtendedPublicKey(IC, chaincode = ICR, depth = parent.depth + 1, path = parent.path.derive(index), parent = fingerprint(parent))
   }
 
 
